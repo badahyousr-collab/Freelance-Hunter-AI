@@ -77,3 +77,39 @@ def test_workspace_endpoints_require_authentication(client: TestClient) -> None:
     assert client.get("/projects").status_code == 401
     assert client.get("/dashboard/summary").status_code == 401
     assert client.get("/applications").status_code == 401
+
+
+def test_source_configuration_is_owned_by_current_user(client: TestClient) -> None:
+    create_verified_user(client, "source-owner@example.com")
+    added = client.post("/sources", json={"source": "telegram", "identifier": "@python_jobs"})
+    assert added.status_code == 201
+    source = added.json()
+    assert source["identifier"] == "python_jobs"
+    assert source["status"] == "configured"
+
+    duplicate = client.post("/sources", json={"source": "telegram", "identifier": "python_jobs"})
+    assert duplicate.status_code == 409
+
+    listed = client.get("/sources")
+    assert listed.status_code == 200
+    assert len(listed.json()) == 1
+
+    updated = client.patch(f"/sources/{source['id']}", json={"is_enabled": False})
+    assert updated.status_code == 200
+    assert updated.json()["is_enabled"] is False
+
+    assert client.delete(f"/sources/{source['id']}").status_code == 204
+    assert client.get("/sources").json() == []
+
+
+def test_marketplace_configuration_is_not_misreported_as_connected(client: TestClient) -> None:
+    create_verified_user(client, "marketplace@example.com")
+    response = client.post("/sources", json={"source": "upwork"})
+    assert response.status_code == 201
+    assert response.json()["status"] == "pending_integration"
+
+
+def test_source_configuration_rejects_invalid_channel_identifier(client: TestClient) -> None:
+    create_verified_user(client, "invalid-source@example.com")
+    response = client.post("/sources", json={"source": "telegram", "identifier": "https://t.me/not_a_channel"})
+    assert response.status_code == 422
