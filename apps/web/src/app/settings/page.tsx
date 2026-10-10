@@ -4,7 +4,7 @@ import { FormEvent, useEffect, useState } from "react";
 import { Save, UserRound } from "lucide-react";
 import WorkspacePage from "@/components/WorkspacePage";
 
-const API=process.env.NEXT_PUBLIC_API_URL??"http://localhost:8000";
+const API="/api/backend";
 type Profile={display_name:string|null;skills:string[];languages:string[];min_budget:number|null;currency:string;payment_preferences:string[];excluded_keywords:string[]};
 
 export default function SettingsPage(){
