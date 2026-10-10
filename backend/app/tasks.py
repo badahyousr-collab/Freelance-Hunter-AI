@@ -34,12 +34,13 @@ celery_app.conf.update(
 
 
 @celery_app.task(name="app.tasks.scan_enabled_sources", bind=True, max_retries=2)
-def scan_enabled_sources(self) -> dict[str, int | str]:
+def scan_enabled_sources(self, user_id: int | None = None) -> dict[str, int | str]:
     """Scan configured Telegram channels, deduplicate listings, and refresh user matches."""
     with SessionLocal() as db:
-        subscriptions = db.scalars(
-            select(UserSource).join(User, User.id == UserSource.user_id).where(UserSource.source == "telegram", UserSource.is_enabled.is_(True), User.agent_enabled.is_(True))
-        ).all()
+        statement = select(UserSource).join(User, User.id == UserSource.user_id).where(UserSource.source == "telegram", UserSource.is_enabled.is_(True), User.agent_enabled.is_(True))
+        if user_id is not None:
+            statement = statement.where(User.id == user_id)
+        subscriptions = db.scalars(statement).all()
         channels = sorted({"@" + row.identifier.lstrip("@") for row in subscriptions if row.identifier})
         if not channels:
             return {"status": "skipped", "reason": "no_enabled_telegram_channels", "created": 0, "updated": 0}
