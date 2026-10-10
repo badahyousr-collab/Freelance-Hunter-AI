@@ -1,6 +1,9 @@
 from collections.abc import Generator
 
 import pytest
+from cryptography.fernet import Fernet
+
+from app.config import settings
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
@@ -141,3 +144,32 @@ def test_telegram_link_code_is_single_use_and_agent_control_is_authorized(client
 def test_bot_internal_endpoints_reject_missing_secret(client: TestClient) -> None:
     response = client.get("/telegram/summary/777002")
     assert response.status_code == 401
+
+
+def test_integration_credential_is_saved_without_returning_secret(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "integration_encryption_key", Fernet.generate_key().decode("ascii"))
+    create_verified_user(client, "integration-owner@example.com")
+    response = client.post("/integrations", json={"provider": "freelancer", "secret": "test-api-token-value"})
+    assert response.status_code == 201
+    data = response.json()
+    assert data["status"] == "credential_saved_unverified"
+    assert "secret" not in data
+    assert "encrypted_secret" not in data
+
+    listed = client.get("/integrations")
+    assert listed.status_code == 200
+    assert len(listed.json()) == 1
+    assert "test-api-token-value" not in listed.text
+
+    duplicate = client.post("/integrations", json={"provider": "freelancer", "secret": "another-api-token"})
+    assert duplicate.status_code == 409
+
+    assert client.delete("/integrations/" + str(data["id"])).status_code == 204
+    assert client.get("/integrations").json() == []
+
+
+def test_integration_credential_storage_requires_encryption_key(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "integration_encryption_key", None)
+    create_verified_user(client, "integration-no-key@example.com")
+    response = client.post("/integrations", json={"provider": "upwork", "secret": "test-api-token-value"})
+    assert response.status_code == 503
