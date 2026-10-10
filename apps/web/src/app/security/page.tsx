@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { Copy, Link2, LogOut, ShieldCheck, Unlink } from "lucide-react";
 import WorkspacePage from "@/components/WorkspacePage";
 
-const API=process.env.NEXT_PUBLIC_API_URL??"http://localhost:8000";
+const API="/api/backend";
 type User={email:string;is_verified:boolean;created_at:string};
 type AgentSettings={enabled:boolean;telegram_linked:boolean};
 
