@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from datetime import datetime, timezone
 
 from celery import Celery
 from sqlalchemy import select
@@ -52,7 +53,7 @@ def scan_enabled_sources(self) -> dict[str, int | str]:
             raise self.retry(exc=exc, countdown=30 * (self.request.retries + 1)) from exc
 
         created, updated = persist_projects(db, projects)
-        scan_time = __import__("datetime").datetime.now(__import__("datetime").timezone.utc)
+        scan_time = datetime.now(timezone.utc)
         for subscription in subscriptions:
             channel_name = subscription.identifier.lstrip("@").casefold()
             subscription.last_scan_at = scan_time
