@@ -34,3 +34,5 @@ Thumbs.db
 # Local data
 data/
 *.sqlite3
+*.db
+celerybeat-schedule*
