@@ -28,7 +28,7 @@ Initial repository setup. Integrations and outbound application workflows must b
 Prerequisites: Docker Compose, Python 3.12+, Node.js 20+.
 
 1. Copy `.env.example` to `.env` and fill in local values.
-2. Start infrastructure: `docker compose up -d db redis`.
+2. Start infrastructure and API: `docker compose up --build -d`. The API container applies database migrations before serving requests.
 3. Follow the backend and web instructions in their respective directories.
 4. Run tests with `cd backend && python -m pytest`.
 
