@@ -16,6 +16,9 @@ class Settings(BaseSettings):
     smtp_username: str | None = None
     smtp_password: str | None = None
     email_from: str | None = None
+    telegram_api_id: int | None = None
+    telegram_api_hash: str | None = None
+    telegram_session: str | None = None
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore", case_sensitive=False)
 
