@@ -36,3 +36,6 @@ data/
 *.sqlite3
 *.db
 celerybeat-schedule*
+
+# Cloudflare OpenNext build output
+.open-next/
