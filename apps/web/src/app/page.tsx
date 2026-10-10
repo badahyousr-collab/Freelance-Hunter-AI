@@ -37,6 +37,7 @@ export default function DashboardPage() {
   const [summary, setSummary] = useState<Summary | null>(null);
   const [projects, setProjects] = useState<Project[]>([]);
   const [enabledSources, setEnabledSources] = useState(0);
+  const [lastScan, setLastScan] = useState<string | null>(null);
   const [user, setUser] = useState<CurrentUser | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -58,8 +59,10 @@ export default function DashboardPage() {
         if (!summaryResponse.ok || !projectsResponse.ok || !sourcesResponse.ok) throw new Error("Could not load dashboard data");
         const summaryData = await summaryResponse.json() as Summary;
         const projectData = await projectsResponse.json() as Project[];
-        const sourceData = await sourcesResponse.json() as {is_enabled:boolean}[];
-        if (!cancelled) { setUser(me); setSummary(summaryData); setProjects(projectData); setEnabledSources(sourceData.filter(source => source.is_enabled).length); }
+        const sourceData = await sourcesResponse.json() as {is_enabled:boolean;last_scan_at:string|null}[];
+        const scanTimes = sourceData.map(source => source.last_scan_at).filter((value): value is string => Boolean(value));
+        const latestScan = scanTimes.sort((a,b) => new Date(b).getTime() - new Date(a).getTime())[0] ?? null;
+        if (!cancelled) { setUser(me); setSummary(summaryData); setProjects(projectData); setEnabledSources(sourceData.filter(source => source.is_enabled).length); setLastScan(latestScan); }
       } catch (err) {
         if (!cancelled) setError(err instanceof Error ? err.message : "Could not connect to the API");
       } finally { if (!cancelled) setLoading(false); }
@@ -106,7 +109,7 @@ export default function DashboardPage() {
           <article className="panel activity-panel"><div className="panel-heading"><div><h2>Search activity</h2><p>Project discovery history</p></div><span className="select-button"><Clock3 size={14} /> All time</span></div>
             <div className="empty-chart"><div className="empty-chart-icon"><ChartNoAxesCombined size={24} /></div><strong>{loading ? "Loading activity…" : summary?.projects_found ? "Activity will appear here" : "Your first scan starts here"}</strong><p>Once sources are connected and scans run, this panel will show real discovery activity.</p></div>
           </article>
-          <article className="panel agent-panel"><div className="panel-heading"><div><h2>AI Agent</h2><p>Automation status</p></div><span className="status-pill pending"><i />Setup pending</span></div><div className="agent-orb"><div className="orb-ring"><div className="orb-core"><Bot size={28} /></div></div><span className="orb-spark spark-one">✦</span><span className="orb-spark spark-two">✧</span></div><h3>Ready when you are</h3><p className="agent-description">Connect your first sources and configure your matching preferences to start discovering projects.</p><div className="agent-stats"><div><span>Enabled source configs</span><strong>{enabledSources}</strong></div><div><span>Last scan</span><strong>Not started</strong></div></div><Link className="secondary-button button-link" href="/agent"><Settings2 size={16} />Configure agent</Link></article>
+          <article className="panel agent-panel"><div className="panel-heading"><div><h2>AI Agent</h2><p>Automation status</p></div><span className="status-pill pending"><i />Setup pending</span></div><div className="agent-orb"><div className="orb-ring"><div className="orb-core"><Bot size={28} /></div></div><span className="orb-spark spark-one">✦</span><span className="orb-spark spark-two">✧</span></div><h3>Ready when you are</h3><p className="agent-description">Connect your first sources and configure your matching preferences to start discovering projects.</p><div className="agent-stats"><div><span>Enabled source configs</span><strong>{enabledSources}</strong></div><div><span>Last scan</span><strong>{lastScan ? new Date(lastScan).toLocaleString() : "Not started"}</strong></div></div><Link className="secondary-button button-link" href="/agent"><Settings2 size={16} />Configure agent</Link></article>
         </section>
 
         <section className="panel projects-panel"><div className="panel-heading"><div><h2>Recent projects</h2><p>Latest projects collected from your sources</p></div><Link className="text-link" href="/projects">View all projects <ArrowDownRight size={15} /></Link></div>
