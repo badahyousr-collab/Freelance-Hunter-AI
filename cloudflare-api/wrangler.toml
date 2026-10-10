@@ -1,4 +1,4 @@
-name = "freelance-hunter-api"
+name = "plain-voice-c13ffreelance-hunter-api"
 main = "src/index.ts"
 compatibility_date = "2026-10-10"
 
