@@ -91,8 +91,12 @@ const sourceCatalog = [
 ];
 
 const integrationCatalog = [
-  { provider: "telegram", label: "Telegram bot", description: "Link a Telegram bot to receive notifications." },
-  { provider: "llm", label: "AI provider", description: "AI drafting integration; provider key storage and live calls are not enabled yet." }
+  { provider: "upwork", label: "Upwork", description: "Marketplace account integration is not implemented yet.", setup_note: "Credential storage and account adapter are not enabled yet." },
+  { provider: "kwork", label: "Kwork", description: "Marketplace account integration is not implemented yet.", setup_note: "Credential storage and account adapter are not enabled yet." },
+  { provider: "freelancehunt", label: "Freelancehunt", description: "Marketplace account integration is not implemented yet.", setup_note: "Credential storage and account adapter are not enabled yet." },
+  { provider: "fl_ru", label: "FL.ru", description: "Marketplace account integration is not implemented yet.", setup_note: "Credential storage and account adapter are not enabled yet." },
+  { provider: "telegram", label: "Telegram bot", description: "Telegram notifications integration is not connected yet.", setup_note: "The bot exchange is not deployed yet." },
+  { provider: "llm", label: "AI provider", description: "AI drafting integration is not connected yet.", setup_note: "Provider key storage and live calls are not enabled yet." }
 ];
 
 async function handle(request: Request, env: Env): Promise<Response> {
@@ -210,32 +214,34 @@ async function handle(request: Request, env: Env): Promise<Response> {
 
   if (path === "/profile" && method === "GET") {
     const row = await env.DB.prepare("SELECT * FROM profiles WHERE user_id=?").bind(uid).first<any>();
-    return response(request, row ? { ...row, skills: safeJson(row.skills, []), languages: safeJson(row.languages, ["ru","en"]), excluded_keywords: safeJson(row.excluded_keywords, []) } : {});
+    return response(request, row ? { ...row, skills: safeJson(row.skills, []), languages: safeJson(row.languages, ["ru","en"]), payment_preferences: safeJson(row.payment_preferences, []), excluded_keywords: safeJson(row.excluded_keywords, []) } : {});
   }
   if (path === "/profile" && (method === "PATCH" || method === "PUT")) {
     const input = await body(request);
     const existing = await env.DB.prepare("SELECT * FROM profiles WHERE user_id=?").bind(uid).first<any>() ?? {};
+    const displayName = input.display_name === undefined ? existing.display_name ?? null : (input.display_name === null ? null : String(input.display_name).slice(0,100));
     const skills = JSON.stringify(Array.isArray(input.skills) ? input.skills.slice(0,100) : safeJson(existing.skills, []));
     const languages = JSON.stringify(Array.isArray(input.languages) ? input.languages.slice(0,10) : safeJson(existing.languages, ["ru","en"]));
+    const payments = JSON.stringify(Array.isArray(input.payment_preferences) ? input.payment_preferences.slice(0,20) : safeJson(existing.payment_preferences, []));
     const excluded = JSON.stringify(Array.isArray(input.excluded_keywords) ? input.excluded_keywords.slice(0,100) : safeJson(existing.excluded_keywords, []));
     const budget = input.min_budget === null ? null : Number.isFinite(Number(input.min_budget)) ? Number(input.min_budget) : existing.min_budget ?? null;
     const currency = String(input.currency ?? existing.currency ?? "USD").slice(0,8);
-    await env.DB.prepare("UPDATE profiles SET skills=?,languages=?,excluded_keywords=?,min_budget=?,currency=?,updated_at=datetime('now') WHERE user_id=?").bind(skills,languages,excluded,budget,currency,uid).run();
-    return response(request, { ...existing, skills: safeJson(skills,[]), languages: safeJson(languages,["ru","en"]), excluded_keywords: safeJson(excluded,[]), min_budget: budget, currency });
+    await env.DB.prepare("UPDATE profiles SET display_name=?,skills=?,languages=?,payment_preferences=?,excluded_keywords=?,min_budget=?,currency=?,updated_at=datetime('now') WHERE user_id=?").bind(displayName,skills,languages,payments,excluded,budget,currency,uid).run();
+    return response(request, { ...existing, display_name: displayName, skills: safeJson(skills,[]), languages: safeJson(languages,["ru","en"]), payment_preferences: safeJson(payments,[]), excluded_keywords: safeJson(excluded,[]), min_budget: budget, currency });
   }
 
   if (path === "/agent/settings" && method === "GET") {
     const row = await env.DB.prepare("SELECT * FROM agent_settings WHERE user_id=?").bind(uid).first<any>();
-    return response(request, row ? { ...row, is_enabled: Boolean(row.is_enabled), auto_draft: Boolean(row.auto_draft) } : {});
+    return response(request, row ? { ...row, enabled: Boolean(row.is_enabled), is_enabled: Boolean(row.is_enabled), auto_draft: Boolean(row.auto_draft) } : {});
   }
   if (path === "/agent/settings" && (method === "PATCH" || method === "PUT")) {
     const input = await body(request);
     const old = await env.DB.prepare("SELECT * FROM agent_settings WHERE user_id=?").bind(uid).first<any>() ?? {};
-    const enabled = input.is_enabled === undefined ? Number(old.is_enabled ?? 0) : input.is_enabled ? 1 : 0;
+    const enabled = input.enabled === undefined && input.is_enabled === undefined ? Number(old.is_enabled ?? 0) : (input.enabled ?? input.is_enabled) ? 1 : 0;
     const autoDraft = input.auto_draft === undefined ? Number(old.auto_draft ?? 1) : input.auto_draft ? 1 : 0;
     const score = Math.max(0,Math.min(100,Math.round(Number(input.min_match_score ?? old.min_match_score ?? 60))));
     await env.DB.prepare("UPDATE agent_settings SET is_enabled=?,auto_draft=?,min_match_score=?,updated_at=datetime('now') WHERE user_id=?").bind(enabled,autoDraft,score,uid).run();
-    return response(request, { is_enabled: Boolean(enabled), auto_draft: Boolean(autoDraft), min_match_score: score });
+    return response(request, { enabled: Boolean(enabled), is_enabled: Boolean(enabled), auto_draft: Boolean(autoDraft), min_match_score: score });
   }
   if (path === "/agent/scan" && method === "POST") return response(request, { detail: "The scan queue is not deployed yet. Source configurations are saved, but live collection is not running." }, 501);
 
@@ -255,7 +261,8 @@ async function handle(request: Request, env: Env): Promise<Response> {
     const item = integrationCatalog.find(i => i.provider === provider);
     if (!item) return response(request, { detail: "Unsupported integration." }, 400);
     const label = String(input.label ?? item.label).slice(0,100);
-    // Credentials are intentionally not accepted until encryption/key management is configured.
+    // Never silently discard or store credentials in plaintext. Encryption must be configured before accepting secrets.
+    if (String(input.secret ?? "").trim()) return response(request, { detail: "No credential was saved. Secure encrypted credential storage must be configured before this integration can be connected." }, 503);
     await env.DB.prepare("INSERT INTO integrations (user_id,provider,label,status,credentials_json) VALUES (?,?,?,?, '{}') ON CONFLICT(user_id,provider) DO UPDATE SET label=excluded.label").bind(uid,provider,label,"not_connected").run();
     return response(request, await env.DB.prepare("SELECT id,provider,label,status,created_at FROM integrations WHERE user_id=? AND provider=?").bind(uid,provider).first(), 201);
   }
