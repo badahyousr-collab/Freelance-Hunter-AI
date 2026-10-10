@@ -83,3 +83,14 @@ def test_project_ingestion_is_idempotent() -> None:
         assert db.scalar(select(func.count(Project.id))) == 1
     Base.metadata.drop_all(bind=engine)
     engine.dispose()
+
+
+def test_budget_filter_rejects_unknown_currency() -> None:
+    project = parse_telegram_post(
+        "@example_jobs",
+        SimpleNamespace(id=9, text="Python developer needed. Budget: 5000", date=None),
+    )
+    assert project is not None
+    result = score_project(project, MatchProfile(skills=("Python",), min_budget=100, currency="USD"))
+    assert result.eligible is False
+    assert result.rejected_reason == "Budget is unknown" or result.rejected_reason == "Budget currency is unknown"
