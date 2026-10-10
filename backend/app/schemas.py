@@ -113,3 +113,23 @@ class SourceCatalogItem(BaseModel):
     kind: str
     capabilities: list[str]
     setup_note: str
+
+
+class TelegramLinkCodeResponse(BaseModel):
+    code: str
+    expires_in_seconds: int
+
+
+class TelegramLinkRequest(BaseModel):
+    code: str = Field(min_length=20, max_length=128)
+    telegram_user_id: int = Field(gt=0)
+
+
+class TelegramAgentControlRequest(BaseModel):
+    telegram_user_id: int = Field(gt=0)
+    enabled: bool
+
+
+class AgentSettingsResponse(BaseModel):
+    enabled: bool
+    telegram_linked: bool
