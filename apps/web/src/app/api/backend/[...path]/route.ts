@@ -1,0 +1,43 @@
+import { NextRequest } from "next/server";
+
+export const dynamic = "force-dynamic";
+
+type RouteContext = { params: Promise<{ path: string[] }> };
+
+async function proxy(request: NextRequest, context: RouteContext): Promise<Response> {
+  const upstreamBase = process.env.CLOUDFLARE_API_URL?.trim().replace(/\/+$/, "");
+  if (!upstreamBase) {
+    return Response.json(
+      { detail: "API is not configured yet. Set CLOUDFLARE_API_URL in the frontend Worker environment." },
+      { status: 503 }
+    );
+  }
+
+  const { path } = await context.params;
+  const incoming = new URL(request.url);
+  const target = new URL(`${upstreamBase}/${path.map(encodeURIComponent).join("/")}`);
+  target.search = incoming.search;
+
+  const headers = new Headers();
+  for (const name of ["accept", "content-type", "cookie", "authorization"]) {
+    const value = request.headers.get(name);
+    if (value) headers.set(name, value);
+  }
+
+  const init: RequestInit = { method: request.method, headers, redirect: "manual" };
+  if (request.method !== "GET" && request.method !== "HEAD") init.body = await request.arrayBuffer();
+
+  const upstream = await fetch(target, init);
+  const responseHeaders = new Headers();
+  for (const name of ["content-type", "set-cookie", "cache-control", "www-authenticate"]) {
+    const value = upstream.headers.get(name);
+    if (value) responseHeaders.set(name, value);
+  }
+  return new Response(upstream.body, { status: upstream.status, headers: responseHeaders });
+}
+
+export const GET = proxy;
+export const POST = proxy;
+export const PUT = proxy;
+export const PATCH = proxy;
+export const DELETE = proxy;
