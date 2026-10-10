@@ -1,12 +1,13 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
-import { Activity, Bot, ChartNoAxesCombined, Command, LayoutDashboard, Search, Send, Settings2, ShieldCheck, Workflow } from "lucide-react";
+import { Activity, Bot, ChartNoAxesCombined, Command, LayoutDashboard, Plug, Search, Send, Settings2, ShieldCheck, Workflow } from "lucide-react";
 
 const nav = [
   { href: "/", label: "Overview", icon: LayoutDashboard },
   { href: "/projects", label: "Projects", icon: Search },
   { href: "/applications", label: "Applications", icon: Send },
   { href: "/sources", label: "Sources", icon: Workflow },
+  { href: "/integrations", label: "Integrations", icon: Plug },
   { href: "/agent", label: "AI Agent", icon: Bot },
   { href: "/analytics", label: "Analytics", icon: ChartNoAxesCombined },
   { href: "/settings", label: "Settings", icon: Settings2 },
