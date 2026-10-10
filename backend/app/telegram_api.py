@@ -9,8 +9,9 @@ from sqlalchemy.orm import Session
 
 from app.auth import get_current_user
 from app.config import settings
+from app.tasks import celery_app
 from app.database import get_db
-from app.models import Application, Project, TelegramLinkCode, User
+from app.models import Application, Project, TelegramLinkCode, User, UserSource
 from app.project_scope import project_scope_conditions
 from app.schemas import AgentSettingsResponse, DashboardSummary, TelegramAgentControlRequest, TelegramLinkCodeResponse, TelegramLinkRequest
 
@@ -131,3 +132,22 @@ def update_agent_settings(
 def unlink_telegram(user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> None:
     user.telegram_user_id = None
     db.commit()
+
+
+@router.post("/agent/scan", status_code=status.HTTP_202_ACCEPTED)
+def request_agent_scan(user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> dict[str, str]:
+    if not user.agent_enabled:
+        raise HTTPException(status_code=409, detail="Enable the agent before requesting a scan")
+    active_sources = db.scalar(
+        select(func.count(UserSource.id)).where(
+            UserSource.user_id == user.id,
+            UserSource.source == "telegram",
+            UserSource.is_enabled.is_(True),
+        )
+    ) or 0
+    if active_sources == 0:
+        raise HTTPException(status_code=409, detail="Add and enable a Telegram channel source before scanning")
+    if not (settings.telegram_api_id and settings.telegram_api_hash and settings.telegram_session):
+        raise HTTPException(status_code=503, detail="Telegram source session is not configured on the server")
+    task = celery_app.send_task("app.tasks.scan_enabled_sources", kwargs={"user_id": user.id})
+    return {"status": "queued", "task_id": task.id, "message": "Scan queued; results will appear after the worker completes it."}
