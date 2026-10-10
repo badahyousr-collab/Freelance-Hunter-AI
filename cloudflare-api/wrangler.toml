@@ -1,0 +1,12 @@
+name = "freelance-hunter-api"
+main = "src/index.ts"
+compatibility_date = "2026-10-10"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "freelance-hunter-db"
+database_id = "1ec92312-fa9f-446a-a2a2-197c3392711a"
+migrations_dir = "migrations"
+
+[vars]
+APP_ENV = "production"
