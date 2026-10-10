@@ -1,5 +1,6 @@
 from functools import lru_cache
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -27,6 +28,15 @@ class Settings(BaseSettings):
     integration_encryption_key: str | None = None
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore", case_sensitive=False, env_ignore_empty=True)
+
+    @model_validator(mode="after")
+    def validate_production_secrets(self) -> "Settings":
+        if self.app_env.lower() not in {"development", "test"}:
+            if self.jwt_secret == "local-only-change-this-secret-before-deploying" or "replace-with" in self.jwt_secret:
+                raise ValueError("JWT_SECRET must be set to a unique secret outside development")
+            if self.bot_api_secret == "development-only-change-me" or "replace-with" in self.bot_api_secret:
+                raise ValueError("BOT_API_SECRET must be set to a unique secret outside development")
+        return self
 
 
 @lru_cache
