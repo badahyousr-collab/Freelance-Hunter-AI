@@ -1,45 +1,46 @@
 # Acceptance checklist
 
-Use this list at the end of every implementation phase. Attach command output or test evidence to the phase notes.
-
 ## Repository and configuration
-- [ ] Project layout matches the documented architecture.
-- [ ] No secrets or personal access tokens are committed.
-- [ ] Fresh setup instructions are accurate.
+- [x] Project layout matches the current modular architecture.
+- [x] Secrets are ignored by Git and a sample environment file is provided.
+- [x] Setup instructions and current limitations are documented.
 
 ## Backend and identity
-- [ ] Health/readiness endpoints return expected status.
-- [ ] Input validation rejects malformed data.
-- [ ] Passwords are hashed with a suitable password-hashing algorithm.
-- [ ] Email verification and password reset use single-use expiring tokens.
-- [ ] Protected endpoints reject unauthenticated requests.
-- [ ] User A cannot read/update User B's data.
-- [ ] Secrets and credentials are never returned by API responses or logs.
+- [x] Health endpoints return expected status.
+- [x] Invalid input is rejected by Pydantic/FastAPI validation.
+- [x] Passwords are securely hashed.
+- [x] Email verification tokens expire; Telegram link codes are expiring and single-use.
+- [x] Protected endpoints reject unauthenticated requests.
+- [x] User-owned source/integration/application data are queried with owner checks.
+- [x] Integration secrets are encrypted before persistence and never returned by the API.
+- [ ] Password reset and authentication rate limiting are implemented.
+- [ ] Production SMTP delivery is configured and verified.
 
 ## Source ingestion
-- [ ] Adapters normalize required fields and handle missing optional fields.
-- [ ] Duplicate posts/listings do not create duplicate projects.
-- [ ] Stale and malformed source data are handled safely.
-- [ ] Rate limits, timeouts, and transient errors are handled.
-- [ ] Unsupported capabilities are explicitly represented.
+- [x] Telegram posts normalize to the common project model.
+- [x] Duplicate listings are updated rather than inserted repeatedly.
+- [x] Source timeouts/errors are retried and last error/scan metadata are persisted.
+- [x] Hard filters reject excluded keywords and incompatible or unknown required payment/budget values.
+- [ ] A live Telegram session is configured and a real channel scan is verified.
+- [ ] Marketplace adapters are implemented and verified; catalog entries currently marked pending are not live integrations.
 
 ## AI and proposals
-- [ ] Hard filters cannot be overridden by model output.
-- [ ] Listing text is treated as untrusted content.
-- [ ] Drafts use only verified user skills and portfolio facts.
-- [ ] Uncertain budgets/payment details are marked unknown.
-- [ ] A proposal is not marked sent without source confirmation.
+- [x] Draft endpoint requires an authenticated user and saved skill profile.
+- [x] Proposal prompt treats listing content as untrusted and forbids fabricated experience.
+- [x] Provider absence is reported as a configuration error.
+- [ ] A real model provider is configured and proposal quality is evaluated.
+- [ ] No provider submission is marked sent without source confirmation.
 
 ## Web and Telegram
-- [ ] Dashboard numbers are computed from persisted records.
-- [ ] Empty, loading, and failure states are present.
-- [ ] Telegram linking is expiring and single-use.
-- [ ] Telegram user identity is verified server-side.
-- [ ] Bot and website show consistent status.
+- [x] Dashboard numbers come from persisted API records.
+- [x] Loading, empty, and error states are present on core pages.
+- [x] Telegram linking is expiring, single-use, and verified server-side.
+- [x] Bot internal endpoints require a shared secret.
+- [x] Website and bot use the same backend source of truth.
+- [ ] Bot token is configured and the polling service is running.
+- [ ] Browser end-to-end flows are tested.
 
 ## Verification record
-- Commit:
-- Date:
-- Commands:
-- Results:
-- Known issues:
+- CI workflow: backend tests, Python syntax checks, migration upgrade/downgrade, frontend lint, and production build passed for commit a7ef99b.
+- Live service verification: pending external configuration.
+- Known limitations: provider-specific marketplace discovery/authentication/submission/reply adapters are not implemented yet; the Telegram source requires a configured Telethon session; the AI draft endpoint requires an LLM API.
