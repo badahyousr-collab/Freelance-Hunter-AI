@@ -6,7 +6,10 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "build:worker": "opennextjs-cloudflare build",
+    "preview:worker": "opennextjs-cloudflare build && opennextjs-cloudflare preview",
+    "deploy:worker": "opennextjs-cloudflare build && opennextjs-cloudflare deploy"
   },
   "dependencies": {
     "next": "^15.1.0",
@@ -21,6 +24,8 @@
     "eslint": "^9.0.0",
     "eslint-config-next": "^15.1.0",
     "typescript": "^5.7.0",
-    "@eslint/eslintrc": "^3.2.0"
+    "@eslint/eslintrc": "^3.2.0",
+    "@opennextjs/cloudflare": "latest",
+    "wrangler": "latest"
   }
 }
