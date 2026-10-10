@@ -8,7 +8,7 @@ import {
   Search, Send, Settings2, ShieldCheck, Sparkles, Workflow,
 } from "lucide-react";
 
-const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+const API = "/api/backend";
 type Summary = { projects_found: number; matched_projects: number; proposals_sent: number; client_replies: number };
 type Project = {
   id: number; source: string; source_project_id: string; url: string; title: string;
