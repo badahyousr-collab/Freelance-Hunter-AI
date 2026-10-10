@@ -86,11 +86,11 @@ def test_project_ingestion_is_idempotent() -> None:
 
 
 def test_budget_filter_rejects_unknown_currency() -> None:
-    project = parse_telegram_post(
-        "@example_jobs",
-        SimpleNamespace(id=9, text="Python developer needed. Budget: 5000", date=None),
+    project = NormalizedProject(
+        source="telegram", source_project_id="example_jobs:9", url="https://t.me/example_jobs/9",
+        title="Python developer needed", description="Build an API", language="en",
+        budget_min=100, budget_max=5000, currency=None,
     )
-    assert project is not None
     result = score_project(project, MatchProfile(skills=("Python",), min_budget=100, currency="USD"))
     assert result.eligible is False
-    assert result.rejected_reason == "Budget is unknown" or result.rejected_reason == "Budget currency is unknown"
+    assert result.rejected_reason == "Budget currency is unknown"
