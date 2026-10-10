@@ -19,8 +19,10 @@ CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);
 
 CREATE TABLE IF NOT EXISTS profiles (
   user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  display_name TEXT,
   skills TEXT NOT NULL DEFAULT '[]',
   languages TEXT NOT NULL DEFAULT '["ru","en"]',
+  payment_preferences TEXT NOT NULL DEFAULT '[]',
   min_budget REAL,
   currency TEXT NOT NULL DEFAULT 'USD',
   excluded_keywords TEXT NOT NULL DEFAULT '[]',
