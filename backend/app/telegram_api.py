@@ -127,6 +127,6 @@ def update_agent_settings(
 
 
 @router.delete("/telegram/link", status_code=status.HTTP_204_NO_CONTENT)
-def unlink_telegram(response: Response, user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> None:
+def unlink_telegram(user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> None:
     user.telegram_user_id = None
     db.commit()
