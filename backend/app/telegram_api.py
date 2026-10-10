@@ -11,6 +11,7 @@ from app.auth import get_current_user
 from app.config import settings
 from app.database import get_db
 from app.models import Application, Project, TelegramLinkCode, User
+from app.project_scope import project_scope_conditions
 from app.schemas import AgentSettingsResponse, DashboardSummary, TelegramAgentControlRequest, TelegramLinkCodeResponse, TelegramLinkRequest
 
 router = APIRouter(tags=["telegram"])
@@ -83,7 +84,7 @@ def telegram_summary(
     user = db.scalar(select(User).where(User.telegram_user_id == telegram_user_id))
     if user is None:
         raise HTTPException(status_code=404, detail="Telegram account is not linked; use /link CODE first")
-    projects = db.scalar(select(func.count(Project.id))) or 0
+    projects = db.scalar(select(func.count(Project.id)).where(project_scope_conditions(db, user))) or 0
     sent = db.scalar(select(func.count(Application.id)).where(Application.user_id == user.id, Application.status.in_(["sent", "replied", "closed"]))) or 0
     replies = db.scalar(select(func.count(Application.id)).where(Application.user_id == user.id, Application.replied_at.is_not(None))) or 0
     from app.models import ProjectMatch
