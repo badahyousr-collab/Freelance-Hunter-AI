@@ -4,7 +4,7 @@ import { FormEvent, useEffect, useState } from "react";
 import { KeyRound, Plug, Trash2 } from "lucide-react";
 import WorkspacePage from "@/components/WorkspacePage";
 
-const API=process.env.NEXT_PUBLIC_API_URL??"http://localhost:8000";
+const API="/api/backend";
 type Catalog={provider:string;label:string;status:string;setup_note:string};
 type Integration={id:number;provider:string;auth_method:string;status:string;created_at:string;updated_at:string};
 
