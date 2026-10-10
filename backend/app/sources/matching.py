@@ -32,6 +32,8 @@ def score_project(project: NormalizedProject, profile: MatchProfile) -> MatchRes
     if profile.min_budget is not None:
         if project.budget_max is None:
             return MatchResult(False, 0, (), "Budget is unknown")
+        if profile.currency and not project.currency:
+            return MatchResult(False, 0, (), "Budget currency is unknown")
         if profile.currency and project.currency and project.currency.upper() != profile.currency.upper():
             return MatchResult(False, 0, (), "Budget currency does not match profile")
         if project.budget_max < profile.min_budget:
