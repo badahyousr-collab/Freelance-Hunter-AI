@@ -1,6 +1,14 @@
 from datetime import datetime, timezone
 from types import SimpleNamespace
 
+from sqlalchemy import create_engine, select, func
+from sqlalchemy.orm import Session
+from sqlalchemy.pool import StaticPool
+
+from app.database import Base
+from app.ingestion import persist_projects
+from app.models import Project
+from app.sources.base import NormalizedProject
 from app.sources.matching import MatchProfile, score_project
 from app.sources.telegram_posts import parse_telegram_post
 
@@ -60,3 +68,18 @@ def test_relevant_project_gets_explainable_score() -> None:
     assert result.eligible is True
     assert 0 <= result.score <= 100
     assert any("Skill match" in reason for reason in result.reasons)
+
+
+def test_project_ingestion_is_idempotent() -> None:
+    engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
+    Base.metadata.create_all(bind=engine)
+    project = NormalizedProject(
+        source="telegram", source_project_id="channel:12", url="https://t.me/channel/12",
+        title="Python bot developer", description="Build a Telegram bot", language="en",
+    )
+    with Session(engine) as db:
+        assert persist_projects(db, [project]) == (1, 0)
+        assert persist_projects(db, [project]) == (0, 1)
+        assert db.scalar(select(func.count(Project.id))) == 1
+    Base.metadata.drop_all(bind=engine)
+    engine.dispose()
