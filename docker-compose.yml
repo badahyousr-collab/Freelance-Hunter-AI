@@ -38,6 +38,7 @@ services:
         condition: service_healthy
 
   worker:
+    profiles: ["agent"]
     build: ./backend
     env_file: .env
     environment:
@@ -51,6 +52,7 @@ services:
         condition: service_healthy
 
   scheduler:
+    profiles: ["agent"]
     build: ./backend
     env_file: .env
     environment:
@@ -62,5 +64,15 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+  bot:
+    profiles: ["bot"]
+    build: ./apps/bot
+    env_file: .env
+    environment:
+      API_BASE_URL: http://api:8000
+    depends_on:
+      api:
+        condition: service_started
+
 volumes:
   postgres_data:
