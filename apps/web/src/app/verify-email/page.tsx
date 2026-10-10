@@ -1,13 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { CheckCircle2, CircleAlert, Command, LoaderCircle } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
-export default function VerifyEmailPage() {
+function VerifyEmailContent() {
   const params = useSearchParams();
   const token = params.get("token");
   const [state, setState] = useState<"loading" | "success" | "error">("loading");
@@ -25,4 +25,8 @@ export default function VerifyEmailPage() {
 
   const Icon = state === "success" ? CheckCircle2 : state === "error" ? CircleAlert : LoaderCircle;
   return <main className="auth-shell"><section className="auth-card verify-card"><Link href="/" className="auth-brand"><span className="brand-mark"><Command size={21} /></span><span>Freelance<span className="brand-accent">Hunter</span><small>AI WORKSPACE</small></span></Link><div className={`verify-icon ${state}`}><Icon size={28} /></div><h1>{state === "success" ? "Email verified" : state === "error" ? "Verification failed" : "Verifying your email"}</h1><p className="auth-subtitle">{message}</p>{state === "success" && <Link className="primary-button auth-submit button-link" href="/login">Continue to sign in</Link>}{state === "error" && <Link className="secondary-button button-link" href="/register">Back to registration</Link>}</section></main>;
+}
+
+export default function VerifyEmailPage() {
+  return <Suspense fallback={<main className="auth-shell"><section className="auth-card"><LoaderCircle className="spin" size={24} /><p className="auth-subtitle">Loading email verification…</p></section></main>}><VerifyEmailContent /></Suspense>;
 }
