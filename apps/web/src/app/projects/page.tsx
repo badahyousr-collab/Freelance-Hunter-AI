@@ -5,7 +5,7 @@ import Link from "next/link";
 import { ArrowUpRight, Search, SlidersHorizontal } from "lucide-react";
 import WorkspacePage from "@/components/WorkspacePage";
 
-const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+const API = "/api/backend";
 type Project = { id:number; source:string; url:string; title:string; description:string; language:string|null; budget_min:number|null; budget_max:number|null; currency:string|null; payment_method:string|null; discovered_at:string; match_score:number|null; match_reasons:string[] };
 
 function budget(p: Project) {
