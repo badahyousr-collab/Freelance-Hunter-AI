@@ -5,7 +5,7 @@ import Link from "next/link";
 import { CheckCircle2, CircleAlert, Command, LoaderCircle } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 
-const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+const API = "/api/backend";
 
 function VerifyEmailContent() {
   const params = useSearchParams();
