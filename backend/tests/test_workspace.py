@@ -173,3 +173,19 @@ def test_integration_credential_storage_requires_encryption_key(client: TestClie
     create_verified_user(client, "integration-no-key@example.com")
     response = client.post("/integrations", json={"provider": "upwork", "secret": "test-api-token-value"})
     assert response.status_code == 503
+
+
+def test_manual_scan_reports_missing_prerequisites(client: TestClient) -> None:
+    create_verified_user(client, "manual-scan@example.com")
+    disabled = client.post("/agent/scan")
+    assert disabled.status_code == 409
+
+    enabled = client.patch("/agent/settings", json={"enabled": True})
+    assert enabled.status_code == 200
+    no_source = client.post("/agent/scan")
+    assert no_source.status_code == 409
+
+    added = client.post("/sources", json={"source": "telegram", "identifier": "python_jobs"})
+    assert added.status_code == 201
+    missing_session = client.post("/agent/scan")
+    assert missing_session.status_code == 503
