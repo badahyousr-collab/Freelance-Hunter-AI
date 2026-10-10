@@ -3,20 +3,23 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.auth import router as auth_router
+from app.config import settings
+
 app = FastAPI(
-    title="Freelance Hunter AI API",
+    title=settings.app_name + " API",
     version="0.1.0",
     description="API for freelance project discovery, matching, and proposal tracking.",
 )
 
-# Local-development defaults only. Production origins must be explicitly configured.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=[settings.web_origin],
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type"],
 )
+app.include_router(auth_router)
 
 
 @app.get("/health", tags=["operations"])
@@ -27,5 +30,5 @@ def health() -> dict[str, str]:
 
 @app.get("/ready", tags=["operations"])
 def ready() -> dict[str, str]:
-    """Initial readiness endpoint; database dependency checks will be added with persistence."""
+    """Basic process readiness; dependency checks are added with operational hardening."""
     return {"status": "ready"}
