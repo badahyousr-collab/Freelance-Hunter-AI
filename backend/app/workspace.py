@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.auth import get_current_user
 from app.database import get_db
 from app.models import Application, Project, ProjectMatch, User, UserProfile, UserSource
+from app.project_scope import project_scope_conditions
 from app.schemas import (
     ApplicationCreate,
     ApplicationResponse,
@@ -64,7 +65,7 @@ def list_projects(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> list[ProjectResponse]:
-    statement = select(Project).order_by(Project.discovered_at.desc()).limit(limit).offset(offset)
+    statement = select(Project).where(project_scope_conditions(db, user)).order_by(Project.discovered_at.desc()).limit(limit).offset(offset)
     if source:
         statement = statement.where(Project.source == source)
     if q:
@@ -86,7 +87,7 @@ def list_projects(
 
 @router.get("/dashboard/summary", response_model=DashboardSummary)
 def dashboard_summary(user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> DashboardSummary:
-    projects_found = db.scalar(select(func.count(Project.id))) or 0
+    projects_found = db.scalar(select(func.count(Project.id)).where(project_scope_conditions(db, user))) or 0
     matched = db.scalar(select(func.count(ProjectMatch.id)).where(ProjectMatch.user_id == user.id)) or 0
     sent = db.scalar(
         select(func.count(Application.id)).where(
