@@ -21,6 +21,7 @@
 - [x] Duplicate listings are updated rather than inserted repeatedly.
 - [x] Source timeouts/errors are retried and last error/scan metadata are persisted.
 - [x] Hard filters reject excluded keywords and incompatible or unknown required payment/budget values.
+- [x] An authenticated manual scan endpoint queues user-scoped work and reports missing prerequisites.
 - [ ] A live Telegram session is configured and a real channel scan is verified.
 - [ ] Marketplace adapters are implemented and verified; catalog entries currently marked pending are not live integrations.
 
@@ -41,6 +42,6 @@
 - [ ] Browser end-to-end flows are tested.
 
 ## Verification record
-- CI workflow: backend tests, Python syntax checks, migration upgrade/downgrade, frontend lint, and production build passed for commit a7ef99b.
+- CI workflow: backend tests, Python syntax checks, migration upgrade/downgrade, frontend lint, and production build passed for commit 03f7231.
 - Live service verification: pending external configuration.
 - Known limitations: provider-specific marketplace discovery/authentication/submission/reply adapters are not implemented yet; the Telegram source requires a configured Telethon session; the AI draft endpoint requires an LLM API.
