@@ -2,7 +2,7 @@ import smtplib
 from email.message import EmailMessage
 
 import jwt
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Cookie, Depends, HTTPException, Response, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.database import get_db
 from app.models import User
-from app.schemas import LoginRequest, RegisterRequest, RegisterResponse, TokenResponse, UserResponse, VerifyEmailRequest
+from app.schemas import LoginRequest, RegisterRequest, RegisterResponse, UserResponse, VerifyEmailRequest
 from app.security import create_token, decode_token, hash_password, verify_password
 
 router = APIRouter(prefix="/auth", tags=["authentication"])
@@ -83,8 +83,8 @@ def verify_email(payload: VerifyEmailRequest, db: Session = Depends(get_db)) -> 
     return {"message": "Email verified successfully"}
 
 
-@router.post("/login", response_model=TokenResponse)
-def login(payload: LoginRequest, db: Session = Depends(get_db)) -> TokenResponse:
+@router.post("/login")
+def login(payload: LoginRequest, response: Response, db: Session = Depends(get_db)) -> dict[str, str]:
     email = str(payload.email).strip().lower()
     user = db.scalar(select(User).where(User.email == email))
     if user is None or not verify_password(payload.password, user.password_hash):
@@ -94,17 +94,34 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)) -> TokenResponse
     if not user.is_verified:
         raise HTTPException(status_code=403, detail="Verify your email before signing in")
     token = create_token(str(user.id), "access", settings.access_token_minutes)
-    return TokenResponse(access_token=token)
+    response.set_cookie(
+        key="access_token",
+        value=token,
+        httponly=True,
+        secure=settings.app_env.lower() not in {"development", "test"},
+        samesite="lax",
+        max_age=settings.access_token_minutes * 60,
+        path="/",
+    )
+    return {"message": "Signed in successfully"}
+
+
+@router.post("/logout")
+def logout(response: Response) -> dict[str, str]:
+    response.delete_cookie(key="access_token", path="/", httponly=True, samesite="lax")
+    return {"message": "Signed out successfully"}
 
 
 def get_current_user(
     credentials: HTTPAuthorizationCredentials | None = Depends(bearer),
+    access_token: str | None = Cookie(default=None),
     db: Session = Depends(get_db),
 ) -> User:
-    if credentials is None:
+    token = credentials.credentials if credentials is not None else access_token
+    if not token:
         raise HTTPException(status_code=401, detail="Authentication required")
     try:
-        claims = decode_token(credentials.credentials, "access")
+        claims = decode_token(token, "access")
         user_id = int(claims["sub"])
     except (jwt.InvalidTokenError, ValueError, TypeError):
         raise HTTPException(status_code=401, detail="Invalid or expired access token") from None
