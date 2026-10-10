@@ -5,7 +5,7 @@ import Link from "next/link";
 import { Bot, CheckCircle2, CircleAlert, Pause, Play, Settings2, Workflow } from "lucide-react";
 import WorkspacePage from "@/components/WorkspacePage";
 
-const API=process.env.NEXT_PUBLIC_API_URL??"http://localhost:8000";
+const API="/api/backend";
 type Profile={skills:string[];languages:string[];payment_preferences:string[];min_budget:number|null};
 type Source={is_enabled:boolean};
 type AgentSettings={enabled:boolean;telegram_linked:boolean};
