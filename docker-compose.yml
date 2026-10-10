@@ -36,5 +36,31 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+
+  worker:
+    build: ./backend
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://fhai:fhai_local_only@db:5432/fhai
+      REDIS_URL: redis://redis:6379/0
+    command: ["celery", "-A", "app.tasks:celery_app", "worker", "--loglevel=INFO"]
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  scheduler:
+    build: ./backend
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://fhai:fhai_local_only@db:5432/fhai
+      REDIS_URL: redis://redis:6379/0
+    command: ["celery", "-A", "app.tasks:celery_app", "beat", "--loglevel=INFO"]
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
 volumes:
   postgres_data:
