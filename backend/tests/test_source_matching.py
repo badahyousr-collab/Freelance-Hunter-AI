@@ -1,8 +1,8 @@
 from datetime import datetime, timezone
 from types import SimpleNamespace
 
-from sources.matching import MatchProfile, score_project
-from sources.telegram_posts import parse_telegram_post
+from app.sources.matching import MatchProfile, score_project
+from app.sources.telegram_posts import parse_telegram_post
 
 
 def test_telegram_post_is_normalized_with_budget_and_payment() -> None:
