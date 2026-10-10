@@ -8,6 +8,7 @@ from app.config import settings
 from app.workspace import router as workspace_router
 from app.telegram_api import router as telegram_router
 from app.ai_api import router as ai_router
+from app.integrations_api import router as integrations_router
 
 app = FastAPI(
     title=settings.app_name + " API",
@@ -26,6 +27,7 @@ app.include_router(auth_router)
 app.include_router(workspace_router)
 app.include_router(telegram_router)
 app.include_router(ai_router)
+app.include_router(integrations_router)
 
 
 @app.get("/health", tags=["operations"])
