@@ -149,5 +149,8 @@ def request_agent_scan(user: User = Depends(get_current_user), db: Session = Dep
         raise HTTPException(status_code=409, detail="Add and enable a Telegram channel source before scanning")
     if not (settings.telegram_api_id and settings.telegram_api_hash and settings.telegram_session):
         raise HTTPException(status_code=503, detail="Telegram source session is not configured on the server")
-    task = celery_app.send_task("app.tasks.scan_enabled_sources", kwargs={"user_id": user.id})
+    try:
+        task = celery_app.send_task("app.tasks.scan_enabled_sources", kwargs={"user_id": user.id})
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail="Background worker queue is unavailable") from exc
     return {"status": "queued", "task_id": task.id, "message": "Scan queued; results will appear after the worker completes it."}
