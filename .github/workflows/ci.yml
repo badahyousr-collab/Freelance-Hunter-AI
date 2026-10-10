@@ -20,6 +20,7 @@ jobs:
       - run: python -m pip install -e "./backend[dev]"
       - run: python -m pytest backend/tests
       - run: python -m compileall -q backend/app
+      - run: python -m py_compile apps/bot/bot.py backend/scripts/generate_telegram_session.py backend/scripts/generate_integration_key.py
       - name: Verify database migrations
         run: cd backend && DATABASE_URL=sqlite:///./migration-test.db alembic upgrade head && DATABASE_URL=sqlite:///./migration-test.db alembic downgrade base
   web:
