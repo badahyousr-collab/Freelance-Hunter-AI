@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.auth import get_current_user
 from app.database import get_db
-from app.models import Application, Project, ProjectMatch, User, UserProfile
+from app.models import Application, Project, ProjectMatch, User, UserProfile, UserSource
 from app.schemas import (
     ApplicationCreate,
     ApplicationResponse,
@@ -14,6 +14,10 @@ from app.schemas import (
     ProfileResponse,
     ProfileUpdate,
     ProjectResponse,
+    SourceCatalogItem,
+    SourceCreate,
+    SourceResponse,
+    SourceUpdate,
 )
 
 router = APIRouter(tags=["workspace"])
@@ -160,3 +164,92 @@ def create_application_draft(
         replied_at=application.replied_at,
         project=ProjectResponse.model_validate(project, from_attributes=True),
     )
+
+
+_SOURCE_CATALOG = [
+    SourceCatalogItem(source="telegram", label="Telegram channels", kind="telegram", capabilities=["discovery"], setup_note="Add a public channel username, for example @python_jobs. Telegram API session setup is required on the server."),
+    SourceCatalogItem(source="kwork", label="Kwork", kind="marketplace", capabilities=["discovery"], setup_note="Discovery adapter is not connected yet; source setup does not imply a working integration."),
+    SourceCatalogItem(source="fl_ru", label="FL.ru", kind="marketplace", capabilities=["discovery"], setup_note="Discovery adapter is not connected yet; source setup does not imply a working integration."),
+    SourceCatalogItem(source="freelancer", label="Freelancer.com", kind="marketplace", capabilities=["discovery"], setup_note="Discovery adapter is not connected yet; source setup does not imply a working integration."),
+    SourceCatalogItem(source="upwork", label="Upwork", kind="marketplace", capabilities=["discovery"], setup_note="Discovery adapter is not connected yet; source setup does not imply a working integration."),
+]
+
+
+@router.get("/sources/catalog", response_model=list[SourceCatalogItem])
+def source_catalog(user: User = Depends(get_current_user)) -> list[SourceCatalogItem]:
+    return _SOURCE_CATALOG
+
+
+@router.get("/sources", response_model=list[SourceResponse])
+def list_sources(user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> list[SourceResponse]:
+    rows = db.scalars(
+        select(UserSource).where(UserSource.user_id == user.id).order_by(UserSource.created_at.desc())
+    ).all()
+    return [SourceResponse.model_validate(row, from_attributes=True) for row in rows]
+
+
+@router.post("/sources", response_model=SourceResponse, status_code=status.HTTP_201_CREATED)
+def create_source(
+    payload: SourceCreate,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> SourceResponse:
+    source = payload.source
+    identifier = (payload.identifier or "").strip()
+    if source == "telegram":
+        identifier = identifier.lstrip("@")
+        if not identifier:
+            raise HTTPException(status_code=422, detail="A public Telegram channel username is required")
+        if not all(ch.isalnum() or ch == "_" for ch in identifier):
+            raise HTTPException(status_code=422, detail="Telegram channel username may contain letters, digits, and underscores")
+    else:
+        identifier = identifier or source
+    existing = db.scalar(
+        select(UserSource).where(
+            UserSource.user_id == user.id,
+            UserSource.source == source,
+            UserSource.identifier == identifier,
+        )
+    )
+    if existing:
+        raise HTTPException(status_code=409, detail="This source is already configured")
+    row = UserSource(
+        user_id=user.id,
+        source=source,
+        identifier=identifier,
+        is_enabled=payload.is_enabled,
+        status="configured" if source == "telegram" else "pending_integration",
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return SourceResponse.model_validate(row, from_attributes=True)
+
+
+@router.patch("/sources/{source_id}", response_model=SourceResponse)
+def update_source(
+    source_id: int,
+    payload: SourceUpdate,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> SourceResponse:
+    row = db.scalar(select(UserSource).where(UserSource.id == source_id, UserSource.user_id == user.id))
+    if row is None:
+        raise HTTPException(status_code=404, detail="Source configuration not found")
+    row.is_enabled = payload.is_enabled
+    db.commit()
+    db.refresh(row)
+    return SourceResponse.model_validate(row, from_attributes=True)
+
+
+@router.delete("/sources/{source_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_source(
+    source_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> None:
+    row = db.scalar(select(UserSource).where(UserSource.id == source_id, UserSource.user_id == user.id))
+    if row is None:
+        raise HTTPException(status_code=404, detail="Source configuration not found")
+    db.delete(row)
+    db.commit()
