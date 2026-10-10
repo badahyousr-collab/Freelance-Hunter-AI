@@ -44,3 +44,9 @@
 .sub-muted { color: var(--muted); font-size: 10px; }
 @media (max-width: 760px) { .sub-sidebar { width: 65px; padding: 16px 8px; } .sub-sidebar .brand > span:last-child,.sub-sidebar .workspace-label,.sub-sidebar .nav-item { font-size: 0; } .sub-sidebar .nav-item { justify-content: center; padding: 0; } .sub-sidebar .nav-item svg { flex-shrink: 0; } .sub-sidebar-note { display: none; } .sub-content { padding: 0 15px 20px; } .sub-form-grid { grid-template-columns: 1fr; } }
 @media (max-width: 480px) { .sub-sidebar { display: none; } .sub-content { padding: 0 12px 20px; } .sub-page-heading { padding: 22px 0 16px; } .content-card { padding: 15px; } .sub-list-row { align-items: flex-start; flex-direction: column; } }
+
+.link-code-box { display: grid; justify-items: start; gap: 10px; margin-top: 14px; padding: 15px; border: 1px solid #51477d; border-radius: 10px; background: #201b32; }
+.link-code-box code { color: #d9ceff; font-size: 14px; letter-spacing: 1px; overflow-wrap: anywhere; }
+.link-code-box span { color: #9ca4b7; font-size: 10px; line-height: 1.6; }
+.link-code-box span strong { color: #e5ddff; }
+.sub-actions { display: flex; gap: 7px; align-items: center; }
