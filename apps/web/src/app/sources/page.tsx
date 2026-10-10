@@ -4,7 +4,7 @@ import { FormEvent, useEffect, useState } from "react";
 import { Plus, RefreshCw, Trash2, Workflow } from "lucide-react";
 import WorkspacePage from "@/components/WorkspacePage";
 
-const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+const API = "/api/backend";
 type Catalog = {source:string;label:string;kind:string;capabilities:string[];setup_note:string};
 type Source = {id:number;source:string;identifier:string;is_enabled:boolean;status:string;created_at:string;last_scan_at:string|null;last_error:string|null;last_discovered_count:number};
 
