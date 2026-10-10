@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.auth import router as auth_router
 from app.config import settings
 from app.workspace import router as workspace_router
+from app.telegram_api import router as telegram_router
 
 app = FastAPI(
     title=settings.app_name + " API",
@@ -22,6 +23,7 @@ app.add_middleware(
 )
 app.include_router(auth_router)
 app.include_router(workspace_router)
+app.include_router(telegram_router)
 
 
 @app.get("/health", tags=["operations"])
