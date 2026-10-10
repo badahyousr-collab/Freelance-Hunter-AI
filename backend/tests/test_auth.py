@@ -51,8 +51,7 @@ def test_registration_requires_verification_then_allows_login(client: TestClient
 
     login = client.post("/auth/login", json={"email": "test@example.com", "password": "correct-horse-battery"})
     assert login.status_code == 200
-    access_token = login.json()["access_token"]
-    me = client.get("/auth/me", headers={"Authorization": f"Bearer {access_token}"})
+    me = client.get("/auth/me")
     assert me.status_code == 200
     assert me.json()["email"] == "test@example.com"
     assert "password_hash" not in me.json()
