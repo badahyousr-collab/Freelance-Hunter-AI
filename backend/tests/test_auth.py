@@ -65,3 +65,11 @@ def test_duplicate_email_is_rejected(client: TestClient) -> None:
 
 def test_me_requires_authentication(client: TestClient) -> None:
     assert client.get("/auth/me").status_code == 401
+
+
+def test_production_settings_reject_placeholder_secrets() -> None:
+    from pydantic import ValidationError
+    from app.config import Settings
+
+    with pytest.raises(ValidationError):
+        Settings(app_env="production", jwt_secret="local-only-change-this-secret-before-deploying", bot_api_secret="real-random-secret")
