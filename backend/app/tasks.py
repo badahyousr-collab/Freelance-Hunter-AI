@@ -46,9 +46,21 @@ def scan_enabled_sources(self) -> dict[str, int | str]:
             projects = asyncio.run(TelegramChannelSource().discover(channels=channels, limit=100))
         except Exception as exc:
             logger.exception("Telegram source scan failed")
+            for subscription in subscriptions:
+                subscription.last_error = str(exc)[:1000]
+            db.commit()
             raise self.retry(exc=exc, countdown=30 * (self.request.retries + 1)) from exc
 
         created, updated = persist_projects(db, projects)
+        scan_time = __import__("datetime").datetime.now(__import__("datetime").timezone.utc)
+        for subscription in subscriptions:
+            channel_name = subscription.identifier.lstrip("@").casefold()
+            subscription.last_scan_at = scan_time
+            subscription.last_error = None
+            subscription.last_discovered_count = sum(
+                1 for item in projects
+                if item.source_project_id.rsplit(":", 1)[0].casefold() == channel_name
+            )
         subscription_by_channel: dict[str, set[int]] = {}
         for row in subscriptions:
             channel = row.identifier.lstrip("@").casefold()
