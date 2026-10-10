@@ -105,6 +105,9 @@ class SourceResponse(BaseModel):
     is_enabled: bool
     status: str
     created_at: datetime
+    last_scan_at: datetime | None = None
+    last_error: str | None = None
+    last_discovered_count: int = 0
 
 
 class SourceCatalogItem(BaseModel):
