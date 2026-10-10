@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 
@@ -26,7 +28,7 @@ class UserResponse(BaseModel):
     id: int
     email: EmailStr
     is_verified: bool
-    created_at: str | None = None
+    created_at: datetime
 
 
 class RegisterResponse(BaseModel):
