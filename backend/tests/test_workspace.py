@@ -113,3 +113,31 @@ def test_source_configuration_rejects_invalid_channel_identifier(client: TestCli
     create_verified_user(client, "invalid-source@example.com")
     response = client.post("/sources", json={"source": "telegram", "identifier": "https://t.me/not_a_channel"})
     assert response.status_code == 422
+
+
+def test_telegram_link_code_is_single_use_and_agent_control_is_authorized(client: TestClient) -> None:
+    create_verified_user(client, "telegram-link@example.com")
+    code_response = client.post("/telegram/link-code")
+    assert code_response.status_code == 200
+    code = code_response.json()["code"]
+    assert code_response.json()["expires_in_seconds"] == 600
+
+    headers = {"X-Bot-Secret": "development-only-change-me"}
+    linked = client.post("/telegram/link", headers=headers, json={"code": code, "telegram_user_id": 777001})
+    assert linked.status_code == 200
+
+    replay = client.post("/telegram/link", headers=headers, json={"code": code, "telegram_user_id": 777001})
+    assert replay.status_code == 400
+
+    summary = client.get("/telegram/summary/777001", headers=headers)
+    assert summary.status_code == 200
+    assert summary.json()["projects_found"] == 0
+
+    paused = client.post("/telegram/agent-control", headers=headers, json={"telegram_user_id": 777001, "enabled": False})
+    assert paused.status_code == 200
+    assert paused.json()["enabled"] is False
+
+
+def test_bot_internal_endpoints_reject_missing_secret(client: TestClient) -> None:
+    response = client.get("/telegram/summary/777002")
+    assert response.status_code == 401
