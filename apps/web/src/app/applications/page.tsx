@@ -5,7 +5,7 @@ import Link from "next/link";
 import { FileText, Send } from "lucide-react";
 import WorkspacePage from "@/components/WorkspacePage";
 
-const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+const API = "/api/backend";
 type Application = { id:number; project_id:number; status:string; draft_text:string|null; created_at:string; submitted_at:string|null; replied_at:string|null; project:{title:string;url:string;source:string}|null };
 
 export default function ApplicationsPage() {
