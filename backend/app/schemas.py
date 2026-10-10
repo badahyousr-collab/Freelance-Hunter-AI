@@ -133,3 +133,25 @@ class TelegramAgentControlRequest(BaseModel):
 class AgentSettingsResponse(BaseModel):
     enabled: bool
     telegram_linked: bool
+
+
+class IntegrationCreate(BaseModel):
+    provider: str = Field(pattern=r"^(upwork|freelancer|kwork|fl_ru)$")
+    secret: str = Field(min_length=8, max_length=10000)
+
+
+class IntegrationResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    provider: str
+    auth_method: str
+    status: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class IntegrationCatalogItem(BaseModel):
+    provider: str
+    label: str
+    status: str
+    setup_note: str
