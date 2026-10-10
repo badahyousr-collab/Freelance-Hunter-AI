@@ -37,7 +37,7 @@ def scan_enabled_sources(self) -> dict[str, int | str]:
     """Scan configured Telegram channels, deduplicate listings, and refresh user matches."""
     with SessionLocal() as db:
         subscriptions = db.scalars(
-            select(UserSource).where(UserSource.source == "telegram", UserSource.is_enabled.is_(True))
+            select(UserSource).join(User, User.id == UserSource.user_id).where(UserSource.source == "telegram", UserSource.is_enabled.is_(True), User.agent_enabled.is_(True))
         ).all()
         channels = sorted({"@" + row.identifier.lstrip("@") for row in subscriptions if row.identifier})
         if not channels:
