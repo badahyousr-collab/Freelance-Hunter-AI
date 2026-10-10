@@ -28,7 +28,8 @@
 - [x] Per-user source subscriptions and enabled-agent filtering.
 - [ ] Configure Telegram API credentials and an authorized server session.
 - [ ] Implement and verify provider-specific marketplace discovery adapters.
-- [ ] Add a manual scan endpoint and operational monitoring dashboard.
+- [x] Add an authenticated user-scoped manual scan endpoint.
+- [ ] Add an operational monitoring dashboard.
 
 ## Phase 5 — Matching and proposal drafting
 - [x] Deterministic hard filters for language, minimum budget, currency, payment method, and excluded keywords.
