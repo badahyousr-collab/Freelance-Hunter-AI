@@ -8,6 +8,7 @@ class Settings(BaseSettings):
     app_name: str = "Freelance Hunter AI"
     web_origin: str = "http://localhost:3000"
     database_url: str = "sqlite:///./fhai.db"
+    redis_url: str = "redis://localhost:6379/0"
     jwt_secret: str = "local-only-change-this-secret-before-deploying"
     access_token_minutes: int = 30
     verification_token_minutes: int = 30
