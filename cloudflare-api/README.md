@@ -5,7 +5,8 @@ This directory contains the first Cloudflare-native API implementation for Freel
 ## What is implemented
 
 - D1 schema for users, sessions, profiles, agent settings, source configurations, projects, applications, integrations, and Telegram link codes.
-- Registration, password hashing with PBKDF2, login, logout, and cookie-backed sessions.\n- D1-backed per-IP rate limits on registration (5/15 min), email verification (10/15 min), and login (10/15 min); excess requests receive HTTP 429.
+- Registration, password hashing with PBKDF2, login, logout, and cookie-backed sessions.
+- D1-backed per-IP rate limits on registration (5/15 min), email verification (10/15 min), and login (10/15 min); excess requests receive HTTP 429.
 - Per-user data filtering on profile, sources, projects, applications, and settings.
 - Dashboard summary and CRUD for saved source configurations.
 - Same-origin frontend proxy is implemented in `apps/web/src/app/api/backend/[...path]/route.ts`.
