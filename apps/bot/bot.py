@@ -5,7 +5,7 @@ import os
 import httpx
 from aiogram import Bot, Dispatcher
 from aiogram.filters import Command, CommandObject, CommandStart
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton, Message, ReplyKeyboardMarkup
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton, Message, ReplyKeyboardMarkup, BotCommand
 
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
 API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8000").rstrip("/")
@@ -212,6 +212,15 @@ async def help_button(message: Message) -> None:
 
 
 async def main() -> None:
+    await bot.set_my_commands([
+        BotCommand(command="start", description="Запустить бота"),
+        BotCommand(command="link", description="Связать аккаунт сайта"),
+        BotCommand(command="stats", description="Статистика проектов и откликов"),
+        BotCommand(command="projects", description="Последние найденные заказы"),
+        BotCommand(command="pause", description="Приостановить AI-агента"),
+        BotCommand(command="resume", description="Возобновить AI-агента"),
+        BotCommand(command="help", description="Помощь и команды"),
+    ])
     await dp.start_polling(bot)
 
 
