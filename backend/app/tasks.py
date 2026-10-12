@@ -10,7 +10,7 @@ from sqlalchemy import select
 from app.config import settings
 from app.database import SessionLocal
 from app.ingestion import persist_projects
-from app.models import Project, ProjectMatch, UserProfile, UserSource
+from app.models import Project, ProjectMatch, User, UserProfile, UserSource
 from app.sources.matching import MatchProfile, score_project
 from app.sources.telegram_client import TelegramChannelSource
 
