@@ -15,7 +15,7 @@ This directory contains the first Cloudflare-native API implementation for Freel
 
 - Email delivery is not configured, so verification emails cannot be sent. Do not treat the current registration flow as production-ready email verification.
 - The scan endpoint deliberately returns `501`: no live scheduled ingestion worker is deployed.
-- Marketplace adapters, AI proposal generation, Telegram bot exchange, and real application submission are not active.
+- Marketplace adapters, live scheduled ingestion, AI proposal generation, push notifications, and real application submission are not active. Telegram bot linking, statistics, project listing, and agent controls are implemented in the API, but require the bot service to be deployed and configured.
 - Integration secrets are not stored until encrypted secret storage is configured. Never add credentials to source files or commit them.
 - D1 has free-plan quotas; it is not unlimited.
 
@@ -28,7 +28,7 @@ Create a separate Worker build project connected to this same GitHub repository.
 - Deploy command: `npx wrangler deploy`
 - The Cloudflare API token used by the build needs permission to edit Workers and D1 databases for the selected account.
 
-The `wrangler.toml` already names the D1 database `freelance-hunter-db` and includes the database ID provided during setup. Check that the ID matches the D1 database in your account before deploying.
+The `wrangler.toml` already names the D1 database `freelance-hunter-db` and includes the database ID provided during setup. Check that the ID matches the D1 database in your account before deploying. Apply all checked-in migrations, including `0003_telegram_link_uniqueness.sql`, before enabling the bot.
 
 After deployment, open the Worker URL and append `/health`. A successful response should report `"status":"ok"` and `"database":"connected"`.
 
@@ -44,3 +44,11 @@ Save the variable and redeploy the frontend. Do not set `NEXT_PUBLIC_API_URL`: b
 ## Database migration
 
 The first deployment build applies the checked-in D1 migration remotely. If the build token cannot apply migrations, use Cloudflare Dashboard → D1 → `freelance-hunter-db` → Console and execute the contents of `migrations/0001_init.sql` once, then redeploy. Do not execute the same `CREATE TABLE` migration twice against an already initialized database.
+
+## Telegram bot configuration
+
+The Worker uses a server-only secret for bot-to-API requests. Configure a strong random `BOT_API_SECRET` as a **Worker secret** (not a plain variable), and configure the exact same value as a private environment secret on the bot service. Configure `TELEGRAM_BOT_TOKEN` only on the bot service. Set the bot's `API_BASE_URL` to the deployed API Worker URL.
+
+The website linking flow is **Security → Telegram → Generate one-time code**, then send `/link CODE` to the bot. The bot exposes `/stats`, `/projects`, `/pause`, and `/resume`. New-project and client-reply push notifications are not implemented yet.
+
+If a bot token has been pasted into chat, a ticket, or source control, revoke it in `@BotFather` and use a newly issued token only as a deployment secret.
