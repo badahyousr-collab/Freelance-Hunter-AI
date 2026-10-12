@@ -1,6 +1,7 @@
 interface Env {
   DB: D1Database;
   APP_ENV?: string;
+  BOT_API_SECRET?: string;
 }
 
 const COOKIE = "fh_session";
@@ -95,7 +96,7 @@ const integrationCatalog = [
   { provider: "kwork", label: "Kwork", description: "Marketplace account integration is not implemented yet.", setup_note: "Credential storage and account adapter are not enabled yet." },
   { provider: "freelancehunt", label: "Freelancehunt", description: "Marketplace account integration is not implemented yet.", setup_note: "Credential storage and account adapter are not enabled yet." },
   { provider: "fl_ru", label: "FL.ru", description: "Marketplace account integration is not implemented yet.", setup_note: "Credential storage and account adapter are not enabled yet." },
-  { provider: "telegram", label: "Telegram bot", description: "Telegram notifications integration is not connected yet.", setup_note: "The bot exchange is not deployed yet." },
+  { provider: "telegram", label: "Telegram bot", description: "Link the Telegram bot to control the agent and view projects.", setup_note: "Set TELEGRAM_BOT_TOKEN on the bot service and BOT_API_SECRET on both the bot service and this Worker." },
   { provider: "llm", label: "AI provider", description: "AI drafting integration is not connected yet.", setup_note: "Provider key storage and live calls are not enabled yet." }
 ];
 
@@ -261,7 +262,8 @@ async function handle(request: Request, env: Env): Promise<Response> {
 
   if (path === "/agent/settings" && method === "GET") {
     const row = await env.DB.prepare("SELECT * FROM agent_settings WHERE user_id=?").bind(uid).first<any>();
-    return response(request, row ? { ...row, enabled: Boolean(row.is_enabled), is_enabled: Boolean(row.is_enabled), auto_draft: Boolean(row.auto_draft) } : {});
+    const link = await env.DB.prepare("SELECT telegram_user_id FROM telegram_links WHERE user_id=?").bind(uid).first<any>();
+    return response(request, row ? { ...row, enabled: Boolean(row.is_enabled), is_enabled: Boolean(row.is_enabled), auto_draft: Boolean(row.auto_draft), telegram_linked: Boolean(link?.telegram_user_id) } : { enabled: false, telegram_linked: Boolean(link?.telegram_user_id) });
   }
   if (path === "/agent/settings" && (method === "PATCH" || method === "PUT")) {
     const input = await body(request);
@@ -303,9 +305,9 @@ async function handle(request: Request, env: Env): Promise<Response> {
   }
 
   if (path === "/telegram/link-code" && method === "POST") {
-    const code = randomToken(6).toUpperCase();
+    const code = randomToken(24).toUpperCase();
     await env.DB.prepare("UPDATE telegram_links SET link_code_hash=?,expires_at=datetime('now','+10 minutes') WHERE user_id=?").bind(await sha256(code),uid).run();
-    return response(request, { code, expires_in_seconds: 600, message: "Link codes are temporary. Telegram bot exchange is not deployed yet." });
+    return response(request, { code, expires_in_seconds: 600, message: "Link code expires in 10 minutes and can be used once." });
   }
   if (path === "/telegram/link" && method === "DELETE") {
     await env.DB.prepare("UPDATE telegram_links SET link_code_hash=NULL,expires_at=NULL,telegram_user_id=NULL,linked_at=NULL WHERE user_id=?").bind(uid).run();
