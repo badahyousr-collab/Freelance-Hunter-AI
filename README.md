@@ -1,6 +1,6 @@
-# Freelance Hunter AI
+# Pipisso — Freelance Hunter
 
-AI-assisted freelance opportunity discovery and proposal management, with a web control panel and Telegram companion bot.
+Freelance Hunter is one of the systems in the Pipisso ecosystem, focused on AI-assisted freelance opportunity discovery and proposal management through a web workspace and Telegram companion bot.
 
 ## Product goals
 
