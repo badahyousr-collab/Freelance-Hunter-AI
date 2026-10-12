@@ -13,7 +13,8 @@
 - [x] Protected endpoints reject unauthenticated requests.
 - [x] User-owned source/integration/application data are queried with owner checks.
 - [x] Integration secrets are encrypted before persistence and never returned by the API.
-- [ ] Password reset and production verification delivery are implemented.\n- [x] D1-backed rate limits are implemented for registration, email verification, and login; deployment/runtime verification is pending.
+- [ ] Password reset and production verification delivery are implemented.
+- [x] D1-backed rate limits are implemented for registration, email verification, and login; deployment/runtime verification is pending.
 - [ ] Production SMTP delivery is configured and verified.
 
 ## Source ingestion
