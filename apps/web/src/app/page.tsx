@@ -80,7 +80,7 @@ export default function DashboardPage() {
   return (
     <main className="shell">
       <aside className="sidebar">
-        <Link className="brand" href="/"><span className="brand-mark"><Command size={21} /></span><span>Freelance<span className="brand-accent">Hunter</span><small>AI WORKSPACE</small></span></Link>
+        <Link className="brand" href="/"><span className="brand-mark"><Command size={21} /></span><span>Pipisso<small>FREELANCE HUNTER</small></span></Link>
         <div className="workspace-label">WORKSPACE</div>
         <nav className="nav">
           <Link className="nav-item active" href="/"><LayoutDashboard size={18} />Overview</Link>
@@ -93,12 +93,12 @@ export default function DashboardPage() {
         <div className="workspace-label settings-label">PREFERENCES</div>
         <nav className="nav"><Link className="nav-item" href="/settings"><Settings2 size={18} />Settings</Link><Link className="nav-item" href="/security"><ShieldCheck size={18} />Security</Link></nav>
         <div className="sidebar-bottom"><div className="help-icon"><CircleHelp size={17} /></div><div><strong>Need a hand?</strong><span>Project setup guide</span></div></div>
-        <div className="profile"><div className="avatar">FH</div><div className="profile-text"><strong>{user?.email ?? "Your workspace"}</strong><span>Personal account</span></div><button className="profile-logout" aria-label="Sign out" onClick={signOut} disabled={signingOut}><LogOut size={16} /></button></div>
+        <div className="profile"><div className="avatar">P</div><div className="profile-text"><strong>{user?.email ?? "Your workspace"}</strong><span>Personal account</span></div><button className="profile-logout" aria-label="Sign out" onClick={signOut} disabled={signingOut}><LogOut size={16} /></button></div>
       </aside>
 
       <section className="content">
-        <header className="topbar"><div className="breadcrumbs">Workspace <span>/</span> <strong>Overview</strong></div><div className="top-actions"><span className="live-status preview-status"><i />{loading ? "Loading workspace" : "Account connected"}</span><button className="icon-button" aria-label="Refresh dashboard" onClick={() => window.location.reload()}><Activity size={18} /></button><div className="user-avatar">FH</div></div></header>
-        <div className="page-heading"><div><div className="eyebrow"><Sparkles size={14} /> YOUR FREELANCE COMMAND CENTER</div><h1>Welcome back <span>✦</span></h1><p>Your freelance search, all in one place.</p></div><Link className="primary-button" href="/sources"><Search size={17} />Set up sources</Link></div>
+        <header className="topbar"><div className="breadcrumbs">Workspace <span>/</span> <strong>Overview</strong></div><div className="top-actions"><span className="live-status preview-status"><i />{loading ? "Loading workspace" : "Account connected"}</span><button className="icon-button" aria-label="Refresh dashboard" onClick={() => window.location.reload()}><Activity size={18} /></button><div className="user-avatar">P</div></div></header>
+        <div className="page-heading"><div><div className="eyebrow"><Sparkles size={14} /> PIPISSO ECOSYSTEM · FREELANCE HUNTER</div><h1>Welcome back <span>✦</span></h1><p>Freelance Hunter — one of the systems inside Pipisso.</p></div><Link className="primary-button" href="/sources"><Search size={17} />Set up sources</Link></div>
 
         {error && <div className="dashboard-alert" role="alert">{error}. Check that the backend is running and try refreshing.</div>}
         <section className="metric-grid" aria-label="Summary statistics">
@@ -119,7 +119,7 @@ export default function DashboardPage() {
           </tbody></table></div>
         </section>
         <section className="panel recent-panel"><div className="panel-heading"><div><h2>Recent activity</h2><p>Confirmed events from your workspace</p></div></div><div className="activity-list"><div className="activity-row"><span className="activity-icon"><ShieldCheck size={16} /></span><span className="activity-title">Account workspace loaded</span><span className="activity-time">{loading ? "Loading" : "Just now"}</span></div><div className="activity-row"><span className="activity-icon"><Workflow size={16} /></span><span className="activity-title">Source ingestion will appear here after setup</span><span className="activity-time">—</span></div></div></section>
-        <footer>Freelance Hunter AI <span>·</span> Built for smarter freelance workflows</footer>
+        <footer>Pipisso <span>·</span> Freelance Hunter — one ecosystem, connected systems</footer>
       </section>
     </main>
   );
