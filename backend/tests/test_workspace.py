@@ -189,3 +189,32 @@ def test_manual_scan_reports_missing_prerequisites(client: TestClient) -> None:
     assert added.status_code == 201
     missing_session = client.post("/agent/scan")
     assert missing_session.status_code == 503
+
+
+
+def test_telegram_recent_projects_requires_bot_secret_and_linked_user(client: TestClient) -> None:
+    create_verified_user(client, "telegram-projects@example.com")
+    code_response = client.post("/telegram/link-code")
+    assert code_response.status_code == 200
+    code = code_response.json()["code"]
+    headers = {"X-Bot-Secret": "development-only-change-me"}
+    linked = client.post(
+        "/telegram/link",
+        headers=headers,
+        json={"code": code, "telegram_user_id": 778899},
+    )
+    assert linked.status_code == 200
+    assert client.post("/sources", json={"source": "telegram", "identifier": "python_jobs"}).status_code == 201
+
+    missing_secret = client.get("/telegram/projects/778899")
+    assert missing_secret.status_code == 401
+
+    invalid_limit = client.get("/telegram/projects/778899?limit=0", headers=headers)
+    assert invalid_limit.status_code == 422
+
+    recent = client.get("/telegram/projects/778899?limit=5", headers=headers)
+    assert recent.status_code == 200
+    assert recent.json() == {"items": []}
+
+    unlinked = client.get("/telegram/projects/778898", headers=headers)
+    assert unlinked.status_code == 404
