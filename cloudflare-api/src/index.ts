@@ -99,6 +99,26 @@ const integrationCatalog = [
   { provider: "llm", label: "AI provider", description: "AI drafting integration is not connected yet.", setup_note: "Provider key storage and live calls are not enabled yet." }
 ];
 
+async function isRateLimited(request: Request, env: Env, endpoint: string, limit: number): Promise<boolean> {
+  const ip = request.headers.get("CF-Connecting-IP") ?? "unknown";
+  const bucketKey = await sha256(`auth:${endpoint}:${ip}`);
+  await env.DB.prepare(`
+    INSERT INTO auth_rate_limits (bucket_key, window_started_at, attempts)
+    VALUES (?, datetime('now'), 1)
+    ON CONFLICT(bucket_key) DO UPDATE SET
+      attempts = CASE
+        WHEN auth_rate_limits.window_started_at <= datetime('now', '-15 minutes') THEN 1
+        ELSE auth_rate_limits.attempts + 1
+      END,
+      window_started_at = CASE
+        WHEN auth_rate_limits.window_started_at <= datetime('now', '-15 minutes') THEN datetime('now')
+        ELSE auth_rate_limits.window_started_at
+      END
+  `).bind(bucketKey).run();
+  const row = await env.DB.prepare("SELECT attempts FROM auth_rate_limits WHERE bucket_key=?").bind(bucketKey).first<{ attempts: number }>();
+  return Number(row?.attempts ?? 0) > limit;
+}
+
 async function handle(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
   const path = url.pathname.replace(/\/+$/, "") || "/";
@@ -111,6 +131,9 @@ async function handle(request: Request, env: Env): Promise<Response> {
   }
 
   if (path === "/auth/register" && method === "POST") {
+    if (await isRateLimited(request, env, "register", 5)) {
+      return response(request, { detail: "Too many attempts. Please wait 15 minutes and try again." }, 429, { "Retry-After": "900" });
+    }
     const input = await body(request);
     const email = String(input.email ?? "").trim().toLowerCase();
     const password = String(input.password ?? "");
@@ -133,6 +156,9 @@ async function handle(request: Request, env: Env): Promise<Response> {
   }
 
   if (path === "/auth/verify-email" && method === "POST") {
+    if (await isRateLimited(request, env, "verify-email", 10)) {
+      return response(request, { detail: "Too many attempts. Please wait 15 minutes and try again." }, 429, { "Retry-After": "900" });
+    }
     const input = await body(request);
     const token = String(input.token ?? "");
     if (!token) return response(request, { detail: "Verification token is required." }, 400);
@@ -142,6 +168,9 @@ async function handle(request: Request, env: Env): Promise<Response> {
   }
 
   if (path === "/auth/login" && method === "POST") {
+    if (await isRateLimited(request, env, "login", 10)) {
+      return response(request, { detail: "Too many attempts. Please wait 15 minutes and try again." }, 429, { "Retry-After": "900" });
+    }
     const input = await body(request);
     const email = String(input.email ?? "").trim().toLowerCase();
     const password = String(input.password ?? "");
