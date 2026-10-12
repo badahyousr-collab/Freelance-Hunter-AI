@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Freelance Hunter AI",
-  description: "AI-powered freelance opportunity discovery and proposal management.",
+  title: "Pipisso — Freelance Hunter",
+  description: "Freelance Hunter is a project-discovery and proposal-management system within the Pipisso ecosystem.",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
