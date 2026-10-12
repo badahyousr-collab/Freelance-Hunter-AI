@@ -1,12 +1,9 @@
 from __future__ import annotations
 
-from collections.abc import Iterator
-
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from app import models
 from app.database import Base
 from app.models import Project, ProjectMatch, User, UserProfile, UserSource
 from app.sources.base import NormalizedProject
