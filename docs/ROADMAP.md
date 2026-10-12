@@ -12,7 +12,7 @@
 - [x] HTTP-only cookie session and password hashing.
 - [x] Per-user authorization checks for workspace, source, application, and integration endpoints.
 - [x] Tests for authentication, malformed input, and selected ownership boundaries.
-- [ ] Password reset flow and rate limiting.
+- [ ] Password reset flow and production verification delivery.\n- [x] D1-backed rate limits for registration, email verification, and login (runtime verification pending).
 - [ ] Configure a real SMTP provider and verify delivery outside development.
 
 ## Phase 3 — Web control panel
