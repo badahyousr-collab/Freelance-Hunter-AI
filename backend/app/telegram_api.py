@@ -93,6 +93,18 @@ def telegram_summary(
     return DashboardSummary(projects_found=projects, matched_projects=matched, proposals_sent=sent, client_replies=replies)
 
 
+@router.get("/telegram/projects/{telegram_user_id}")
+def telegram_recent_projects(telegram_user_id: int, limit: int = 5, x_bot_secret: str | None = Header(default=None), db: Session = Depends(get_db)) -> dict[str, object]:
+    """Return a small, user-scoped project list for the linked Telegram bot."""
+    _require_bot_secret(x_bot_secret)
+    if limit < 1 or limit > 10:
+        raise HTTPException(status_code=422, detail="Limit must be between 1 and 10")
+    user = db.scalar(select(User).where(User.telegram_user_id == telegram_user_id))
+    if user is None:
+        raise HTTPException(status_code=404, detail="Telegram account is not linked")
+    rows = db.scalars(select(Project).where(project_scope_conditions(db, user)).order_by(Project.discovered_at.desc()).limit(limit)).all()
+    return {"items": [{"title": row.title, "url": row.url, "source": row.source, "budget_min": row.budget_min, "budget_max": row.budget_max, "currency": row.currency, "published_at": row.published_at.isoformat() if row.published_at else None} for row in rows]}
+
 @router.post("/telegram/agent-control")
 def telegram_agent_control(
     payload: TelegramAgentControlRequest,
