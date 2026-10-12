@@ -188,6 +188,71 @@ async function handle(request: Request, env: Env): Promise<Response> {
     return response(request, { ok: true }, 200, { "Set-Cookie": cookie("", 0) });
   }
 
+  // Server-to-server Telegram bot endpoints. The bot uses a private secret,
+  // not a browser session cookie.
+  const botSecret = request.headers.get("X-Bot-Secret");
+  const botAuthorized = Boolean(env.BOT_API_SECRET && botSecret && botSecret === env.BOT_API_SECRET);
+  const botSummaryPrefix = "/telegram/summary/";
+  const botProjectsPrefix = "/telegram/projects/";
+  const isBotSummary = method === "GET" && path.startsWith(botSummaryPrefix);
+  const isBotProjects = method === "GET" && path.startsWith(botProjectsPrefix);
+  const isBotAction = (path === "/telegram/link" && method === "POST") || (path === "/telegram/agent-control" && method === "POST") || isBotSummary || isBotProjects;
+  if (isBotAction) {
+    if (!env.BOT_API_SECRET) return response(request, { detail: "Telegram bot secret is not configured." }, 503);
+    if (!botAuthorized) return response(request, { detail: "Invalid bot credentials." }, 401);
+  }
+
+  if (path === "/telegram/link" && method === "POST") {
+    const input = await body(request);
+    const code = String(input.code ?? "").trim();
+    const telegramUserId = String(input.telegram_user_id ?? "");
+    if (!/^[0-9]{1,24}$/.test(telegramUserId) || !code) return response(request, { detail: "Invalid link request." }, 400);
+    const codeHash = await sha256(code);
+    const link = await env.DB.prepare("SELECT tl.user_id, u.is_verified FROM telegram_links tl JOIN users u ON u.id=tl.user_id WHERE tl.link_code_hash=? AND tl.expires_at > datetime('now') AND tl.telegram_user_id IS NULL").bind(codeHash).first<any>();
+    if (!link) return response(request, { detail: "Link code is invalid, expired, or already used." }, 400);
+    if (!link.is_verified) return response(request, { detail: "Website account is not verified." }, 400);
+    const existing = await env.DB.prepare("SELECT user_id FROM telegram_links WHERE telegram_user_id=? AND user_id<>?").bind(telegramUserId, link.user_id).first<any>();
+    if (existing) return response(request, { detail: "This Telegram account is already linked." }, 409);
+    let updated;
+    try {
+      updated = await env.DB.prepare("UPDATE telegram_links SET telegram_user_id=?,linked_at=datetime('now'),link_code_hash=NULL,expires_at=NULL WHERE user_id=? AND link_code_hash=? AND expires_at > datetime('now') AND telegram_user_id IS NULL").bind(telegramUserId, link.user_id, codeHash).run();
+    } catch {
+      return response(request, { detail: "This Telegram account is already linked." }, 409);
+    }
+    if (!updated.meta.changes) return response(request, { detail: "Link code was already used or expired." }, 409);
+    return response(request, { message: "Telegram account linked successfully." });
+  }
+
+  if (isBotSummary) {
+    const telegramUserId = path.slice(botSummaryPrefix.length);
+    if (!/^[0-9]{1,24}$/.test(telegramUserId)) return response(request, { detail: "Invalid Telegram user ID." }, 400);
+    const linked = await env.DB.prepare("SELECT u.id FROM telegram_links tl JOIN users u ON u.id=tl.user_id WHERE tl.telegram_user_id=? AND u.is_verified=1").bind(telegramUserId).first<any>();
+    if (!linked) return response(request, { detail: "Telegram account is not linked; use /link CODE first." }, 404);
+    const row = await env.DB.prepare("SELECT (SELECT COUNT(*) FROM projects WHERE user_id=?) AS projects_found, (SELECT COUNT(*) FROM projects WHERE user_id=? AND match_score IS NOT NULL AND match_score>=60) AS matched_projects, (SELECT COUNT(*) FROM applications WHERE user_id=? AND status IN ('sent','replied','closed')) AS proposals_sent, (SELECT COUNT(*) FROM applications WHERE user_id=? AND replied_at IS NOT NULL) AS client_replies").bind(linked.id, linked.id, linked.id, linked.id).first<any>();
+    return response(request, row ?? { projects_found: 0, matched_projects: 0, proposals_sent: 0, client_replies: 0 });
+  }
+
+  if (isBotProjects) {
+    const telegramUserId = path.slice(botProjectsPrefix.length);
+    if (!/^[0-9]{1,24}$/.test(telegramUserId)) return response(request, { detail: "Invalid Telegram user ID." }, 400);
+    const linked = await env.DB.prepare("SELECT u.id FROM telegram_links tl JOIN users u ON u.id=tl.user_id WHERE tl.telegram_user_id=? AND u.is_verified=1").bind(telegramUserId).first<any>();
+    if (!linked) return response(request, { detail: "Telegram account is not linked." }, 404);
+    const requestedLimit = Number(url.searchParams.get("limit") ?? 5);
+    if (!Number.isInteger(requestedLimit) || requestedLimit < 1 || requestedLimit > 10) return response(request, { detail: "Limit must be between 1 and 10." }, 400);
+    const rows = await env.DB.prepare("SELECT p.title,p.url,p.source,p.budget_min,p.budget_max,p.currency,p.published_at FROM projects p WHERE p.user_id=? AND EXISTS (SELECT 1 FROM sources s WHERE s.user_id=p.user_id AND s.is_enabled=1 AND s.source=p.source AND (s.source<>'telegram' OR p.source_project_id LIKE substr(s.identifier,2) || ':%')) ORDER BY p.discovered_at DESC LIMIT ?").bind(linked.id, requestedLimit).all<any>();
+    return response(request, { items: rows.results ?? [] });
+  }
+
+  if (path === "/telegram/agent-control" && method === "POST") {
+    const input = await body(request);
+    const telegramUserId = String(input.telegram_user_id ?? "");
+    if (!/^[0-9]{1,24}$/.test(telegramUserId) || typeof input.enabled !== "boolean") return response(request, { detail: "Invalid agent control request." }, 400);
+    const linked = await env.DB.prepare("SELECT user_id FROM telegram_links WHERE telegram_user_id=?").bind(telegramUserId).first<any>();
+    if (!linked) return response(request, { detail: "Telegram account is not linked." }, 404);
+    await env.DB.prepare("UPDATE agent_settings SET is_enabled=?,updated_at=datetime('now') WHERE user_id=?").bind(input.enabled ? 1 : 0, linked.user_id).run();
+    return response(request, { message: input.enabled ? "Agent enabled." : "Agent paused.", enabled: input.enabled });
+  }
+
   const user = await requireUser(request, env);
   if (path === "/auth/me" && method === "GET") {
     if (!user) return response(request, { detail: "Authentication required." }, 401);
