@@ -3,15 +3,15 @@
 
 :root {
   color-scheme: dark;
-  --bg: #0d0f14;
-  --panel: #151821;
-  --panel-soft: #191d28;
-  --border: #292e3b;
-  --text: #f2f4fa;
-  --muted: #8e96a9;
-  --violet: #9275ff;
-  --blue: #6ea8ff;
-  --green: #55d6a0;
+  --bg: #070809;
+  --panel: #0d0e10;
+  --panel-soft: #121315;
+  --border: #292a2d;
+  --text: #f4f4f4;
+  --muted: #96979d;
+  --violet: #f4b900;
+  --blue: #21c9e8;
+  --green: #00c896;
 }
 
 * { box-sizing: border-box; }
@@ -59,3 +59,95 @@ a { color: inherit; text-decoration: none; }
 .button-link { text-decoration: none; }
 .verify-card .button-link { margin-top: 8px; }
 @media (max-width: 480px) { .auth-card { padding: 24px 20px; } }
+
+
+/* Freelance Hunter visual system — minimal monochrome with Pipisso-inspired signal colors */
+:root {
+  --accent-yellow: #ffc400;
+  --accent-cyan: #14d9e8;
+  --accent-pink: #ff4e91;
+  --accent-orange: #ff8a00;
+  --gradient-brand: linear-gradient(100deg, var(--accent-yellow) 0%, var(--accent-orange) 27%, var(--accent-pink) 57%, var(--accent-cyan) 100%);
+}
+body {
+  background: #070809;
+  color: #f4f4f4;
+}
+::selection { color: #050505; background: #ffc400; }
+.sidebar, .sub-sidebar {
+  background: #090a0b;
+  border-color: #242528;
+}
+.brand-mark {
+  color: #08090a;
+  background: var(--gradient-brand);
+  border-radius: 10px;
+  box-shadow: none;
+}
+.brand-accent { color: var(--accent-cyan); }
+.brand small { color: #74757a; }
+.nav-item { border-radius: 7px; }
+.nav-item:hover { background: #17181a; }
+.nav-item.active {
+  color: #fff;
+  background: #17181a;
+  box-shadow: inset 2px 0 var(--accent-yellow);
+}
+.sidebar-bottom, .content-card, .metric-card, .panel {
+  background: #0d0e10;
+  border-color: #292a2d;
+  box-shadow: none;
+}
+.metric-card, .panel, .content-card { border-radius: 10px; }
+.primary-button, .sub-button.primary {
+  color: #08090a;
+  background: var(--gradient-brand);
+  border: 0;
+  box-shadow: none;
+}
+.primary-button:hover, .sub-button.primary:hover { filter: brightness(1.08); }
+.secondary-button, .sub-button {
+  color: #ededed;
+  background: #141517;
+  border-color: #38393d;
+  border-radius: 7px;
+}
+.eyebrow, .auth-eyebrow { color: var(--accent-cyan); }
+.text-link, .auth-footer a, .dev-token a { color: var(--accent-cyan); }
+.metric-icon, .help-icon {
+  color: var(--accent-yellow);
+  background: #ffc40014;
+  border-radius: 8px;
+}
+.status-pill, .live-status {
+  color: #b9ffe9;
+  background: #06251d;
+  border-color: #15523e;
+}
+.status-pill i, .live-status i { background: #00c896; box-shadow: 0 0 9px #00c89655; }
+.agent-orb .orb-ring { border-color: #14d9e855; box-shadow: none; background: radial-gradient(circle,#14d9e815,transparent 70%); }
+.agent-orb .orb-core { color: var(--accent-cyan); border-color: #14d9e855; background: #111719; }
+.auth-shell { background: #070809; }
+.auth-card { background: #0d0e10; border-color: #292a2d; border-radius: 12px; box-shadow: none; }
+.auth-input, .auth-input-wrap, .auth-input-wrap input, .sub-input, .sub-select, .sub-textarea {
+  background-color: #08090a;
+  border-color: #303135;
+  border-radius: 7px;
+}
+.auth-input:focus, .auth-input-wrap:focus-within, .sub-input:focus, .sub-select:focus, .sub-textarea:focus {
+  border-color: var(--accent-cyan);
+  box-shadow: 0 0 0 2px #14d9e815;
+}
+.auth-submit { color: #08090a; background: var(--gradient-brand); border: 0; border-radius: 7px; }
+.sub-badge { color: var(--accent-cyan); background: #14d9e810; border-color: #14d9e82a; }
+.link-code-box { background: #101113; border-color: #ffc40055; }
+.link-code-box code { color: var(--accent-yellow); }
+@media (max-width: 760px) {
+  .content { padding-left: 18px; padding-right: 18px; }
+  .metric-grid { grid-template-columns: repeat(2, minmax(0,1fr)); }
+}
+@media (max-width: 480px) {
+  .content { padding-left: 12px; padding-right: 12px; }
+  .metric-grid { gap: 9px; }
+  .metric-card { padding: 13px; }
+}
