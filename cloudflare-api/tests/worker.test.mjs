@@ -10,6 +10,7 @@ function fakeDb() {
         async run() { return { meta: { changes: 1 } }; },
         async first() {
           if (sql.includes("SELECT attempts FROM auth_rate_limits")) return { attempts: 1 };
+          if (sql.includes("FROM sessions s JOIN users")) return { id: "user-1", email: "test@example.com", is_verified: 1 };
           if (sql.includes("SELECT 1 AS ok")) return { ok: 1 };
           return null;
         },
@@ -51,7 +52,7 @@ test("production registration fails closed until email delivery is configured", 
 });
 
 test("unknown API route returns a structured 404", async () => {
-  const response = await worker.fetch(new Request("https://api.example/not-a-route"), { DB: fakeDb() });
+  const response = await worker.fetch(new Request("https://api.example/not-a-route", { headers: { Cookie: "fh_session=test-session-token" } }), { DB: fakeDb() });
   assert.equal(response.status, 404);
   assert.equal(typeof (await response.json()).detail, "string");
 });
