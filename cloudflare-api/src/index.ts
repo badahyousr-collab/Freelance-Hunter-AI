@@ -86,7 +86,7 @@ async function requireUser(request: Request, env: Env): Promise<any> {
 }
 
 const sourceCatalog = [
-  { source: "telegram", label: "Public Telegram channels", kind: "telegram", capabilities: ["read_public_posts"], setup_note: "Public channels can be saved now. Live collection requires a configured Telegram ingestion worker and authorized credentials." },
+  { source: "telegram", label: "Public Telegram channels", kind: "telegram", capabilities: ["read_public_posts"], setup_note: "Public channel previews are scanned on demand and every 15 minutes while the AI agent is enabled. Private channels are not supported." },
   { source: "kwork", label: "Kwork", kind: "marketplace", capabilities: ["discover_projects"], setup_note: "Configuration only; a tested marketplace adapter is not yet available." },
   { source: "freelancehunt", label: "Freelancehunt", kind: "marketplace", capabilities: ["discover_projects"], setup_note: "Configuration only; a tested marketplace adapter is not yet available." },
   { source: "upwork", label: "Upwork", kind: "marketplace", capabilities: ["discover_projects"], setup_note: "Configuration only; a tested marketplace adapter is not yet available." },
@@ -98,7 +98,7 @@ const integrationCatalog = [
   { provider: "kwork", label: "Kwork", description: "Marketplace account integration is not implemented yet.", setup_note: "Credential storage and account adapter are not enabled yet." },
   { provider: "freelancehunt", label: "Freelancehunt", description: "Marketplace account integration is not implemented yet.", setup_note: "Credential storage and account adapter are not enabled yet." },
   { provider: "fl_ru", label: "FL.ru", description: "Marketplace account integration is not implemented yet.", setup_note: "Credential storage and account adapter are not enabled yet." },
-  { provider: "telegram", label: "Telegram bot", description: "Link the Telegram bot to control the agent and view projects.", setup_note: "Set TELEGRAM_BOT_TOKEN on the bot service and BOT_API_SECRET on both the bot service and this Worker." },
+  { provider: "telegram", label: "Telegram bot", description: "Link the Telegram bot to control the agent and view projects.", setup_note: "Cloudflare Worker webhook mode needs TELEGRAM_BOT_TOKEN, TELEGRAM_WEBHOOK_SECRET, and BOT_API_SECRET Worker secrets." },
   { provider: "llm", label: "AI provider", description: "AI drafting integration is not connected yet.", setup_note: "Provider key storage and live calls are not enabled yet." }
 ];
 
