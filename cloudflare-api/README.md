@@ -34,12 +34,7 @@ After deployment, open the Worker URL and append `/health`. A successful respons
 
 ## Connect the frontend
 
-In the existing frontend Worker project's environment variables, add a **runtime variable**:
-
-- Name: `CLOUDFLARE_API_URL`
-- Value: the deployed API Worker URL, for example `https://freelance-hunter-api.<your-account-subdomain>.workers.dev` (use the actual URL shown by Cloudflare).
-
-Save the variable and redeploy the frontend. Do not set `NEXT_PUBLIC_API_URL`: browser requests should go through the same-origin `/api/backend` proxy so the session cookie belongs to the frontend hostname.
+The frontend Worker's `wrangler.jsonc` already points `CLOUDFLARE_API_URL` to `https://plain-voice-c13ffreelance-hunter-api.badahyousr.workers.dev`. If the API Worker is renamed, update this runtime variable and redeploy the frontend. Do not set `NEXT_PUBLIC_API_URL`: browser requests should go through the same-origin `/api/backend` proxy so the session cookie belongs to the frontend hostname.
 
 ## Database migration
 
