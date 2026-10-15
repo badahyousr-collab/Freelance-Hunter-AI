@@ -1,3 +1,5 @@
+ALTER TABLE users ADD COLUMN auth_method TEXT NOT NULL DEFAULT 'email';
+
 CREATE TABLE IF NOT EXISTS telegram_auth_codes (
   code_hash TEXT PRIMARY KEY,
   expires_at TEXT NOT NULL,
