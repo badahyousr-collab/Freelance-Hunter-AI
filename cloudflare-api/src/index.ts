@@ -7,6 +7,9 @@ interface Env {
   AI_API_KEY?: string;
   AI_API_BASE_URL?: string;
   AI_MODEL?: string;
+  RESEND_API_KEY?: string;
+  EMAIL_FROM?: string;
+  APP_BASE_URL?: string;
 }
 
 const COOKIE = "fh_session";
@@ -355,6 +358,22 @@ async function handleTelegramWebhook(request: Request, env: Env): Promise<Respon
   return response(request, { ok: true });
 }
 
+
+function emailConfigured(env: Env): boolean {
+  return Boolean(env.RESEND_API_KEY && env.EMAIL_FROM && env.APP_BASE_URL);
+}
+
+async function sendTransactionalEmail(env: Env, to: string, subject: string, html: string): Promise<void> {
+  if (!env.RESEND_API_KEY || !env.EMAIL_FROM) throw new Error("Email delivery is not configured");
+  const result = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: { "Authorization": "Bearer " + env.RESEND_API_KEY, "Content-Type": "application/json" },
+    body: JSON.stringify({ from: env.EMAIL_FROM, to: [to], subject, html }),
+    signal: AbortSignal.timeout(15000)
+  });
+  if (!result.ok) throw new Error("Email provider rejected the message");
+}
+
 async function handle(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
   const path = url.pathname.replace(/\/+$/, "") || "/";
@@ -371,6 +390,9 @@ async function handle(request: Request, env: Env): Promise<Response> {
     if (await isRateLimited(request, env, "register", 5)) {
       return response(request, { detail: "Too many attempts. Please wait 15 minutes and try again." }, 429, { "Retry-After": "900" });
     }
+    if (env.APP_ENV === "production" && !emailConfigured(env)) {
+      return response(request, { detail: "Email verification is not configured yet. Contact the administrator." }, 503);
+    }
     const input = await body(request);
     const email = String(input.email ?? "").trim().toLowerCase();
     const password = String(input.password ?? "");
@@ -381,15 +403,68 @@ async function handle(request: Request, env: Env): Promise<Response> {
     const id = crypto.randomUUID();
     const verificationToken = randomToken(24);
     await env.DB.batch([
-      env.DB.prepare("INSERT INTO users (id,email,password_hash,verification_token_hash) VALUES (?,?,?,?)").bind(id, email, await passwordHash(password), await sha256(verificationToken)),
+      env.DB.prepare("INSERT INTO users (id,email,password_hash,verification_token_hash,verification_expires_at) VALUES (?,?,?,?,datetime('now','+24 hours'))").bind(id, email, await passwordHash(password), await sha256(verificationToken)),
       env.DB.prepare("INSERT INTO profiles (user_id) VALUES (?)").bind(id),
       env.DB.prepare("INSERT INTO agent_settings (user_id) VALUES (?)").bind(id),
       env.DB.prepare("INSERT INTO telegram_links (user_id) VALUES (?)").bind(id)
     ]);
-    // Until a free mail-delivery provider is configured, return a development link only outside production.
-    const data: Record<string, unknown> = { message: "Account created. Email delivery is not configured yet; verification cannot be sent automatically." };
+    if (emailConfigured(env)) {
+      const verifyUrl = String(env.APP_BASE_URL).replace(/\/+$/, "") + "/verify-email?token=" + encodeURIComponent(verificationToken);
+      try {
+        await sendTransactionalEmail(env, email, "Verify your Freelance Hunter account",
+          '<div style="font-family:Arial,sans-serif;max-width:560px;margin:auto;color:#222"><h2>Verify your email</h2><p>Confirm your email address to finish setting up Freelance Hunter.</p><p><a href="' + verifyUrl + '" style="display:inline-block;padding:12px 18px;background:#222;color:#fff;text-decoration:none;border-radius:8px">Verify email</a></p><p>This link expires in 24 hours and can be used once.</p></div>');
+        return response(request, { message: "Account created. Check your email to verify the address." }, 201);
+      } catch {
+        await env.DB.prepare("DELETE FROM users WHERE id=?").bind(id).run();
+        return response(request, { detail: "Could not send the verification email. Check email provider settings and try again." }, 502);
+      }
+    }
+    const data: Record<string, unknown> = { message: "Development account created. Use the development verification link below." };
     if (env.APP_ENV !== "production") data.verification_token = verificationToken;
     return response(request, data, 201);
+  }
+
+
+  if (path === "/auth/password-reset/request" && method === "POST") {
+    if (await isRateLimited(request, env, "password-reset", 5)) {
+      return response(request, { detail: "Too many attempts. Please wait 15 minutes and try again." }, 429, { "Retry-After": "900" });
+    }
+    if (!emailConfigured(env)) return response(request, { detail: "Password reset email is not configured yet. Contact the administrator." }, 503);
+    const input = await body(request);
+    const email = String(input.email ?? "").trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return response(request, { detail: "Enter a valid email address." }, 400);
+    const user = await env.DB.prepare("SELECT id,email FROM users WHERE email=?").bind(email).first<any>();
+    if (user) {
+      const resetToken = randomToken(32);
+      await env.DB.prepare("UPDATE users SET password_reset_token_hash=?,password_reset_expires_at=datetime('now','+1 hour') WHERE id=?").bind(await sha256(resetToken), user.id).run();
+      const resetUrl = String(env.APP_BASE_URL).replace(/\/+$/, "") + "/reset-password?token=" + encodeURIComponent(resetToken);
+      try {
+        await sendTransactionalEmail(env, email, "Reset your Freelance Hunter password",
+          '<div style="font-family:Arial,sans-serif;max-width:560px;margin:auto;color:#222"><h2>Password reset</h2><p>We received a request to reset your password.</p><p><a href="' + resetUrl + '" style="display:inline-block;padding:12px 18px;background:#222;color:#fff;text-decoration:none;border-radius:8px">Choose a new password</a></p><p>This link expires in one hour. If you did not request it, ignore this email.</p></div>');
+      } catch {
+        await env.DB.prepare("UPDATE users SET password_reset_token_hash=NULL,password_reset_expires_at=NULL WHERE id=?").bind(user.id).run();
+        return response(request, { detail: "Could not send the reset email. Check email provider settings and try again." }, 502);
+      }
+    }
+    return response(request, { message: "If an account exists for that address, a password reset link has been sent." });
+  }
+
+  if (path === "/auth/password-reset/confirm" && method === "POST") {
+    if (await isRateLimited(request, env, "password-reset-confirm", 10)) {
+      return response(request, { detail: "Too many attempts. Please wait 15 minutes and try again." }, 429, { "Retry-After": "900" });
+    }
+    const input = await body(request);
+    const token = String(input.token ?? "");
+    const password = String(input.password ?? "");
+    if (!token) return response(request, { detail: "Reset token is required." }, 400);
+    if (password.length < 10 || password.length > 256) return response(request, { detail: "Password must contain 10–256 characters." }, 400);
+    const user = await env.DB.prepare("SELECT id FROM users WHERE password_reset_token_hash=? AND password_reset_expires_at > datetime('now')").bind(await sha256(token)).first<any>();
+    if (!user) return response(request, { detail: "Reset link is invalid or expired. Request a new one." }, 400);
+    const result = await env.DB.prepare("UPDATE users SET password_hash=?,password_reset_token_hash=NULL,password_reset_expires_at=NULL WHERE id=? AND password_reset_token_hash=? AND password_reset_expires_at > datetime('now')")
+      .bind(await passwordHash(password), user.id, await sha256(token)).run();
+    if (!result.meta.changes) return response(request, { detail: "Reset link is invalid or expired. Request a new one." }, 400);
+    await env.DB.prepare("DELETE FROM sessions WHERE user_id=?").bind(user.id).run();
+    return response(request, { message: "Password updated. Sign in with your new password." });
   }
 
   if (path === "/auth/verify-email" && method === "POST") {
@@ -399,7 +474,7 @@ async function handle(request: Request, env: Env): Promise<Response> {
     const input = await body(request);
     const token = String(input.token ?? "");
     if (!token) return response(request, { detail: "Verification token is required." }, 400);
-    const result = await env.DB.prepare("UPDATE users SET is_verified=1, verification_token_hash=NULL WHERE verification_token_hash=?").bind(await sha256(token)).run();
+    const result = await env.DB.prepare("UPDATE users SET is_verified=1, verification_token_hash=NULL, verification_expires_at=NULL WHERE verification_token_hash=? AND verification_expires_at > datetime('now')").bind(await sha256(token)).run();
     if (!result.meta.changes) return response(request, { detail: "Verification token is invalid or expired." }, 400);
     return response(request, { message: "Email verified. You can now sign in." });
   }
@@ -413,6 +488,7 @@ async function handle(request: Request, env: Env): Promise<Response> {
     const password = String(input.password ?? "");
     const user = await env.DB.prepare("SELECT id,email,password_hash,is_verified FROM users WHERE email=?").bind(email).first<any>();
     if (!user || !(await verifyPassword(password, user.password_hash))) return response(request, { detail: "Email or password is incorrect." }, 401);
+    if (!user.is_verified) return response(request, { detail: "Verify your email address before signing in." }, 403);
     const token = randomToken();
     await env.DB.prepare("INSERT INTO sessions (token_hash,user_id,expires_at) VALUES (?,?,datetime('now', '+14 days'))").bind(await sha256(token), user.id).run();
     return response(request, { email: user.email, is_verified: Boolean(user.is_verified) }, 200, { "Set-Cookie": cookie(token, SESSION_DAYS * 86400) });
