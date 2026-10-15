@@ -10,3 +10,6 @@ migrations_dir = "migrations"
 
 [vars]
 APP_ENV = "production"
+
+[triggers]
+crons = ["*/15 * * * *"]
