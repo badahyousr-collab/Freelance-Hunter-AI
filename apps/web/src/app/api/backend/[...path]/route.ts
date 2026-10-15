@@ -42,6 +42,14 @@ async function proxy(request: NextRequest, context: RouteContext): Promise<Respo
       { status: 502, headers: { "Cache-Control": "no-store" } }
     );
   }
+  const contentType = upstream.headers.get("content-type") ?? "";
+  if (upstream.status >= 500 && !contentType.toLowerCase().includes("application/json")) {
+    return Response.json(
+      { detail: `API Worker вернул ошибку HTTP ${upstream.status}. Проверь статус API Worker в Cloudflare.` },
+      { status: 502, headers: { "Cache-Control": "no-store" } }
+    );
+  }
+
   const responseHeaders = new Headers();
   for (const name of ["content-type", "set-cookie", "cache-control", "www-authenticate"]) {
     const value = upstream.headers.get(name);
