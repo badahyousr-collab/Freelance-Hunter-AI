@@ -1,7 +1,7 @@
 name: CI
 
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-verify-${{ github.ref }}
   cancel-in-progress: true
 
 on:
