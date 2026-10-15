@@ -50,7 +50,7 @@ The first deployment build applies the checked-in D1 migration remotely. If the 
 Configure these before allowing production registration:
 - `RESEND_API_KEY` as a Worker secret.
 - `EMAIL_FROM` as a Worker variable containing a sender identity verified with Resend.
-- `APP_BASE_URL` as a Worker variable set to the deployed website URL, without a trailing slash.
+- `APP_BASE_URL` is preconfigured in `wrangler.toml` for `https://freelance-hunter-ai.badahyousr.workers.dev`; override it in Worker variables if the deployed website uses a different hostname.
 
 Verification links expire after 24 hours and are single-use. Password reset links expire after one hour, are single-use, and invalidate existing sessions after the password changes. The website provides `/forgot-password` and `/reset-password` pages. Never place the email provider key in frontend environment variables.
 
