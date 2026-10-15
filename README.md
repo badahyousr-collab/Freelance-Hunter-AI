@@ -21,7 +21,16 @@ Freelance Hunter is one of the systems in the Pipisso ecosystem, focused on AI-a
 
 ## Current status
 
-Initial repository setup. Integrations and outbound application workflows must be implemented and verified source by source. The application must never report a proposal as sent unless the source adapter confirms the result.
+The current Cloudflare implementation includes D1-backed accounts and sessions, email verification/password reset flows, per-user workspace data, public Telegram channel scanning, a Cloudflare webhook bot, and profile-grounded AI proposal drafts.
+
+- Website: https://freelance-hunter-ai.badahyousr.workers.dev/
+- API health endpoint: https://plain-voice-c13ffreelance-hunter-api.badahyousr.workers.dev/health
+- Public Telegram channels: manual scan plus a 15-minute Cron Trigger while the agent is enabled.
+- Telegram bot: Worker webhook mode; no separate always-on bot server is required.
+- Proposal drafting: OpenAI-compatible API configuration is required; drafts are saved but never reported as sent.
+- Still pending: production secrets/email sender setup, live runtime verification, provider-specific marketplace adapters, actual proposal submission, reply synchronization, and push notifications.
+
+GitHub CI verifies the backend tests/migrations, frontend lint/build, and Cloudflare Worker typecheck. A green CI run does not replace the final end-to-end test against the deployed Cloudflare account. The application must never report a proposal as sent unless the source adapter confirms the result.
 
 ## Local development
 
