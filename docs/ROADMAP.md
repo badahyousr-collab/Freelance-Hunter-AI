@@ -12,9 +12,10 @@
 - [x] HTTP-only cookie session and password hashing.
 - [x] Per-user authorization checks for workspace, source, application, and integration endpoints.
 - [x] Tests for authentication, malformed input, and selected ownership boundaries.
-- [ ] Password reset flow and production verification delivery.
-- [x] D1-backed rate limits for registration, email verification, and login (runtime verification pending).
-- [ ] Configure a real SMTP provider and verify delivery outside development.
+- [x] Password reset request/confirm flow with one-time tokens and session invalidation.
+- [x] Resend-based verification/reset email delivery integration and expiring tokens.
+- [x] D1-backed rate limits for registration, email verification, login, and password reset.
+- [ ] Configure a verified sender and test verification/reset emails in production.
 
 ## Phase 3 — Web control panel
 - [x] Dark responsive dashboard and navigation.
@@ -35,7 +36,7 @@
 ## Phase 5 — Matching and proposal drafting
 - [x] Deterministic hard filters for language, minimum budget, currency, payment method, and excluded keywords.
 - [x] Explainable baseline score and reasons.
-- [x] OpenAI-compatible proposal drafting endpoint with profile-grounded instructions.
+- [x] OpenAI-compatible proposal drafting endpoint with profile-grounded, prompt-injection-aware instructions.
 - [ ] Configure and test an AI provider in the deployment environment.
 - [ ] Improve multilingual budget parsing and evaluate matching against a labeled test set.
 
@@ -48,9 +49,9 @@
 
 ## Phase 7 — Telegram companion
 - [x] One-time expiring website-to-Telegram account linking.
-- [x] Statistics, pause/resume, and help commands.
-- [x] Bot API secret and server-side identity checks.
-- [ ] Configure a BotFather token and run the bot service.
+- [x] Statistics, project listing, pause/resume, and help commands.
+- [x] Cloudflare Worker webhook mode and server-side secret checks.
+- [ ] Configure new bot token/webhook secrets and verify real Telegram messages.
 - [ ] Add push notifications for new matches and tracked client replies.
 
 ## Phase 8 — Quality and deployment
