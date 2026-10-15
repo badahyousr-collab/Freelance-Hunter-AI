@@ -461,7 +461,7 @@ async function handle(request: Request, env: Env): Promise<Response> {
     if (await isRateLimited(request, env, "telegram-start", 5)) {
       return response(request, { detail: "Слишком много запросов. Подожди 15 минут." }, 429, { "Retry-After": "900" });
     }
-    if (!env.TELEGRAM_BOT_TOKEN) return response(request, { detail: "Telegram-бот временно не настроен. Попробуй позже." }, 503);
+    if (!env.TELEGRAM_BOT_TOKEN || !env.TELEGRAM_WEBHOOK_SECRET) return response(request, { detail: "Telegram-бот не настроен. Проверь TELEGRAM_BOT_TOKEN и TELEGRAM_WEBHOOK_SECRET." }, 503);
     const digits = new Uint32Array(1);
     crypto.getRandomValues(digits);
     const code = String(digits[0] % 1000000000).padStart(9, "0");
