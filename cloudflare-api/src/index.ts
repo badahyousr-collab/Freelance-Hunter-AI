@@ -249,7 +249,16 @@ const telegramKeyboard = {
 };
 
 function escapeTelegramHtml(value: string): string {
-  return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
+
+function safeTelegramUrl(value: string): string | null {
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === "https:" || parsed.protocol === "http:" ? parsed.toString() : null;
+  } catch {
+    return null;
+  }
 }
 
 async function telegramApi(env: Env, method: string, payload: Record<string, unknown>): Promise<any> {
@@ -341,10 +350,12 @@ async function handleTelegramWebhook(request: Request, env: Env): Promise<Respon
   if (isProjects) {
     const rows = await env.DB.prepare("SELECT p.title,p.url,p.source,p.budget_min,p.currency FROM projects p WHERE p.user_id=? AND EXISTS (SELECT 1 FROM sources s WHERE s.user_id=p.user_id AND s.is_enabled=1 AND s.source=p.source AND (s.source<>'telegram' OR p.source_project_id LIKE substr(s.identifier,2) || ':%')) ORDER BY p.discovered_at DESC LIMIT 5").bind(linked.user_id).all<any>();
     const items = rows.results ?? [];
-    const text = items.length ? "<b>Последние заказы</b>\\n\\n" + items.map((p: any) => {
-      const budget = p.budget_min != null ? `\\nБюджет: ${p.budget_min} ${escapeTelegramHtml(String(p.currency ?? ""))}` : "";
-      return `• <a href="${escapeTelegramHtml(String(p.url))}">${escapeTelegramHtml(String(p.title))}</a>${budget}`;
-    }).join("\\n\\n") : "Пока заказов нет. Добавь публичный Telegram-канал в разделе «Источники» и запусти сканирование.";
+    const text = items.length ? "<b>Последние заказы</b>\n\n" + items.map((p: any) => {
+      const budget = p.budget_min != null ? `\nБюджет: ${p.budget_min} ${escapeTelegramHtml(String(p.currency ?? ""))}` : "";
+      const title = escapeTelegramHtml(String(p.title));
+      const href = safeTelegramUrl(String(p.url));
+      return href ? `• <a href="${escapeTelegramHtml(href)}">${title}</a>${budget}` : `• ${title}${budget}`;
+    }).join("\n\n") : "Пока заказов нет. Добавь публичный Telegram-канал в разделе «Источники» и запусти сканирование.";
     await telegramReply(env, chatId, text);
     return response(request, { ok: true });
   }
