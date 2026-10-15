@@ -477,8 +477,8 @@ async function handle(request: Request, env: Env): Promise<Response> {
       return response(request, { detail: "Слишком много проверок. Запроси новый код." }, 429, { "Retry-After": "900" });
     }
     const input = await body(request);
-    const code = String(input.code ?? "").replace(/\\s/g, "");
-    if (!/^\\d{9}$/.test(code)) return response(request, { detail: "Неверный формат кода." }, 400);
+    const code = String(input.code ?? "").replace(/\s/g, "");
+    if (!/^\d{9}$/.test(code)) return response(request, { detail: "Неверный формат кода." }, 400);
     const codeHash = await sha256(code);
     const auth = await env.DB.prepare("SELECT user_id,authenticated_at,session_issued_at FROM telegram_auth_codes WHERE code_hash=? AND expires_at>datetime('now')").bind(codeHash).first<any>();
     if (!auth) return response(request, { detail: "Код истёк. Создай новый." }, 410);
