@@ -102,7 +102,7 @@ const integrationCatalog = [
   { provider: "freelancehunt", label: "Freelancehunt", description: "Marketplace account integration is not implemented yet.", setup_note: "Credential storage and account adapter are not enabled yet." },
   { provider: "fl_ru", label: "FL.ru", description: "Marketplace account integration is not implemented yet.", setup_note: "Credential storage and account adapter are not enabled yet." },
   { provider: "telegram", label: "Telegram bot", description: "Link the Telegram bot to control the agent and view projects.", setup_note: "Cloudflare Worker webhook mode needs TELEGRAM_BOT_TOKEN, TELEGRAM_WEBHOOK_SECRET, and BOT_API_SECRET Worker secrets." },
-  { provider: "llm", label: "AI provider", description: "AI drafting integration is not connected yet.", setup_note: "Provider key storage and live calls are not enabled yet." }
+  { provider: "llm", label: "AI provider", description: "AI drafting integration is not connected yet.", setup_note: "Configure AI_API_KEY, AI_MODEL, and optionally AI_API_BASE_URL as Worker secrets/variables to generate profile-grounded proposal drafts." }
 ];
 
 async function isRateLimited(request: Request, env: Env, endpoint: string, limit: number): Promise<boolean> {
