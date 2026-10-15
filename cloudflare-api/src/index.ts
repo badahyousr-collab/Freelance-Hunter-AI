@@ -310,11 +310,11 @@ async function handleTelegramWebhook(request: Request, env: Env): Promise<Respon
   const isHelp = ["/help", "❓ помощь"].includes(normalized) || rawText === "❓ Помощь";
 
   if (command === "/start") {
-    await telegramReply(env, chatId, "Бот Freelance Hunter подключён. Чтобы связать аккаунт, открой сайт → Безопасность → Telegram, создай одноразовый код и отправь <code>/link КОД</code>.");
+    await telegramReply(env, chatId, "Бот Freelance Hunter подключён. Для регистрации или входа открой сайт, нажми «Продолжить через Telegram», затем отправь сюда <code>/link КОД</code>. Код действует 10 минут.");
     return response(request, { ok: true });
   }
   if (isHelp) {
-    await telegramReply(env, chatId, "Команды:\n/link КОД - связать аккаунт\n/stats - статистика\n/projects - последние заказы\n/pause - приостановить агента\n/resume - возобновить агента");
+    await telegramReply(env, chatId, "Команды:\n/link КОД - подтвердить вход или регистрацию\n/stats - статистика\n/projects - последние заказы\n/pause - приостановить агента\n/resume - возобновить агента");
     return response(request, { ok: true });
   }
   if (command === "/link") {
@@ -602,8 +602,8 @@ async function handle(request: Request, env: Env): Promise<Response> {
     const webhookUrl = `${url.origin}/telegram/webhook`;
     await telegramApi(env, "setWebhook", { url: webhookUrl, secret_token: env.TELEGRAM_WEBHOOK_SECRET, allowed_updates: ["message"], drop_pending_updates: false });
     await telegramApi(env, "setMyCommands", { commands: [
-      { command: "start", description: "Запустить бота и связать аккаунт" },
-      { command: "link", description: "Связать аккаунт сайта по коду" },
+      { command: "start", description: "Запустить бота и войти" },
+      { command: "link", description: "Подтвердить вход кодом" },
       { command: "stats", description: "Статистика заказов и откликов" },
       { command: "projects", description: "Последние найденные заказы" },
       { command: "pause", description: "Приостановить AI-агента" },
