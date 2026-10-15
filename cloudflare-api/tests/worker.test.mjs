@@ -11,7 +11,7 @@ function fakeDb({ scan = false, skills = ["python", "telegram"], telegramAuth = 
         async first() {
           if (sql.includes("SELECT attempts FROM auth_rate_limits")) return { attempts: 1 };
           if (sql.includes("SELECT user_id,authenticated_at,session_issued_at FROM telegram_auth_codes")) return telegramAuth;
-          if (sql.includes("SELECT email,is_verified FROM users")) return { email: "telegram-123@telegram.local", is_verified: 1 };
+          if (sql.includes("SELECT email,is_verified,auth_method FROM users")) return { email: "telegram-123@telegram.local", is_verified: 1, auth_method: "telegram" };
           if (sql.includes("FROM sessions s JOIN users")) return { id: "user-1", email: "test@example.com", is_verified: 1 };
           if (sql.includes("SELECT COUNT(*) AS total FROM sources")) return { total: 0 };
           if (sql.includes("SELECT skills, min_budget, currency, excluded_keywords")) return { skills: JSON.stringify(skills), min_budget: null, currency: "USD", excluded_keywords: "[]" };
