@@ -17,7 +17,6 @@ export default async function DashboardPage() {
     const response = await fetch(`${apiBase}/auth/me`, {
       headers: { cookie: `fh_session=${encodeURIComponent(session)}` },
       cache: "no-store",
-      signal: AbortSignal.timeout(5000),
     });
     authenticated = response.ok;
   } catch {
