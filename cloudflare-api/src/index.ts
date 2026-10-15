@@ -198,8 +198,8 @@ async function scanTelegramSource(env: Env, userId: string, source: any): Promis
       if (profile?.min_budget != null && budget && budget.currency === String(profile.currency ?? "USD").toUpperCase() && budget.amount < Number(profile.min_budget)) continue;
       const matchedSkills = skills.filter((skill: string) => skill.length > 1 && text.includes(skill));
       const score = Math.max(0, Math.min(100, 35 + Math.min(45, matchedSkills.length * 15)));
-      const reasons = matchedSkills.length ? matchedSkills.map((skill: string) => `Упоминание навыка: ${skill}`) : ["Найдено в подключённом публичном Telegram-канале"];
-      if (score < Number(settings?.min_match_score ?? 60)) reasons.push("Оценка ниже порога агента");
+      if (score < Number(settings?.min_match_score ?? 60)) continue;
+      const reasons = matchedSkills.map((skill: string) => `Упоминание навыка: ${skill}`);
       const result = await env.DB.prepare(`INSERT INTO projects
         (user_id,source,source_project_id,url,title,description,language,budget_min,budget_max,currency,published_at,match_score,match_reasons)
         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(user_id,source,source_project_id) DO NOTHING`)
