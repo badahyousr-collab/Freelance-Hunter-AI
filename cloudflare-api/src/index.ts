@@ -2,6 +2,8 @@ interface Env {
   DB: D1Database;
   APP_ENV?: string;
   BOT_API_SECRET?: string;
+  TELEGRAM_BOT_TOKEN?: string;
+  TELEGRAM_WEBHOOK_SECRET?: string;
 }
 
 const COOKIE = "fh_session";
@@ -228,12 +230,135 @@ async function runScheduledScan(env: Env): Promise<void> {
   for (const row of rows.results ?? []) await scanUserSources(env, String(row.user_id));
 }
 
+
+
+const telegramKeyboard = {
+  keyboard: [
+    [{ text: "📊 Статистика" }, { text: "🧲 Новые заказы" }],
+    [{ text: "▶️ Возобновить агента" }, { text: "⏸ Пауза агента" }],
+    [{ text: "❓ Помощь" }]
+  ],
+  resize_keyboard: true,
+  is_persistent: true
+};
+
+function escapeTelegramHtml(value: string): string {
+  return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+async function telegramApi(env: Env, method: string, payload: Record<string, unknown>): Promise<any> {
+  if (!env.TELEGRAM_BOT_TOKEN) throw new Error("TELEGRAM_BOT_TOKEN is not configured");
+  const result = await fetch(\`https://api.telegram.org/bot\${env.TELEGRAM_BOT_TOKEN}/\${method}\`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload)
+  });
+  const data = await result.json<any>();
+  if (!result.ok || !data.ok) throw new Error(\`Telegram API request failed: \${method}\`);
+  return data.result;
+}
+
+async function telegramReply(env: Env, chatId: number, text: string): Promise<void> {
+  await telegramApi(env, "sendMessage", {
+    chat_id: chatId, text, parse_mode: "HTML", reply_markup: telegramKeyboard, disable_web_page_preview: true
+  });
+}
+
+async function handleTelegramWebhook(request: Request, env: Env): Promise<Response> {
+  if (!env.TELEGRAM_BOT_TOKEN || !env.TELEGRAM_WEBHOOK_SECRET) {
+    return response(request, { detail: "Telegram webhook secrets are not configured." }, 503);
+  }
+  if (request.headers.get("X-Telegram-Bot-Api-Secret-Token") !== env.TELEGRAM_WEBHOOK_SECRET) {
+    return response(request, { detail: "Invalid Telegram webhook secret." }, 401);
+  }
+  const update = await body(request);
+  const message = update.message;
+  const chatId = Number(message?.chat?.id);
+  const telegramUserId = String(message?.from?.id ?? "");
+  if (!Number.isSafeInteger(chatId) || !/^[0-9]{1,24}$/.test(telegramUserId) || typeof message?.text !== "string") {
+    return response(request, { ok: true });
+  }
+  const rawText = message.text.trim();
+  const [rawCommand, ...args] = rawText.split(/\s+/);
+  const command = rawCommand.split("@")[0].toLowerCase();
+  const normalized = ({
+    "📊": "stats",
+  } as Record<string, string>)[command] ?? command;
+  const isStats = ["/stats", "📊 статистика"].includes(normalized) || rawText === "📊 Статистика";
+  const isProjects = ["/projects", "🧲 новые заказы"].includes(normalized) || rawText === "🧲 Новые заказы";
+  const isPause = ["/pause", "⏸ пауза агента"].includes(normalized) || rawText === "⏸ Пауза агента";
+  const isResume = ["/resume", "▶️ возобновить агента"].includes(normalized) || rawText === "▶️ Возобновить агента";
+  const isHelp = ["/help", "❓ помощь"].includes(normalized) || rawText === "❓ Помощь";
+
+  if (command === "/start") {
+    await telegramReply(env, chatId, "Бот Freelance Hunter подключён. Чтобы связать аккаунт, открой сайт → Безопасность → Telegram, создай одноразовый код и отправь <code>/link КОД</code>.");
+    return response(request, { ok: true });
+  }
+  if (isHelp) {
+    await telegramReply(env, chatId, "Команды:\\n/link КОД - связать аккаунт\\n/stats - статистика\\n/projects - последние заказы\\n/pause - приостановить агента\\n/resume - возобновить агента");
+    return response(request, { ok: true });
+  }
+  if (command === "/link") {
+    const code = String(args[0] ?? "").trim().toUpperCase();
+    if (!code) {
+      await telegramReply(env, chatId, "Укажи код: <code>/link КОД</code>");
+      return response(request, { ok: true });
+    }
+    const codeHash = await sha256(code);
+    const link = await env.DB.prepare("SELECT tl.user_id,u.is_verified FROM telegram_links tl JOIN users u ON u.id=tl.user_id WHERE tl.link_code_hash=? AND tl.expires_at>datetime('now') AND tl.telegram_user_id IS NULL").bind(codeHash).first<any>();
+    if (!link || !link.is_verified) {
+      await telegramReply(env, chatId, "Код недействителен, истёк или аккаунт сайта не подтверждён. Создай новый код в настройках сайта.");
+      return response(request, { ok: true });
+    }
+    try {
+      const result = await env.DB.prepare("UPDATE telegram_links SET telegram_user_id=?,linked_at=datetime('now'),link_code_hash=NULL,expires_at=NULL WHERE user_id=? AND link_code_hash=? AND expires_at>datetime('now') AND telegram_user_id IS NULL")
+        .bind(telegramUserId, link.user_id, codeHash).run();
+      if (!result.meta.changes) throw new Error("Link code already used");
+      await telegramReply(env, chatId, "Аккаунт сайта успешно связан с Telegram.");
+    } catch {
+      await telegramReply(env, chatId, "Этот Telegram-аккаунт уже связан или код уже использован.");
+    }
+    return response(request, { ok: true });
+  }
+
+  const linked = await env.DB.prepare("SELECT user_id FROM telegram_links WHERE telegram_user_id=?").bind(telegramUserId).first<any>();
+  if (!linked) {
+    await telegramReply(env, chatId, "Сначала свяжи аккаунт: на сайте открой Безопасность → Telegram и отправь сюда <code>/link КОД</code>.");
+    return response(request, { ok: true });
+  }
+  if (isStats) {
+    const row = await env.DB.prepare("SELECT (SELECT COUNT(*) FROM projects WHERE user_id=?) AS projects_found,(SELECT COUNT(*) FROM projects WHERE user_id=? AND match_score>=60) AS matched_projects,(SELECT COUNT(*) FROM applications WHERE user_id=? AND status IN ('sent','replied','closed')) AS proposals_sent,(SELECT COUNT(*) FROM applications WHERE user_id=? AND replied_at IS NOT NULL) AS client_replies")
+      .bind(linked.user_id, linked.user_id, linked.user_id, linked.user_id).first<any>();
+    await telegramReply(env, chatId, \`<b>Статистика Freelance Hunter</b>\\nНайдено заказов: \${row?.projects_found ?? 0}\\nПодходящих: \${row?.matched_projects ?? 0}\\nОтправлено откликов: \${row?.proposals_sent ?? 0}\\nОтветов клиентов: \${row?.client_replies ?? 0}\`);
+    return response(request, { ok: true });
+  }
+  if (isProjects) {
+    const rows = await env.DB.prepare("SELECT p.title,p.url,p.source,p.budget_min,p.currency FROM projects p WHERE p.user_id=? AND EXISTS (SELECT 1 FROM sources s WHERE s.user_id=p.user_id AND s.is_enabled=1 AND s.source=p.source AND (s.source<>'telegram' OR p.source_project_id LIKE substr(s.identifier,2) || ':%')) ORDER BY p.discovered_at DESC LIMIT 5").bind(linked.user_id).all<any>();
+    const items = rows.results ?? [];
+    const text = items.length ? "<b>Последние заказы</b>\\n\\n" + items.map((p: any) => {
+      const budget = p.budget_min != null ? \`\\nБюджет: \${p.budget_min} \${escapeTelegramHtml(String(p.currency ?? ""))}\` : "";
+      return \`• <a href="\${escapeTelegramHtml(String(p.url))}">\${escapeTelegramHtml(String(p.title))}</a>\${budget}\`;
+    }).join("\\n\\n") : "Пока заказов нет. Добавь публичный Telegram-канал в разделе «Источники» и запусти сканирование.";
+    await telegramReply(env, chatId, text);
+    return response(request, { ok: true });
+  }
+  if (isPause || isResume) {
+    const enabled = isResume;
+    await env.DB.prepare("UPDATE agent_settings SET is_enabled=?,updated_at=datetime('now') WHERE user_id=?").bind(enabled ? 1 : 0, linked.user_id).run();
+    await telegramReply(env, chatId, enabled ? "AI-агент возобновлён." : "AI-агент приостановлен.");
+    return response(request, { ok: true });
+  }
+  await telegramReply(env, chatId, "Не понял команду. Нажми «❓ Помощь», чтобы увидеть доступные команды.");
+  return response(request, { ok: true });
+}
+
 async function handle(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
   const path = url.pathname.replace(/\/+$/, "") || "/";
   const method = request.method.toUpperCase();
 
   if (method === "OPTIONS") return new Response(null, { status: 204, headers: cors(request) });
+  if (path === "/telegram/webhook" && method === "POST") return handleTelegramWebhook(request, env);
   if (method === "GET" && (path === "/health" || path === "/")) {
     const check = await env.DB.prepare("SELECT 1 AS ok").first<{ok:number}>();
     return response(request, { status: "ok", database: check?.ok === 1 ? "connected" : "unavailable", service: "freelance-hunter-api" });
@@ -304,10 +429,27 @@ async function handle(request: Request, env: Env): Promise<Response> {
   const botProjectsPrefix = "/telegram/projects/";
   const isBotSummary = method === "GET" && path.startsWith(botSummaryPrefix);
   const isBotProjects = method === "GET" && path.startsWith(botProjectsPrefix);
-  const isBotAction = (path === "/telegram/link" && method === "POST") || (path === "/telegram/agent-control" && method === "POST") || isBotSummary || isBotProjects;
+  const isBotAction = (path === "/telegram/webhook/setup" && method === "POST") || (path === "/telegram/link" && method === "POST") || (path === "/telegram/agent-control" && method === "POST") || isBotSummary || isBotProjects;
   if (isBotAction) {
     if (!env.BOT_API_SECRET) return response(request, { detail: "Telegram bot secret is not configured." }, 503);
     if (!botAuthorized) return response(request, { detail: "Invalid bot credentials." }, 401);
+  }
+
+
+  if (path === "/telegram/webhook/setup" && method === "POST") {
+    if (!env.TELEGRAM_BOT_TOKEN || !env.TELEGRAM_WEBHOOK_SECRET) return response(request, { detail: "Set TELEGRAM_BOT_TOKEN and TELEGRAM_WEBHOOK_SECRET as Worker secrets first." }, 503);
+    const webhookUrl = `${url.origin}/telegram/webhook`;
+    await telegramApi(env, "setWebhook", { url: webhookUrl, secret_token: env.TELEGRAM_WEBHOOK_SECRET, allowed_updates: ["message"], drop_pending_updates: false });
+    await telegramApi(env, "setMyCommands", { commands: [
+      { command: "start", description: "Запустить бота и связать аккаунт" },
+      { command: "link", description: "Связать аккаунт сайта по коду" },
+      { command: "stats", description: "Статистика заказов и откликов" },
+      { command: "projects", description: "Последние найденные заказы" },
+      { command: "pause", description: "Приостановить AI-агента" },
+      { command: "resume", description: "Возобновить AI-агента" },
+      { command: "help", description: "Помощь по командам" }
+    ] });
+    return response(request, { ok: true, webhook_url: webhookUrl });
   }
 
   if (path === "/telegram/link" && method === "POST") {
