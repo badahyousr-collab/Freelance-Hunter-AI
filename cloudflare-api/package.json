@@ -11,7 +11,7 @@
     "build:test": "tsc -p tsconfig.test.json"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^5.20261015.1",
+    "@cloudflare/workers-types": "^4.20260426.1",
     "typescript": "^5.7.0",
     "wrangler": "^4.0.0"
   }
