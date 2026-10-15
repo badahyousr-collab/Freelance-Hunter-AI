@@ -137,7 +137,7 @@ export default function TelegramAuth({ mode }: Props) {
           )}
         </div>
 
-        {message && <div className={code && busy ? "auth-message" : "auth-message"} role="status" aria-live="polite">{message}</div>}
+        {message && <div className="auth-message" role="status" aria-live="polite">{message}</div>}
 
         {mode === "login" && (
           <div className="email-fallback">
