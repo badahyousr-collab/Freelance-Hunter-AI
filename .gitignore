@@ -21,6 +21,7 @@ node_modules/
 .next/
 out/
 dist/
+.test-dist/
 npm-debug.log*
 yarn-debug.log*
 pnpm-debug.log*
@@ -36,6 +37,9 @@ data/
 *.sqlite3
 *.db
 celerybeat-schedule*
+
+# Cloudflare build output
+.wrangler/
 
 # Cloudflare OpenNext build output
 .open-next/
