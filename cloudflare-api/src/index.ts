@@ -266,14 +266,31 @@ function safeTelegramUrl(value: string): string | null {
 }
 
 async function telegramApi(env: Env, method: string, payload: Record<string, unknown>): Promise<any> {
-  if (!env.TELEGRAM_BOT_TOKEN) throw new Error("TELEGRAM_BOT_TOKEN is not configured");
-  const result = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/${method}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload)
-  });
-  const data = await result.json<any>();
-  if (!result.ok || !data.ok) throw new Error(`Telegram API request failed: ${method}`);
+  if (!env.TELEGRAM_BOT_TOKEN) throw new Error("TELEGRAM_TOKEN_MISSING");
+  let result: Response;
+  try {
+    result = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/${method}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(10000)
+    });
+  } catch (error) {
+    if (error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError")) {
+      throw new Error("TELEGRAM_NETWORK_TIMEOUT");
+    }
+    throw new Error("TELEGRAM_NETWORK_UNREACHABLE");
+  }
+  let data: any;
+  try {
+    data = await result.json<any>();
+  } catch {
+    throw new Error("TELEGRAM_INVALID_RESPONSE");
+  }
+  if (result.status === 401) throw new Error("TELEGRAM_TOKEN_REJECTED");
+  if (!result.ok || !data?.ok) {
+    throw new Error("TELEGRAM_API_REJECTED");
+  }
   return data.result;
 }
 
@@ -474,9 +491,21 @@ async function handle(request: Request, env: Env): Promise<Response> {
       const username = String(bot?.username ?? "");
       if (!/^[A-Za-z0-9_]{5,}$/.test(username)) throw new Error("Telegram bot username is unavailable");
       return response(request, { code, expires_in_seconds: 600, bot_url: `https://t.me/${username}` }, 201);
-    } catch {
+    } catch (error) {
       await env.DB.prepare("DELETE FROM telegram_auth_codes WHERE code_hash=?").bind(codeHash).run();
-      return response(request, { detail: "Не удалось подключиться к Telegram-боту. Попробуй позже." }, 503);
+      const reason = error instanceof Error ? error.message : "";
+      const detail = reason === "TELEGRAM_TOKEN_REJECTED"
+        ? "Telegram отклонил токен бота. Проверь TELEGRAM_BOT_TOKEN в секретах API Worker."
+        : reason === "TELEGRAM_NETWORK_TIMEOUT"
+          ? "Cloudflare API Worker не дождался ответа Telegram за 10 секунд. Проверь логи Worker и доступность Telegram API."
+          : reason === "TELEGRAM_NETWORK_UNREACHABLE"
+            ? "Cloudflare API Worker не смог установить соединение с Telegram API. Проверь логи Worker."
+            : reason === "TELEGRAM_API_REJECTED"
+              ? "Telegram API отклонил запрос. Проверь токен и настройки бота."
+              : reason === "TELEGRAM_INVALID_RESPONSE"
+                ? "Telegram API вернул ответ в неожиданном формате. Проверь статус Telegram API."
+                : "Не удалось проверить Telegram-бота. Проверь секреты и логи API Worker.";
+      return response(request, { detail, diagnostic: reason || "UNKNOWN_TELEGRAM_ERROR" }, 503);
     }
   }
 
