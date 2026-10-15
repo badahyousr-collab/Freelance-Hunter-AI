@@ -310,7 +310,7 @@ async function handleTelegramWebhook(request: Request, env: Env): Promise<Respon
     return response(request, { ok: true });
   }
   if (isHelp) {
-    await telegramReply(env, chatId, "Команды:\\n/link КОД - связать аккаунт\\n/stats - статистика\\n/projects - последние заказы\\n/pause - приостановить агента\\n/resume - возобновить агента");
+    await telegramReply(env, chatId, "Команды:\n/link КОД - связать аккаунт\n/stats - статистика\n/projects - последние заказы\n/pause - приостановить агента\n/resume - возобновить агента");
     return response(request, { ok: true });
   }
   if (command === "/link") {
@@ -344,7 +344,7 @@ async function handleTelegramWebhook(request: Request, env: Env): Promise<Respon
   if (isStats) {
     const row = await env.DB.prepare("SELECT (SELECT COUNT(*) FROM projects WHERE user_id=?) AS projects_found,(SELECT COUNT(*) FROM projects WHERE user_id=? AND match_score>=60) AS matched_projects,(SELECT COUNT(*) FROM applications WHERE user_id=? AND status IN ('sent','replied','closed')) AS proposals_sent,(SELECT COUNT(*) FROM applications WHERE user_id=? AND replied_at IS NOT NULL) AS client_replies")
       .bind(linked.user_id, linked.user_id, linked.user_id, linked.user_id).first<any>();
-    await telegramReply(env, chatId, `<b>Статистика Freelance Hunter</b>\\nНайдено заказов: ${row?.projects_found ?? 0}\\nПодходящих: ${row?.matched_projects ?? 0}\\nОтправлено откликов: ${row?.proposals_sent ?? 0}\\nОтветов клиентов: ${row?.client_replies ?? 0}`);
+    await telegramReply(env, chatId, `<b>Статистика Freelance Hunter</b>\nНайдено заказов: ${row?.projects_found ?? 0}\nПодходящих: ${row?.matched_projects ?? 0}\nОтправлено откликов: ${row?.proposals_sent ?? 0}\nОтветов клиентов: ${row?.client_replies ?? 0}`);
     return response(request, { ok: true });
   }
   if (isProjects) {
