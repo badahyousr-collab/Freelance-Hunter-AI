@@ -120,6 +120,114 @@ async function isRateLimited(request: Request, env: Env, endpoint: string, limit
   return Number(row?.attempts ?? 0) > limit;
 }
 
+
+type TelegramPost = { postId: string; title: string; description: string; url: string; publishedAt: string | null };
+
+function decodeHtml(value: string): string {
+  return value
+    .replace(/<br\s*\/?\s*>/gi, "\n")
+    .replace(/<\/(?:p|div|li|blockquote)>/gi, "\n")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;|&#160;/gi, " ")
+    .replace(/&amp;/gi, "&").replace(/&quot;/gi, '"')
+    .replace(/&#39;|&apos;/gi, "'").replace(/&lt;/gi, "<").replace(/&gt;/gi, ">")
+    .replace(/&#(\d+);/g, (_, n: string) => String.fromCodePoint(Number(n)))
+    .replace(/&#x([0-9a-f]+);/gi, (_, n: string) => String.fromCodePoint(parseInt(n, 16)))
+    .replace(/[ \t]+/g, " ").replace(/ *\n */g, "\n").trim();
+}
+
+function parseTelegramPreview(html: string, channel: string): TelegramPost[] {
+  const chunks = html.split(/(?=<div class="tgme_widget_message_wrap)/i).slice(1);
+  const posts: TelegramPost[] = [];
+  const seen = new Set<string>();
+  for (const chunk of chunks) {
+    const postMatch = chunk.match(/data-post=["']([^/"']+)\/(\d+)["']/i);
+    const textMatch = chunk.match(/class=["']tgme_widget_message_text[^"']*["'][^>]*>([\s\S]*?)<\/div>/i);
+    if (!postMatch || !textMatch || postMatch[1].toLowerCase() !== channel.toLowerCase()) continue;
+    const postId = postMatch[2];
+    if (seen.has(postId)) continue;
+    const description = decodeHtml(textMatch[1]).slice(0, 12000);
+    if (description.length < 25 || !/(ищу|ищем|нужен|нужна|требуется|заказ|бюджет|оплата|looking for|hiring|need a|project|freelance|разработчик|исполнитель|бот|сайт)/i.test(description)) continue;
+    const title = (description.split("\n").map(line => line.trim()).find(Boolean) || description).slice(0, 180);
+    const dateMatch = chunk.match(/<time[^>]*datetime=["']([^"']+)["']/i);
+    posts.push({ postId, title, description, url: \`https://t.me/\${channel}/\${postId}\`, publishedAt: dateMatch?.[1] ?? null });
+    seen.add(postId);
+    if (posts.length >= 50) break;
+  }
+  return posts;
+}
+
+function detectedBudget(text: string): { amount: number; currency: string } | null {
+  const match = text.match(/(?:\bбюджет\b|\bоплата\b|\bдо\b|\bот\b)?\s*([0-9][0-9\s.,]{1,12})\s*(₽|руб(?:лей|ля|ль)?|RUB|USD|EUR|\$|€)/i);
+  if (!match) return null;
+  const normalized = match[1].replace(/\s/g, "").replace(/,(?=\d{3}(?:\D|$))/g, "").replace(",", ".").replace(/[^0-9.]/g, "");
+  const amount = Number(normalized);
+  if (!Number.isFinite(amount) || amount <= 0) return null;
+  const raw = match[2].toLowerCase();
+  const currency = raw.includes("руб") || raw === "₽" || raw === "rub" ? "RUB" : raw === "€" || raw === "eur" ? "EUR" : "USD";
+  return { amount, currency };
+}
+
+async function scanTelegramSource(env: Env, userId: string, source: any): Promise<{ added: number; error?: string }> {
+  const channel = String(source.identifier ?? "").replace(/^@/, "").trim();
+  if (!/^[a-zA-Z0-9_]{5,}$/.test(channel)) return { added: 0, error: "Invalid public Telegram channel username." };
+  try {
+    const upstream = await fetch(\`https://t.me/s/\${encodeURIComponent(channel)}\`, {
+      headers: { "User-Agent": "Mozilla/5.0 (compatible; FreelanceHunterBot/1.0)", "Accept": "text/html" },
+      signal: AbortSignal.timeout(12000)
+    });
+    if (!upstream.ok) throw new Error(\`Telegram preview returned HTTP \${upstream.status}\`);
+    const posts = parseTelegramPreview(await upstream.text(), channel);
+    const profile = await env.DB.prepare("SELECT skills, min_budget, currency, excluded_keywords FROM profiles WHERE user_id=?").bind(userId).first<any>();
+    const settings = await env.DB.prepare("SELECT min_match_score FROM agent_settings WHERE user_id=?").bind(userId).first<any>();
+    const skills = safeJson(profile?.skills, []).map((x: unknown) => String(x).toLowerCase()).filter(Boolean);
+    const excluded = safeJson(profile?.excluded_keywords, []).map((x: unknown) => String(x).toLowerCase()).filter(Boolean);
+    let added = 0;
+    for (const post of posts) {
+      const text = post.description.toLowerCase();
+      if (excluded.some((word: string) => word && text.includes(word))) continue;
+      const budget = detectedBudget(post.description);
+      if (profile?.min_budget != null && budget && budget.currency === String(profile.currency ?? "USD").toUpperCase() && budget.amount < Number(profile.min_budget)) continue;
+      const matchedSkills = skills.filter((skill: string) => skill.length > 1 && text.includes(skill));
+      const score = Math.max(0, Math.min(100, 35 + Math.min(45, matchedSkills.length * 15)));
+      const reasons = matchedSkills.length ? matchedSkills.map((skill: string) => \`Упоминание навыка: \${skill}\`) : ["Найдено в подключённом публичном Telegram-канале"];
+      if (score < Number(settings?.min_match_score ?? 60)) reasons.push("Оценка ниже порога агента");
+      const result = await env.DB.prepare(\`INSERT INTO projects
+        (user_id,source,source_project_id,url,title,description,language,budget_min,budget_max,currency,published_at,match_score,match_reasons)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(user_id,source,source_project_id) DO NOTHING\`)
+        .bind(userId, "telegram", \`\${channel}:\${post.postId}\`, post.url, post.title, post.description,
+          /[а-яё]/i.test(post.description) ? "ru" : "en", budget?.amount ?? null, budget?.amount ?? null,
+          budget?.currency ?? null, post.publishedAt, score, JSON.stringify(reasons)).run();
+      added += Number(result.meta.changes ?? 0);
+    }
+    await env.DB.prepare("UPDATE sources SET status='active',last_scan_at=datetime('now'),last_error=NULL,last_discovered_count=? WHERE id=? AND user_id=?")
+      .bind(added, source.id, userId).run();
+    return { added };
+  } catch (error) {
+    const message = error instanceof Error ? error.message.slice(0, 500) : "Source scan failed";
+    await env.DB.prepare("UPDATE sources SET status='error',last_scan_at=datetime('now'),last_error=? WHERE id=? AND user_id=?")
+      .bind(message, source.id, userId).run();
+    return { added: 0, error: message };
+  }
+}
+
+async function scanUserSources(env: Env, userId: string): Promise<{ scannedSources: number; newProjects: number; errors: string[] }> {
+  const rows = await env.DB.prepare("SELECT * FROM sources WHERE user_id=? AND is_enabled=1 AND source='telegram' ORDER BY created_at ASC").bind(userId).all<any>();
+  let newProjects = 0;
+  const errors: string[] = [];
+  for (const source of rows.results ?? []) {
+    const result = await scanTelegramSource(env, userId, source);
+    newProjects += result.added;
+    if (result.error) errors.push(\`\${source.identifier}: \${result.error}\`);
+  }
+  return { scannedSources: (rows.results ?? []).length, newProjects, errors };
+}
+
+async function runScheduledScan(env: Env): Promise<void> {
+  const rows = await env.DB.prepare("SELECT DISTINCT s.user_id FROM sources s JOIN agent_settings a ON a.user_id=s.user_id WHERE s.is_enabled=1 AND s.source='telegram' AND a.is_enabled=1").all<any>();
+  for (const row of rows.results ?? []) await scanUserSources(env, String(row.user_id));
+}
+
 async function handle(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
   const path = url.pathname.replace(/\/+$/, "") || "/";
@@ -339,7 +447,10 @@ async function handle(request: Request, env: Env): Promise<Response> {
     await env.DB.prepare("UPDATE agent_settings SET is_enabled=?,auto_draft=?,min_match_score=?,updated_at=datetime('now') WHERE user_id=?").bind(enabled,autoDraft,score,uid).run();
     return response(request, { enabled: Boolean(enabled), is_enabled: Boolean(enabled), auto_draft: Boolean(autoDraft), min_match_score: score });
   }
-  if (path === "/agent/scan" && method === "POST") return response(request, { detail: "The scan queue is not deployed yet. Source configurations are saved, but live collection is not running." }, 501);
+  if (path === "/agent/scan" && method === "POST") {
+    const result = await scanUserSources(env, uid);
+    return response(request, { ...result, message: result.scannedSources ? "Scan completed." : "Add an enabled public Telegram channel to scan." });
+  }
 
   if (path === "/applications" && method === "GET") {
     const rows = await env.DB.prepare("SELECT a.*, p.title AS project_title, p.url AS project_url, p.source AS project_source FROM applications a LEFT JOIN projects p ON p.id=a.project_id AND p.user_id=a.user_id WHERE a.user_id=? ORDER BY a.created_at DESC").bind(uid).all<any>();
@@ -395,5 +506,8 @@ export default {
       // Avoid leaking database details, credentials, or stack traces to callers.
       return response(request, { detail: "Internal server error. Check the Cloudflare Worker logs." }, 500);
     }
+  },
+  async scheduled(_controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
+    ctx.waitUntil(runScheduledScan(env));
   }
 };
