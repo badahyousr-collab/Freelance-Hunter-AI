@@ -9,7 +9,7 @@ export default async function HomePage() {
 
   if (!session) redirect("/login");
 
-  const apiBase = process.env.CLOUDFLARE_API_URL?.trim().replace(/\\/+$/, "");
+  const apiBase = process.env.CLOUDFLARE_API_URL?.trim().replace(new RegExp("/+$"), "");
   if (!apiBase) redirect("/login");
 
   let authenticated = false;
