@@ -112,3 +112,29 @@ test("manual scan skips listings below the configured relevance threshold", asyn
     globalThis.fetch = originalFetch;
   }
 });
+
+
+test("Telegram help command sends readable multiline text and keyboard", async () => {
+  const originalFetch = globalThis.fetch;
+  let sentPayload;
+  globalThis.fetch = async (input, init) => {
+    if (String(input).includes("api.telegram.org/botTEST_TOKEN/sendMessage")) {
+      sentPayload = JSON.parse(init.body);
+      return Response.json({ ok: true, result: { message_id: 1 } });
+    }
+    return originalFetch(input, init);
+  };
+  try {
+    const response = await worker.fetch(new Request("https://api.example/telegram/webhook", {
+      method: "POST",
+      headers: { "X-Telegram-Bot-Api-Secret-Token": "webhook-secret", "Content-Type": "application/json" },
+      body: JSON.stringify({ message: { chat: { id: 123 }, from: { id: 123 }, text: "/help" } })
+    }), { DB: fakeDb(), TELEGRAM_BOT_TOKEN: "TEST_TOKEN", TELEGRAM_WEBHOOK_SECRET: "webhook-secret" });
+    assert.equal(response.status, 200);
+    assert.match(sentPayload.text, /Команды:\n\/link КОД/);
+    assert.doesNotMatch(sentPayload.text, /Команды:\\n/);
+    assert.equal(sentPayload.reply_markup.keyboard.length, 3);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
