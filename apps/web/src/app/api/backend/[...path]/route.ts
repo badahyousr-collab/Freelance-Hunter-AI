@@ -5,6 +5,12 @@ export const dynamic = "force-dynamic";
 type RouteContext = { params: Promise<{ path: string[] }> };
 
 async function proxy(request: NextRequest, context: RouteContext): Promise<Response> {
+  if (!["GET", "HEAD", "OPTIONS"].includes(request.method)) {
+    const origin = request.headers.get("origin");
+    if (!origin || origin !== new URL(request.url).origin) {
+      return Response.json({ detail: "Cross-origin request rejected." }, { status: 403 });
+    }
+  }
   const upstreamBase = process.env.CLOUDFLARE_API_URL?.trim().replace(/\/+$/, "");
   if (!upstreamBase) {
     return Response.json(
