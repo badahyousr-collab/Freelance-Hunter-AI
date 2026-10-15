@@ -145,7 +145,7 @@ function decodeHtml(value: string): string {
 }
 
 function parseTelegramPreview(html: string, channel: string): TelegramPost[] {
-  const chunks = html.split(/(?=<div class="tgme_widget_message_wrap)/i).slice(1);
+  const chunks = html.split(/(?=<div class="tgme_widget_message_wrap)/i).filter(chunk => /<div class="tgme_widget_message_wrap/i.test(chunk));
   const posts: TelegramPost[] = [];
   const seen = new Set<string>();
   for (const chunk of chunks) {
