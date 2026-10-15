@@ -4,6 +4,9 @@ interface Env {
   BOT_API_SECRET?: string;
   TELEGRAM_BOT_TOKEN?: string;
   TELEGRAM_WEBHOOK_SECRET?: string;
+  AI_API_KEY?: string;
+  AI_API_BASE_URL?: string;
+  AI_MODEL?: string;
 }
 
 const COOKIE = "fh_session";
@@ -596,6 +599,62 @@ async function handle(request: Request, env: Env): Promise<Response> {
     if (Number(recentScan?.total ?? 0) > 0) return response(request, { detail: "A source was scanned recently. Wait one minute before scanning again." }, 429);
     const result = await scanUserSources(env, uid);
     return response(request, { ...result, message: result.scannedSources ? "Scan completed." : "Add an enabled public Telegram channel to scan." });
+  }
+
+
+  const draftMatch = path.match(/^\\/applications\\/(\\d+)\\/draft$/);
+  if (draftMatch && method === "POST") {
+    if (!env.AI_API_KEY || !env.AI_MODEL) return response(request, { detail: "AI drafting is not configured. Set AI_API_KEY and AI_MODEL as Worker secrets/variables." }, 503);
+    const project = await env.DB.prepare("SELECT id,source,url,title,description,language,budget_min,budget_max,currency,payment_method FROM projects WHERE id=? AND user_id=?").bind(Number(draftMatch[1]), uid).first<any>();
+    if (!project) return response(request, { detail: "Project not found." }, 404);
+    const profile = await env.DB.prepare("SELECT display_name,skills,languages,payment_preferences,min_budget,currency FROM profiles WHERE user_id=?").bind(uid).first<any>() ?? {};
+    const existing = await env.DB.prepare("SELECT id,status FROM applications WHERE user_id=? AND project_id=?").bind(uid, project.id).first<any>();
+    if (existing && ["sent","replied","closed"].includes(String(existing.status))) {
+      return response(request, { detail: "This application is already tracked as submitted or closed. Its status will not be overwritten." }, 409);
+    }
+    const profileFacts = {
+      display_name: profile.display_name ?? null,
+      skills: safeJson(profile.skills, []),
+      languages: safeJson(profile.languages, ["ru","en"]),
+      payment_preferences: safeJson(profile.payment_preferences, []),
+      minimum_budget: profile.min_budget ?? null,
+      preferred_currency: profile.currency ?? "USD"
+    };
+    const projectFacts = {
+      source: project.source, title: project.title, description: project.description,
+      language: project.language, budget_min: project.budget_min, budget_max: project.budget_max,
+      currency: project.currency, payment_method: project.payment_method, listing_url: project.url
+    };
+    const apiBase = (env.AI_API_BASE_URL || "https://api.openai.com/v1").replace(/\\/+$/, "");
+    const endpoint = apiBase.endsWith("/chat/completions") ? apiBase : apiBase + "/chat/completions";
+    let draftText = "";
+    try {
+      const upstream = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${env.AI_API_KEY}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: env.AI_MODEL,
+          temperature: 0.35,
+          max_tokens: 700,
+          messages: [
+            { role: "system", content: "Write a concise, natural freelance proposal in the language of the listing. Use only the supplied profile and listing facts. Never invent experience, years, clients, portfolio items, results, credentials, or technical skills. If the profile does not prove a claim, do not make that claim. Be specific about how the listed skills could address the task. Do not claim the proposal has been sent. Return only the proposal text." },
+            { role: "user", content: JSON.stringify({ user_profile: profileFacts, project: projectFacts }) }
+          ]
+        }),
+        signal: AbortSignal.timeout(25000)
+      });
+      const data = await upstream.json<any>();
+      if (!upstream.ok) return response(request, { detail: "AI provider request failed. Check the API endpoint, model, key, and provider quota." }, 502);
+      draftText = String(data?.choices?.[0]?.message?.content ?? "").trim();
+    } catch {
+      return response(request, { detail: "Could not reach the AI provider. Check the endpoint and try again." }, 502);
+    }
+    if (!draftText) return response(request, { detail: "The AI provider returned an empty proposal." }, 502);
+    const saved = await env.DB.prepare("INSERT INTO applications (user_id,project_id,status,draft_text) VALUES (?,?,'draft',?) ON CONFLICT(user_id,project_id) DO UPDATE SET draft_text=excluded.draft_text,status='draft' WHERE applications.status='draft'")
+      .bind(uid, project.id, draftText).run();
+    if (!saved.meta.changes) return response(request, { detail: "Could not save the proposal draft." }, 409);
+    const application = await env.DB.prepare("SELECT id,project_id,status,draft_text,created_at,submitted_at,replied_at FROM applications WHERE user_id=? AND project_id=?").bind(uid, project.id).first<any>();
+    return response(request, application, existing ? 200 : 201);
   }
 
   if (path === "/applications" && method === "GET") {
