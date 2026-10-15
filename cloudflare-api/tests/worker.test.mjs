@@ -74,7 +74,7 @@ test("Telegram auth start returns a nine-digit code valid for ten minutes", asyn
       method: "POST",
       headers: { "Content-Type": "application/json", "CF-Connecting-IP": "198.51.100.21" },
       body: "{}"
-    }), { DB: fakeDb(), TELEGRAM_BOT_TOKEN: "TEST_TOKEN" });
+    }), { DB: fakeDb(), TELEGRAM_BOT_TOKEN: "TEST_TOKEN", TELEGRAM_WEBHOOK_SECRET: "webhook-secret" });
     assert.equal(response.status, 201);
     const data = await response.json();
     assert.match(data.code, /^\d{9}$/);
