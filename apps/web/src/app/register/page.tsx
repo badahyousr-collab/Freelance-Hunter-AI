@@ -17,7 +17,7 @@ export default function RegisterPage() {
     event.preventDefault(); setBusy(true); setMessage(""); setVerificationToken("");
     try {
       const response = await fetch(`${API}/auth/register`, { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include", body: JSON.stringify({ email, password }) });
-      const data = await response.json();
+      const data = await response.json().catch(() => ({} as { detail?: string; message?: string; verification_token?: string }));
       if (!response.ok) throw new Error(data.detail ?? "Could not create your account");
       setMessage(data.message ?? "Account created. Check your email.");
       if (data.verification_token) setVerificationToken(data.verification_token);
