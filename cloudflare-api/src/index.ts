@@ -318,6 +318,10 @@ async function handleTelegramWebhook(request: Request, env: Env): Promise<Respon
     return response(request, { ok: true });
   }
   if (command === "/link") {
+    if (message?.chat?.type !== "private") {
+      await telegramReply(env, chatId, "Для безопасности отправь код в личном чате с ботом, не в группе.");
+      return response(request, { ok: true });
+    }
     const code = String(args[0] ?? "").trim().toUpperCase();
     if (!code) {
       await telegramReply(env, chatId, "Укажи код: <code>/link КОД</code>");
@@ -443,6 +447,55 @@ async function handle(request: Request, env: Env): Promise<Response> {
 
   if (path === "/auth/register" && method === "POST") {
     return response(request, { detail: "Регистрация по email отключена. Используй вход через Telegram." }, 410);
+  }
+
+  if (path === "/auth/telegram/start" && method === "POST") {
+    if (await isRateLimited(request, env, "telegram-start", 5)) {
+      return response(request, { detail: "Слишком много запросов. Подожди 15 минут." }, 429, { "Retry-After": "900" });
+    }
+    if (!env.TELEGRAM_BOT_TOKEN) return response(request, { detail: "Telegram-бот временно не настроен. Попробуй позже." }, 503);
+    const digits = new Uint32Array(1);
+    crypto.getRandomValues(digits);
+    const code = String(digits[0] % 1000000000).padStart(9, "0");
+    const codeHash = await sha256(code);
+    await env.DB.prepare("DELETE FROM telegram_auth_codes WHERE expires_at<=datetime('now') OR session_issued_at IS NOT NULL").run();
+    const saved = await env.DB.prepare("INSERT INTO telegram_auth_codes (code_hash,expires_at) VALUES (?,datetime('now','+10 minutes')) ON CONFLICT(code_hash) DO NOTHING").bind(codeHash).run();
+    if (!saved.meta.changes) return response(request, { detail: "Не удалось создать код. Нажми ещё раз." }, 503);
+    try {
+      const bot = await telegramApi(env, "getMe", {});
+      const username = String(bot?.username ?? "");
+      if (!/^[A-Za-z0-9_]{5,}$/.test(username)) throw new Error("Telegram bot username is unavailable");
+      return response(request, { code, expires_in_seconds: 600, bot_url: `https://t.me/${username}` }, 201);
+    } catch {
+      await env.DB.prepare("DELETE FROM telegram_auth_codes WHERE code_hash=?").bind(codeHash).run();
+      return response(request, { detail: "Не удалось подключиться к Telegram-боту. Попробуй позже." }, 503);
+    }
+  }
+
+  if (path === "/auth/telegram/status" && method === "POST") {
+    if (await isRateLimited(request, env, "telegram-status", 350)) {
+      return response(request, { detail: "Слишком много проверок. Запроси новый код." }, 429, { "Retry-After": "900" });
+    }
+    const input = await body(request);
+    const code = String(input.code ?? "").replace(/\\s/g, "");
+    if (!/^\\d{9}$/.test(code)) return response(request, { detail: "Неверный формат кода." }, 400);
+    const codeHash = await sha256(code);
+    const auth = await env.DB.prepare("SELECT user_id,authenticated_at,session_issued_at FROM telegram_auth_codes WHERE code_hash=? AND expires_at>datetime('now')").bind(codeHash).first<any>();
+    if (!auth) return response(request, { detail: "Код истёк. Создай новый." }, 410);
+    if (!auth.user_id || !auth.authenticated_at) return response(request, { authenticated: false, status: "pending" });
+    if (auth.session_issued_at) return response(request, { detail: "Этот код уже использован. Создай новый." }, 410);
+    const claimed = await env.DB.prepare("UPDATE telegram_auth_codes SET session_issued_at=datetime('now') WHERE code_hash=? AND user_id=? AND session_issued_at IS NULL AND expires_at>datetime('now')").bind(codeHash, auth.user_id).run();
+    if (!claimed.meta.changes) return response(request, { detail: "Этот код уже использован. Создай новый." }, 410);
+    const token = randomToken();
+    try {
+      await env.DB.prepare("INSERT INTO sessions (token_hash,user_id,expires_at) VALUES (?,?,datetime('now','+14 days'))").bind(await sha256(token), auth.user_id).run();
+    } catch {
+      await env.DB.prepare("UPDATE telegram_auth_codes SET session_issued_at=NULL WHERE code_hash=? AND user_id=?").bind(codeHash, auth.user_id).run();
+      return response(request, { detail: "Не удалось создать сессию. Попробуй ещё раз." }, 500);
+    }
+    const user = await env.DB.prepare("SELECT email,is_verified FROM users WHERE id=?").bind(auth.user_id).first<any>();
+    const email = String(user?.email ?? "");
+    return response(request, { authenticated: true, email: email.endsWith("@telegram.local") ? null : email }, 200, { "Set-Cookie": cookie(token, SESSION_DAYS * 86400) });
   }
 
   if (path === "/auth/password-reset/request" && method === "POST") {
