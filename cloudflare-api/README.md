@@ -15,7 +15,7 @@ This directory contains the first Cloudflare-native API implementation for Freel
 
 - Email delivery is not configured, so verification emails cannot be sent. Do not treat the current registration flow as production-ready email verification.
 - Public Telegram channel preview scanning is implemented for manual scans and a 15-minute Cron Trigger when the user has enabled the AI agent. It reads public previews only; private channels and provider-specific marketplace adapters are not supported yet.
-- Kwork, Freelancehunt, Upwork, and FL.ru live adapters are not active. AI proposal generation, push notifications, and real marketplace application submission are not active. The Telegram bot can run directly as a Cloudflare Worker webhook, so a separate always-on bot host is not required.
+- Kwork, Freelancehunt, Upwork, and FL.ru live adapters are not active. Profile-grounded AI proposal drafting is implemented but requires an AI provider key and model configuration. Real marketplace submission, push notifications, and reply synchronization are not active. The Telegram bot can run directly as a Cloudflare Worker webhook, so a separate always-on bot host is not required.
 - Integration secrets are not stored until encrypted secret storage is configured. Never add credentials to source files or commit them.
 - D1 has free-plan quotas; it is not unlimited.
 
@@ -44,6 +44,17 @@ Save the variable and redeploy the frontend. Do not set `NEXT_PUBLIC_API_URL`: b
 ## Database migration
 
 The first deployment build applies the checked-in D1 migration remotely. If the build token cannot apply migrations, use Cloudflare Dashboard → D1 → `freelance-hunter-db` → Console and execute the contents of `migrations/0001_init.sql` once, then redeploy. Do not execute the same `CREATE TABLE` migration twice against an already initialized database.
+
+## AI proposal drafting
+
+The Projects page calls `POST /applications/{project_id}/draft`. It verifies project ownership, passes only the saved profile and listing facts to an OpenAI-compatible chat-completions endpoint, and saves the response as a `draft` application. It does not submit proposals.
+
+Configure:
+- `AI_API_KEY` as a Worker secret.
+- `AI_MODEL` as a Worker variable.
+- `AI_API_BASE_URL` as an optional Worker variable. The default is `https://api.openai.com/v1`; compatible providers can use their own base URL.
+
+The prompt prohibits invented experience, portfolio items, results, and credentials. A provider key is not included in API responses or browser code.
 
 ## Telegram bot configuration
 
