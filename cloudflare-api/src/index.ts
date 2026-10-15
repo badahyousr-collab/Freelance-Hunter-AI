@@ -152,7 +152,7 @@ function parseTelegramPreview(html: string, channel: string): TelegramPost[] {
     if (description.length < 25 || !/(ищу|ищем|нужен|нужна|требуется|заказ|бюджет|оплата|looking for|hiring|need a|project|freelance|разработчик|исполнитель|бот|сайт)/i.test(description)) continue;
     const title = (description.split("\n").map(line => line.trim()).find(Boolean) || description).slice(0, 180);
     const dateMatch = chunk.match(/<time[^>]*datetime=["']([^"']+)["']/i);
-    posts.push({ postId, title, description, url: \`https://t.me/\${channel}/\${postId}\`, publishedAt: dateMatch?.[1] ?? null });
+    posts.push({ postId, title, description, url: `https://t.me/${channel}/${postId}`, publishedAt: dateMatch?.[1] ?? null });
     seen.add(postId);
     if (posts.length >= 50) break;
   }
@@ -174,11 +174,11 @@ async function scanTelegramSource(env: Env, userId: string, source: any): Promis
   const channel = String(source.identifier ?? "").replace(/^@/, "").trim();
   if (!/^[a-zA-Z0-9_]{5,}$/.test(channel)) return { added: 0, error: "Invalid public Telegram channel username." };
   try {
-    const upstream = await fetch(\`https://t.me/s/\${encodeURIComponent(channel)}\`, {
+    const upstream = await fetch(`https://t.me/s/${encodeURIComponent(channel)}`, {
       headers: { "User-Agent": "Mozilla/5.0 (compatible; FreelanceHunterBot/1.0)", "Accept": "text/html" },
       signal: AbortSignal.timeout(12000)
     });
-    if (!upstream.ok) throw new Error(\`Telegram preview returned HTTP \${upstream.status}\`);
+    if (!upstream.ok) throw new Error(`Telegram preview returned HTTP ${upstream.status}`);
     const posts = parseTelegramPreview(await upstream.text(), channel);
     const profile = await env.DB.prepare("SELECT skills, min_budget, currency, excluded_keywords FROM profiles WHERE user_id=?").bind(userId).first<any>();
     const settings = await env.DB.prepare("SELECT min_match_score FROM agent_settings WHERE user_id=?").bind(userId).first<any>();
@@ -192,12 +192,12 @@ async function scanTelegramSource(env: Env, userId: string, source: any): Promis
       if (profile?.min_budget != null && budget && budget.currency === String(profile.currency ?? "USD").toUpperCase() && budget.amount < Number(profile.min_budget)) continue;
       const matchedSkills = skills.filter((skill: string) => skill.length > 1 && text.includes(skill));
       const score = Math.max(0, Math.min(100, 35 + Math.min(45, matchedSkills.length * 15)));
-      const reasons = matchedSkills.length ? matchedSkills.map((skill: string) => \`Упоминание навыка: \${skill}\`) : ["Найдено в подключённом публичном Telegram-канале"];
+      const reasons = matchedSkills.length ? matchedSkills.map((skill: string) => `Упоминание навыка: ${skill}`) : ["Найдено в подключённом публичном Telegram-канале"];
       if (score < Number(settings?.min_match_score ?? 60)) reasons.push("Оценка ниже порога агента");
-      const result = await env.DB.prepare(\`INSERT INTO projects
+      const result = await env.DB.prepare(`INSERT INTO projects
         (user_id,source,source_project_id,url,title,description,language,budget_min,budget_max,currency,published_at,match_score,match_reasons)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(user_id,source,source_project_id) DO NOTHING\`)
-        .bind(userId, "telegram", \`\${channel}:\${post.postId}\`, post.url, post.title, post.description,
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(user_id,source,source_project_id) DO NOTHING`)
+        .bind(userId, "telegram", `${channel}:${post.postId}`, post.url, post.title, post.description,
           /[а-яё]/i.test(post.description) ? "ru" : "en", budget?.amount ?? null, budget?.amount ?? null,
           budget?.currency ?? null, post.publishedAt, score, JSON.stringify(reasons)).run();
       added += Number(result.meta.changes ?? 0);
@@ -220,7 +220,7 @@ async function scanUserSources(env: Env, userId: string): Promise<{ scannedSourc
   for (const source of rows.results ?? []) {
     const result = await scanTelegramSource(env, userId, source);
     newProjects += result.added;
-    if (result.error) errors.push(\`\${source.identifier}: \${result.error}\`);
+    if (result.error) errors.push(`${source.identifier}: ${result.error}`);
   }
   return { scannedSources: (rows.results ?? []).length, newProjects, errors };
 }
@@ -248,13 +248,13 @@ function escapeTelegramHtml(value: string): string {
 
 async function telegramApi(env: Env, method: string, payload: Record<string, unknown>): Promise<any> {
   if (!env.TELEGRAM_BOT_TOKEN) throw new Error("TELEGRAM_BOT_TOKEN is not configured");
-  const result = await fetch(\`https://api.telegram.org/bot\${env.TELEGRAM_BOT_TOKEN}/\${method}\`, {
+  const result = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/${method}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload)
   });
   const data = await result.json<any>();
-  if (!result.ok || !data.ok) throw new Error(\`Telegram API request failed: \${method}\`);
+  if (!result.ok || !data.ok) throw new Error(`Telegram API request failed: ${method}`);
   return data.result;
 }
 
@@ -329,15 +329,15 @@ async function handleTelegramWebhook(request: Request, env: Env): Promise<Respon
   if (isStats) {
     const row = await env.DB.prepare("SELECT (SELECT COUNT(*) FROM projects WHERE user_id=?) AS projects_found,(SELECT COUNT(*) FROM projects WHERE user_id=? AND match_score>=60) AS matched_projects,(SELECT COUNT(*) FROM applications WHERE user_id=? AND status IN ('sent','replied','closed')) AS proposals_sent,(SELECT COUNT(*) FROM applications WHERE user_id=? AND replied_at IS NOT NULL) AS client_replies")
       .bind(linked.user_id, linked.user_id, linked.user_id, linked.user_id).first<any>();
-    await telegramReply(env, chatId, \`<b>Статистика Freelance Hunter</b>\\nНайдено заказов: \${row?.projects_found ?? 0}\\nПодходящих: \${row?.matched_projects ?? 0}\\nОтправлено откликов: \${row?.proposals_sent ?? 0}\\nОтветов клиентов: \${row?.client_replies ?? 0}\`);
+    await telegramReply(env, chatId, `<b>Статистика Freelance Hunter</b>\\nНайдено заказов: ${row?.projects_found ?? 0}\\nПодходящих: ${row?.matched_projects ?? 0}\\nОтправлено откликов: ${row?.proposals_sent ?? 0}\\nОтветов клиентов: ${row?.client_replies ?? 0}`);
     return response(request, { ok: true });
   }
   if (isProjects) {
     const rows = await env.DB.prepare("SELECT p.title,p.url,p.source,p.budget_min,p.currency FROM projects p WHERE p.user_id=? AND EXISTS (SELECT 1 FROM sources s WHERE s.user_id=p.user_id AND s.is_enabled=1 AND s.source=p.source AND (s.source<>'telegram' OR p.source_project_id LIKE substr(s.identifier,2) || ':%')) ORDER BY p.discovered_at DESC LIMIT 5").bind(linked.user_id).all<any>();
     const items = rows.results ?? [];
     const text = items.length ? "<b>Последние заказы</b>\\n\\n" + items.map((p: any) => {
-      const budget = p.budget_min != null ? \`\\nБюджет: \${p.budget_min} \${escapeTelegramHtml(String(p.currency ?? ""))}\` : "";
-      return \`• <a href="\${escapeTelegramHtml(String(p.url))}">\${escapeTelegramHtml(String(p.title))}</a>\${budget}\`;
+      const budget = p.budget_min != null ? `\\nБюджет: ${p.budget_min} ${escapeTelegramHtml(String(p.currency ?? ""))}` : "";
+      return `• <a href="${escapeTelegramHtml(String(p.url))}">${escapeTelegramHtml(String(p.title))}</a>${budget}`;
     }).join("\\n\\n") : "Пока заказов нет. Добавь публичный Telegram-канал в разделе «Источники» и запусти сканирование.";
     await telegramReply(env, chatId, text);
     return response(request, { ok: true });
