@@ -77,7 +77,7 @@ test("Telegram auth start returns a nine-digit code valid for ten minutes", asyn
     }), { DB: fakeDb(), TELEGRAM_BOT_TOKEN: "TEST_TOKEN" });
     assert.equal(response.status, 201);
     const data = await response.json();
-    assert.match(data.code, /^\\d{9}$/);
+    assert.match(data.code, /^\d{9}$/);
     assert.equal(data.expires_in_seconds, 600);
     assert.equal(data.bot_url, "https://t.me/freelance_hunter_test_bot");
   } finally {
