@@ -48,8 +48,8 @@ export default function DashboardPage() {
     async function loadDashboard() {
       try {
         const meResponse = await fetch(`${API}/auth/me`, { credentials: "include" });
-        if (meResponse.status === 401) { window.location.assign("/login"); return; }
-        if (!meResponse.ok) throw new Error("Could not load your account");
+        if (meResponse.status === 401) { window.location.replace("/login"); return; }
+        if (!meResponse.ok) throw new Error(`Could not verify session (HTTP ${meResponse.status})`);
         const me = await meResponse.json() as CurrentUser;
         const [summaryResponse, projectsResponse, sourcesResponse] = await Promise.all([
           fetch(`${API}/dashboard/summary`, { credentials: "include" }),
@@ -77,6 +77,10 @@ export default function DashboardPage() {
     finally { window.location.assign("/login"); }
   }
 
+  if (!loading && error && !user) {
+    return <main className="auth-shell"><section className="auth-card"><div className="auth-eyebrow">SESSION CHECK</div><h1>Could not verify your session</h1><p className="auth-subtitle">{error}. Sign in again, or create an account if you do not have one yet.</p><div className="auth-footer"><Link href="/login">Sign in</Link> · <Link href="/register">Create account</Link></div></section></main>;
+  }
+
   return (
     <main className="shell">
       <aside className="sidebar">
@@ -93,11 +97,11 @@ export default function DashboardPage() {
         <div className="workspace-label settings-label">PREFERENCES</div>
         <nav className="nav"><Link className="nav-item" href="/settings"><Settings2 size={18} />Settings</Link><Link className="nav-item" href="/security"><ShieldCheck size={18} />Security</Link></nav>
         <div className="sidebar-bottom"><div className="help-icon"><CircleHelp size={17} /></div><div><strong>Need a hand?</strong><span>Project setup guide</span></div></div>
-        <div className="profile"><div className="avatar">P</div><div className="profile-text"><strong>{user?.email ?? "Your workspace"}</strong><span>Personal account</span></div><button className="profile-logout" aria-label="Sign out" onClick={signOut} disabled={signingOut}><LogOut size={16} /></button></div>
+        <div className="profile"><div className="avatar">P</div><div className="profile-text"><strong>{user?.email ?? (loading ? "Checking session…" : "Not signed in")}</strong><span>Personal account</span></div><button className="profile-logout" aria-label="Sign out" onClick={signOut} disabled={signingOut}><LogOut size={16} /></button></div>
       </aside>
 
       <section className="content">
-        <header className="topbar"><div className="breadcrumbs">Workspace <span>/</span> <strong>Overview</strong></div><div className="top-actions"><span className="live-status preview-status"><i />{loading ? "Loading workspace" : "Account connected"}</span><button className="icon-button" aria-label="Refresh dashboard" onClick={() => window.location.reload()}><Activity size={18} /></button><div className="user-avatar">P</div></div></header>
+        <header className="topbar"><div className="breadcrumbs">Workspace <span>/</span> <strong>Overview</strong></div><div className="top-actions"><span className="live-status preview-status"><i />{loading ? "Checking session" : user ? "Account connected" : "Session unavailable"}</span><button className="icon-button" aria-label="Refresh dashboard" onClick={() => window.location.reload()}><Activity size={18} /></button><div className="user-avatar">P</div></div></header>
         <div className="page-heading"><div><div className="eyebrow"><Sparkles size={14} /> PIPISSO ECOSYSTEM · FREELANCE HUNTER</div><h1>Welcome back <span>✦</span></h1><p>Freelance Hunter — one of the systems inside Pipisso.</p></div><Link className="primary-button" href="/sources"><Search size={17} />Set up sources</Link></div>
 
         {error && <div className="dashboard-alert" role="alert">{error}. Check that the backend is running and try refreshing.</div>}
