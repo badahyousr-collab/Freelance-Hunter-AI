@@ -12,7 +12,7 @@ function fakeDb({ scan = false } = {}) {
           if (sql.includes("SELECT attempts FROM auth_rate_limits")) return { attempts: 1 };
           if (sql.includes("FROM sessions s JOIN users")) return { id: "user-1", email: "test@example.com", is_verified: 1 };
           if (sql.includes("SELECT COUNT(*) AS total FROM sources")) return { total: 0 };
-          if (sql.includes("SELECT skills, min_budget, currency, excluded_keywords")) return { skills: '["python"]', min_budget: null, currency: "USD", excluded_keywords: "[]" };
+          if (sql.includes("SELECT skills, min_budget, currency, excluded_keywords")) return { skills: '["python","telegram"]', min_budget: null, currency: "USD", excluded_keywords: "[]" };
           if (sql.includes("SELECT min_match_score FROM agent_settings")) return { min_match_score: 60 };
           if (sql.includes("SELECT 1 AS ok")) return { ok: 1 };
           return null;
