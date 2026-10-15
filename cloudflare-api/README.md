@@ -13,7 +13,7 @@ This directory contains the first Cloudflare-native API implementation for Freel
 
 ## Important limitations
 
-- Email delivery is not configured, so verification emails cannot be sent. Do not treat the current registration flow as production-ready email verification.
+- Email verification and password reset use the Resend email API, but delivery remains inactive until `RESEND_API_KEY`, `EMAIL_FROM`, and `APP_BASE_URL` are configured. Registration is blocked in production until email delivery is configured.
 - Public Telegram channel preview scanning is implemented for manual scans and a 15-minute Cron Trigger when the user has enabled the AI agent. It reads public previews only; private channels and provider-specific marketplace adapters are not supported yet.
 - Kwork, Freelancehunt, Upwork, and FL.ru live adapters are not active. Profile-grounded AI proposal drafting is implemented but requires an AI provider key and model configuration. Real marketplace submission, push notifications, and reply synchronization are not active. The Telegram bot can run directly as a Cloudflare Worker webhook, so a separate always-on bot host is not required.
 - Integration secrets are not stored until encrypted secret storage is configured. Never add credentials to source files or commit them.
@@ -44,6 +44,15 @@ Save the variable and redeploy the frontend. Do not set `NEXT_PUBLIC_API_URL`: b
 ## Database migration
 
 The first deployment build applies the checked-in D1 migration remotely. If the build token cannot apply migrations, use Cloudflare Dashboard → D1 → `freelance-hunter-db` → Console and execute the contents of `migrations/0001_init.sql` once, then redeploy. Do not execute the same `CREATE TABLE` migration twice against an already initialized database.
+
+## Email verification and password recovery
+
+Configure these before allowing production registration:
+- `RESEND_API_KEY` as a Worker secret.
+- `EMAIL_FROM` as a Worker variable containing a sender identity verified with Resend.
+- `APP_BASE_URL` as a Worker variable set to the deployed website URL, without a trailing slash.
+
+Verification links expire after 24 hours and are single-use. Password reset links expire after one hour, are single-use, and invalidate existing sessions after the password changes. The website provides `/forgot-password` and `/reset-password` pages. Never place the email provider key in frontend environment variables.
 
 ## AI proposal drafting
 
