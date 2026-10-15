@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import worker from "../.test-dist/src/index.js";
 
-function fakeDb({ scan = false, skills = ["python", "telegram"] } = {}) {
+function fakeDb({ scan = false, skills = ["python", "telegram"], telegramAuth = null } = {}) {
   return {
     prepare(sql) {
       return {
@@ -10,6 +10,8 @@ function fakeDb({ scan = false, skills = ["python", "telegram"] } = {}) {
         async run() { return { meta: { changes: 1 } }; },
         async first() {
           if (sql.includes("SELECT attempts FROM auth_rate_limits")) return { attempts: 1 };
+          if (sql.includes("SELECT user_id,authenticated_at,session_issued_at FROM telegram_auth_codes")) return telegramAuth;
+          if (sql.includes("SELECT email,is_verified FROM users")) return { email: "telegram-123@telegram.local", is_verified: 1 };
           if (sql.includes("FROM sessions s JOIN users")) return { id: "user-1", email: "test@example.com", is_verified: 1 };
           if (sql.includes("SELECT COUNT(*) AS total FROM sources")) return { total: 0 };
           if (sql.includes("SELECT skills, min_budget, currency, excluded_keywords")) return { skills: JSON.stringify(skills), min_budget: null, currency: "USD", excluded_keywords: "[]" };
@@ -49,14 +51,49 @@ test("Telegram webhook rejects an invalid Telegram secret token", async () => {
   assert.equal(response.status, 401);
 });
 
-test("production registration fails closed until email delivery is configured", async () => {
+test("email registration is disabled in favor of Telegram authentication", async () => {
   const response = await worker.fetch(new Request("https://api.example/auth/register", {
     method: "POST",
     headers: { "Content-Type": "application/json", "CF-Connecting-IP": "198.51.100.20" },
     body: JSON.stringify({ email: "test@example.com", password: "long-enough-password" })
   }), { DB: fakeDb(), APP_ENV: "production" });
-  assert.equal(response.status, 503);
-  assert.match((await response.json()).detail, /email verification is not configured/i);
+  assert.equal(response.status, 410);
+  assert.match((await response.json()).detail, /through Telegram|Telegram/i);
+});
+
+test("Telegram auth start returns a nine-digit code valid for ten minutes", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input) => {
+    if (String(input).includes("api.telegram.org/botTEST_TOKEN/getMe")) {
+      return Response.json({ ok: true, result: { username: "freelance_hunter_test_bot" } });
+    }
+    return originalFetch(input);
+  };
+  try {
+    const response = await worker.fetch(new Request("https://api.example/auth/telegram/start", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "CF-Connecting-IP": "198.51.100.21" },
+      body: "{}"
+    }), { DB: fakeDb(), TELEGRAM_BOT_TOKEN: "TEST_TOKEN" });
+    assert.equal(response.status, 201);
+    const data = await response.json();
+    assert.match(data.code, /^\\d{9}$/);
+    assert.equal(data.expires_in_seconds, 600);
+    assert.equal(data.bot_url, "https://t.me/freelance_hunter_test_bot");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("Telegram auth status creates a session after the bot confirms the code", async () => {
+  const response = await worker.fetch(new Request("https://api.example/auth/telegram/status", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "CF-Connecting-IP": "198.51.100.22" },
+    body: JSON.stringify({ code: "123456789" })
+  }), { DB: fakeDb({ telegramAuth: { user_id: "user-1", authenticated_at: "2026-10-15 10:00:00", session_issued_at: null } }) });
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { authenticated: true, email: null });
+  assert.match(response.headers.get("set-cookie") ?? "", /fh_session=.*HttpOnly/);
 });
 
 test("unknown API route returns a structured 404", async () => {
