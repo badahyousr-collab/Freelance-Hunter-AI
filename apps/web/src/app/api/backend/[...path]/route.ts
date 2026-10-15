@@ -33,7 +33,15 @@ async function proxy(request: NextRequest, context: RouteContext): Promise<Respo
   const init: RequestInit = { method: request.method, headers, redirect: "manual" };
   if (request.method !== "GET" && request.method !== "HEAD") init.body = await request.arrayBuffer();
 
-  const upstream = await fetch(target, init);
+  let upstream: Response;
+  try {
+    upstream = await fetch(target, { ...init, signal: AbortSignal.timeout(15000) });
+  } catch {
+    return Response.json(
+      { detail: "Не удалось связаться с API Freelance Hunter. Проверь адрес API Worker и его доступность." },
+      { status: 502, headers: { "Cache-Control": "no-store" } }
+    );
+  }
   const responseHeaders = new Headers();
   for (const name of ["content-type", "set-cookie", "cache-control", "www-authenticate"]) {
     const value = upstream.headers.get(name);
