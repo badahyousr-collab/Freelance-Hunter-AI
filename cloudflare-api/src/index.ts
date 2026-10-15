@@ -83,7 +83,7 @@ async function currentUser(request: Request, env: Env): Promise<any | null> {
   const raw = request.headers.get("Cookie")?.split(";").map(v => v.trim()).find(v => v.startsWith(COOKIE + "="))?.slice(COOKIE.length + 1);
   if (!raw) return null;
   const tokenHash = await sha256(raw);
-  const row = await env.DB.prepare("SELECT u.id, u.email, u.is_verified FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=? AND s.expires_at > datetime('now')").bind(tokenHash).first<any>();
+  const row = await env.DB.prepare("SELECT u.id, u.email, u.is_verified, u.auth_method FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=? AND s.expires_at > datetime('now')").bind(tokenHash).first<any>();
   return row ?? null;
 }
 
@@ -108,9 +108,8 @@ const integrationCatalog = [
   { provider: "llm", label: "AI provider", description: "AI drafting integration is not connected yet.", setup_note: "Configure AI_API_KEY, AI_MODEL, and optionally AI_API_BASE_URL as Worker secrets/variables to generate profile-grounded proposal drafts." }
 ];
 
-async function isRateLimited(request: Request, env: Env, endpoint: string, limit: number): Promise<boolean> {
-  const ip = request.headers.get("CF-Connecting-IP") ?? "unknown";
-  const bucketKey = await sha256(`auth:${endpoint}:${ip}`);
+async function isRateLimitedIdentity(env: Env, endpoint: string, identity: string, limit: number): Promise<boolean> {
+  const bucketKey = await sha256(`auth:${endpoint}:${identity}`);
   await env.DB.prepare(`
     INSERT INTO auth_rate_limits (bucket_key, window_started_at, attempts)
     VALUES (?, datetime('now'), 1)
@@ -126,6 +125,11 @@ async function isRateLimited(request: Request, env: Env, endpoint: string, limit
   `).bind(bucketKey).run();
   const row = await env.DB.prepare("SELECT attempts FROM auth_rate_limits WHERE bucket_key=?").bind(bucketKey).first<{ attempts: number }>();
   return Number(row?.attempts ?? 0) > limit;
+}
+
+async function isRateLimited(request: Request, env: Env, endpoint: string, limit: number): Promise<boolean> {
+  const ip = request.headers.get("CF-Connecting-IP") ?? "unknown";
+  return isRateLimitedIdentity(env, endpoint, ip, limit);
 }
 
 
@@ -314,12 +318,64 @@ async function handleTelegramWebhook(request: Request, env: Env): Promise<Respon
     return response(request, { ok: true });
   }
   if (command === "/link") {
+    if (message?.chat?.type !== "private") {
+      await telegramReply(env, chatId, "Для безопасности отправь код в личном чате с ботом, не в группе.");
+      return response(request, { ok: true });
+    }
     const code = String(args[0] ?? "").trim().toUpperCase();
     if (!code) {
       await telegramReply(env, chatId, "Укажи код: <code>/link КОД</code>");
       return response(request, { ok: true });
     }
+    if (await isRateLimitedIdentity(env, "telegram-link", telegramUserId, 10)) {
+      await telegramReply(env, chatId, "Слишком много попыток. Подожди 15 минут и создай новый код на сайте.");
+      return response(request, { ok: true });
+    }
     const codeHash = await sha256(code);
+    const authCode = await env.DB.prepare("SELECT code_hash FROM telegram_auth_codes WHERE code_hash=? AND expires_at>datetime('now') AND user_id IS NULL").bind(codeHash).first<any>();
+    if (authCode) {
+      const existingAccount = await env.DB.prepare("SELECT user_id FROM telegram_links WHERE telegram_user_id=?").bind(telegramUserId).first<any>();
+      let userId = existingAccount?.user_id ? String(existingAccount.user_id) : "";
+      let createdUserId = "";
+      const internalEmail = `telegram-${telegramUserId}@telegram.local`;
+      if (!userId) {
+        const priorTelegramAccount = await env.DB.prepare("SELECT id FROM users WHERE email=? AND auth_method='telegram'").bind(internalEmail).first<any>();
+        if (priorTelegramAccount?.id) {
+          userId = String(priorTelegramAccount.id);
+          await env.DB.prepare("UPDATE telegram_links SET telegram_user_id=?,linked_at=datetime('now') WHERE user_id=?")
+            .bind(telegramUserId, userId).run();
+        }
+      }
+      if (!userId) {
+        const id = crypto.randomUUID();
+        try {
+          await env.DB.batch([
+            env.DB.prepare("INSERT INTO users (id,email,password_hash,is_verified,auth_method) VALUES (?,?,?,1,'telegram')").bind(id, internalEmail, await passwordHash(randomToken(32))),
+            env.DB.prepare("INSERT INTO profiles (user_id) VALUES (?)").bind(id),
+            env.DB.prepare("INSERT INTO agent_settings (user_id) VALUES (?)").bind(id),
+            env.DB.prepare("INSERT INTO telegram_links (user_id,telegram_user_id,linked_at) VALUES (?,?,datetime('now'))").bind(id, telegramUserId)
+          ]);
+          userId = id;
+          createdUserId = id;
+        } catch {
+          const racedAccount = await env.DB.prepare("SELECT user_id FROM telegram_links WHERE telegram_user_id=?").bind(telegramUserId).first<any>();
+          if (!racedAccount?.user_id) {
+            await telegramReply(env, chatId, "Не удалось создать аккаунт. Попробуй запросить новый код на сайте.");
+            return response(request, { ok: true });
+          }
+          userId = String(racedAccount.user_id);
+        }
+      }
+      const accepted = await env.DB.prepare("UPDATE telegram_auth_codes SET telegram_user_id=?,user_id=?,authenticated_at=datetime('now') WHERE code_hash=? AND expires_at>datetime('now') AND user_id IS NULL")
+        .bind(telegramUserId, userId, codeHash).run();
+      if (!accepted.meta.changes) {
+        if (createdUserId) await env.DB.prepare("DELETE FROM users WHERE id=?").bind(createdUserId).run();
+        await telegramReply(env, chatId, "Код уже использован или истёк. Запроси новый на сайте.");
+        return response(request, { ok: true });
+      }
+      await telegramReply(env, chatId, "Telegram подтверждён. Вернись на сайт, вход завершится автоматически.");
+      return response(request, { ok: true });
+    }
     const link = await env.DB.prepare("SELECT tl.user_id,u.is_verified FROM telegram_links tl JOIN users u ON u.id=tl.user_id WHERE tl.link_code_hash=? AND tl.expires_at>datetime('now') AND tl.telegram_user_id IS NULL").bind(codeHash).first<any>();
     if (!link || !link.is_verified) {
       await telegramReply(env, chatId, "Код недействителен, истёк или аккаунт сайта не подтверждён. Создай новый код в настройках сайта.");
@@ -398,43 +454,58 @@ async function handle(request: Request, env: Env): Promise<Response> {
   }
 
   if (path === "/auth/register" && method === "POST") {
-    if (await isRateLimited(request, env, "register", 5)) {
-      return response(request, { detail: "Too many attempts. Please wait 15 minutes and try again." }, 429, { "Retry-After": "900" });
-    }
-    if (env.APP_ENV === "production" && !emailConfigured(env)) {
-      return response(request, { detail: "Email verification is not configured yet. Contact the administrator." }, 503);
-    }
-    const input = await body(request);
-    const email = String(input.email ?? "").trim().toLowerCase();
-    const password = String(input.password ?? "");
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return response(request, { detail: "Enter a valid email address." }, 400);
-    if (password.length < 10 || password.length > 256) return response(request, { detail: "Password must contain 10–256 characters." }, 400);
-    const existing = await env.DB.prepare("SELECT id FROM users WHERE email=?").bind(email).first();
-    if (existing) return response(request, { detail: "An account with this email already exists." }, 409);
-    const id = crypto.randomUUID();
-    const verificationToken = randomToken(24);
-    await env.DB.batch([
-      env.DB.prepare("INSERT INTO users (id,email,password_hash,verification_token_hash,verification_expires_at) VALUES (?,?,?,?,datetime('now','+24 hours'))").bind(id, email, await passwordHash(password), await sha256(verificationToken)),
-      env.DB.prepare("INSERT INTO profiles (user_id) VALUES (?)").bind(id),
-      env.DB.prepare("INSERT INTO agent_settings (user_id) VALUES (?)").bind(id),
-      env.DB.prepare("INSERT INTO telegram_links (user_id) VALUES (?)").bind(id)
-    ]);
-    if (emailConfigured(env)) {
-      const verifyUrl = String(env.APP_BASE_URL).replace(/\/+$/, "") + "/verify-email?token=" + encodeURIComponent(verificationToken);
-      try {
-        await sendTransactionalEmail(env, email, "Verify your Freelance Hunter account",
-          '<div style="font-family:Arial,sans-serif;max-width:560px;margin:auto;color:#222"><h2>Verify your email</h2><p>Confirm your email address to finish setting up Freelance Hunter.</p><p><a href="' + verifyUrl + '" style="display:inline-block;padding:12px 18px;background:#222;color:#fff;text-decoration:none;border-radius:8px">Verify email</a></p><p>This link expires in 24 hours and can be used once.</p></div>');
-        return response(request, { message: "Account created. Check your email to verify the address." }, 201);
-      } catch {
-        await env.DB.prepare("DELETE FROM users WHERE id=?").bind(id).run();
-        return response(request, { detail: "Could not send the verification email. Check email provider settings and try again." }, 502);
-      }
-    }
-    const data: Record<string, unknown> = { message: "Development account created. Use the development verification link below." };
-    if (env.APP_ENV !== "production") data.verification_token = verificationToken;
-    return response(request, data, 201);
+    return response(request, { detail: "Регистрация по email отключена. Используй вход через Telegram." }, 410);
   }
 
+  if (path === "/auth/telegram/start" && method === "POST") {
+    if (await isRateLimited(request, env, "telegram-start", 5)) {
+      return response(request, { detail: "Слишком много запросов. Подожди 15 минут." }, 429, { "Retry-After": "900" });
+    }
+    if (!env.TELEGRAM_BOT_TOKEN) return response(request, { detail: "Telegram-бот временно не настроен. Попробуй позже." }, 503);
+    const digits = new Uint32Array(1);
+    crypto.getRandomValues(digits);
+    const code = String(digits[0] % 1000000000).padStart(9, "0");
+    const codeHash = await sha256(code);
+    await env.DB.prepare("DELETE FROM telegram_auth_codes WHERE expires_at<=datetime('now') OR session_issued_at IS NOT NULL").run();
+    const saved = await env.DB.prepare("INSERT INTO telegram_auth_codes (code_hash,expires_at) VALUES (?,datetime('now','+10 minutes')) ON CONFLICT(code_hash) DO NOTHING").bind(codeHash).run();
+    if (!saved.meta.changes) return response(request, { detail: "Не удалось создать код. Нажми ещё раз." }, 503);
+    try {
+      const bot = await telegramApi(env, "getMe", {});
+      const username = String(bot?.username ?? "");
+      if (!/^[A-Za-z0-9_]{5,}$/.test(username)) throw new Error("Telegram bot username is unavailable");
+      return response(request, { code, expires_in_seconds: 600, bot_url: `https://t.me/${username}` }, 201);
+    } catch {
+      await env.DB.prepare("DELETE FROM telegram_auth_codes WHERE code_hash=?").bind(codeHash).run();
+      return response(request, { detail: "Не удалось подключиться к Telegram-боту. Попробуй позже." }, 503);
+    }
+  }
+
+  if (path === "/auth/telegram/status" && method === "POST") {
+    if (await isRateLimited(request, env, "telegram-status", 350)) {
+      return response(request, { detail: "Слишком много проверок. Запроси новый код." }, 429, { "Retry-After": "900" });
+    }
+    const input = await body(request);
+    const code = String(input.code ?? "").replace(/\s/g, "");
+    if (!/^\d{9}$/.test(code)) return response(request, { detail: "Неверный формат кода." }, 400);
+    const codeHash = await sha256(code);
+    const auth = await env.DB.prepare("SELECT user_id,authenticated_at,session_issued_at FROM telegram_auth_codes WHERE code_hash=? AND expires_at>datetime('now')").bind(codeHash).first<any>();
+    if (!auth) return response(request, { detail: "Код истёк. Создай новый." }, 410);
+    if (!auth.user_id || !auth.authenticated_at) return response(request, { authenticated: false, status: "pending" });
+    if (auth.session_issued_at) return response(request, { detail: "Этот код уже использован. Создай новый." }, 410);
+    const claimed = await env.DB.prepare("UPDATE telegram_auth_codes SET session_issued_at=datetime('now') WHERE code_hash=? AND user_id=? AND session_issued_at IS NULL AND expires_at>datetime('now')").bind(codeHash, auth.user_id).run();
+    if (!claimed.meta.changes) return response(request, { detail: "Этот код уже использован. Создай новый." }, 410);
+    const token = randomToken();
+    try {
+      await env.DB.prepare("INSERT INTO sessions (token_hash,user_id,expires_at) VALUES (?,?,datetime('now','+14 days'))").bind(await sha256(token), auth.user_id).run();
+    } catch {
+      await env.DB.prepare("UPDATE telegram_auth_codes SET session_issued_at=NULL WHERE code_hash=? AND user_id=?").bind(codeHash, auth.user_id).run();
+      return response(request, { detail: "Не удалось создать сессию. Попробуй ещё раз." }, 500);
+    }
+    const user = await env.DB.prepare("SELECT email,is_verified,auth_method FROM users WHERE id=?").bind(auth.user_id).first<any>();
+    const email = String(user?.email ?? "");
+    const authMethod = String(user?.auth_method ?? (email.endsWith("@telegram.local") ? "telegram" : "email"));
+    return response(request, { authenticated: true, email: authMethod === "telegram" ? null : email }, 200, { "Set-Cookie": cookie(token, SESSION_DAYS * 86400) });
+  }
 
   if (path === "/auth/password-reset/request" && method === "POST") {
     if (await isRateLimited(request, env, "password-reset", 5)) {
@@ -596,7 +667,9 @@ async function handle(request: Request, env: Env): Promise<Response> {
   const user = await requireUser(request, env);
   if (path === "/auth/me" && method === "GET") {
     if (!user) return response(request, { detail: "Authentication required." }, 401);
-    return response(request, { email: user.email, is_verified: Boolean(user.is_verified) });
+    const email = String(user.email ?? "");
+    const authMethod = String(user.auth_method ?? (email.endsWith("@telegram.local") ? "telegram" : "email"));
+    return response(request, { email: authMethod === "telegram" ? null : email, is_verified: Boolean(user.is_verified), auth_method: authMethod });
   }
   if (!user) return response(request, { detail: "Authentication required." }, 401);
   const uid = user.id as string;

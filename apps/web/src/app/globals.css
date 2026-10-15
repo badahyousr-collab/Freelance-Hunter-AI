@@ -151,3 +151,15 @@ body {
   .metric-grid { gap: 9px; }
   .metric-card { padding: 13px; }
 }
+
+.telegram-auth-panel { display: grid; gap: 14px; }
+.telegram-code-panel { border: 1px solid #38393d; background: #101113; border-radius: 8px; padding: 18px; text-align: center; margin-top: 2px; }
+.telegram-code-label { color: #85868b; font-size: 9px; font-weight: 750; letter-spacing: 1.8px; }
+.telegram-code { color: var(--accent-yellow); font-size: clamp(29px, 8vw, 38px); font-weight: 800; letter-spacing: .12em; font-variant-numeric: tabular-nums; margin: 10px 0 17px; user-select: all; }
+.telegram-open-bot { display: flex; justify-content: center; align-items: center; gap: 8px; width: 100%; min-height: 42px; border: 1px solid #38393d; border-radius: 7px; background: #17181a; color: #f4f4f4; font-size: 12px; }
+.telegram-instructions { margin-top: 14px; }
+.telegram-instructions strong { color: #f4f4f4; white-space: nowrap; }
+.email-fallback { margin-top: 20px; border-top: 1px solid var(--border); padding-top: 16px; }
+.text-link-button { display: inline-flex; align-items: center; gap: 7px; padding: 0; color: var(--accent-cyan); border: 0; background: transparent; cursor: pointer; font-size: 11px; }
+.email-fallback .auth-form { margin-top: 16px; }
+.auth-small-link { color: var(--accent-cyan); font-size: 11px; justify-self: end; }

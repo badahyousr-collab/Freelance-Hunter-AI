@@ -12,7 +12,9 @@ def main() -> None:
         db.executescript(migration.read_text(encoding="utf-8"))
 
     user_columns = {row[1] for row in db.execute("PRAGMA table_info(users)")}
-    assert {"verification_expires_at", "password_reset_token_hash", "password_reset_expires_at"} <= user_columns
+    assert {"verification_expires_at", "password_reset_token_hash", "password_reset_expires_at", "auth_method"} <= user_columns
+    auth_code_columns = {row[1] for row in db.execute("PRAGMA table_info(telegram_auth_codes)")}
+    assert {"code_hash", "expires_at", "telegram_user_id", "user_id", "authenticated_at", "session_issued_at"} <= auth_code_columns
 
     db.execute(
         "INSERT INTO users (id,email,password_hash,is_verified) VALUES (?,?,?,1)",
@@ -31,7 +33,10 @@ def main() -> None:
     db.execute("INSERT INTO sessions (token_hash,user_id,expires_at) VALUES (?,?,datetime('now','+1 day'))", ("session-hash", "user-1"))
     db.execute("DELETE FROM users WHERE id=?", ("user-1",))
     assert db.execute("SELECT COUNT(*) FROM sessions WHERE user_id='user-1'").fetchone()[0] == 0
-    print(f"Validated {len(MIGRATIONS)} D1 migrations, auth fields, Telegram uniqueness, and cascading session deletion.")
+    db.execute("INSERT INTO telegram_auth_codes (code_hash,expires_at,user_id) VALUES (?,?,?)", ("auth-code-hash", "2099-01-01 00:00:00", "user-2"))
+    assert db.execute("SELECT user_id FROM telegram_auth_codes WHERE code_hash='auth-code-hash'").fetchone()[0] == "user-2"
+
+    print(f"Validated {len(MIGRATIONS)} D1 migrations, Telegram auth codes, auth fields, Telegram uniqueness, and cascading session deletion.")
 
 if __name__ == "__main__":
     main()
