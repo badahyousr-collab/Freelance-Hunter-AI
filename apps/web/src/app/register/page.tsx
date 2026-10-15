@@ -1,6 +1,7 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { useState } from "react";
+import type { FormEvent } from "react";
 import Link from "next/link";
 import { ArrowRight, Command, LoaderCircle, Mail, ShieldCheck } from "lucide-react";
 
