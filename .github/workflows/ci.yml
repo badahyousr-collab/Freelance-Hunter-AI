@@ -54,3 +54,4 @@ jobs:
       - run: npm install
       - run: npm run typecheck
       - run: npm test
+      - run: python3 tests/migrations.test.py
