@@ -602,7 +602,7 @@ async function handle(request: Request, env: Env): Promise<Response> {
   }
 
 
-  const draftMatch = path.match(/^\\/applications\\/(\\d+)\\/draft$/);
+  const draftMatch = path.match(/^\/applications\/(\d+)\/draft$/);
   if (draftMatch && method === "POST") {
     if (!env.AI_API_KEY || !env.AI_MODEL) return response(request, { detail: "AI drafting is not configured. Set AI_API_KEY and AI_MODEL as Worker secrets/variables." }, 503);
     const project = await env.DB.prepare("SELECT id,source,url,title,description,language,budget_min,budget_max,currency,payment_method FROM projects WHERE id=? AND user_id=?").bind(Number(draftMatch[1]), uid).first<any>();
@@ -625,7 +625,7 @@ async function handle(request: Request, env: Env): Promise<Response> {
       language: project.language, budget_min: project.budget_min, budget_max: project.budget_max,
       currency: project.currency, payment_method: project.payment_method, listing_url: project.url
     };
-    const apiBase = (env.AI_API_BASE_URL || "https://api.openai.com/v1").replace(/\\/+$/, "");
+    const apiBase = (env.AI_API_BASE_URL || "https://api.openai.com/v1").replace(/\/+$/, "");
     const endpoint = apiBase.endsWith("/chat/completions") ? apiBase : apiBase + "/chat/completions";
     let draftText = "";
     try {
