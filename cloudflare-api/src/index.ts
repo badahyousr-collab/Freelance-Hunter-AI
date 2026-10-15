@@ -83,7 +83,7 @@ async function currentUser(request: Request, env: Env): Promise<any | null> {
   const raw = request.headers.get("Cookie")?.split(";").map(v => v.trim()).find(v => v.startsWith(COOKIE + "="))?.slice(COOKIE.length + 1);
   if (!raw) return null;
   const tokenHash = await sha256(raw);
-  const row = await env.DB.prepare("SELECT u.id, u.email, u.is_verified FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=? AND s.expires_at > datetime('now')").bind(tokenHash).first<any>();
+  const row = await env.DB.prepare("SELECT u.id, u.email, u.is_verified, u.auth_method FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=? AND s.expires_at > datetime('now')").bind(tokenHash).first<any>();
   return row ?? null;
 }
 
@@ -337,12 +337,20 @@ async function handleTelegramWebhook(request: Request, env: Env): Promise<Respon
       const existingAccount = await env.DB.prepare("SELECT user_id FROM telegram_links WHERE telegram_user_id=?").bind(telegramUserId).first<any>();
       let userId = existingAccount?.user_id ? String(existingAccount.user_id) : "";
       let createdUserId = "";
+      const internalEmail = `telegram-${telegramUserId}@telegram.local`;
+      if (!userId) {
+        const priorTelegramAccount = await env.DB.prepare("SELECT id FROM users WHERE email=? AND auth_method='telegram'").bind(internalEmail).first<any>();
+        if (priorTelegramAccount?.id) {
+          userId = String(priorTelegramAccount.id);
+          await env.DB.prepare("UPDATE telegram_links SET telegram_user_id=?,linked_at=datetime('now') WHERE user_id=?")
+            .bind(telegramUserId, userId).run();
+        }
+      }
       if (!userId) {
         const id = crypto.randomUUID();
-        const internalEmail = `telegram-${telegramUserId}@telegram.local`;
         try {
           await env.DB.batch([
-            env.DB.prepare("INSERT INTO users (id,email,password_hash,is_verified) VALUES (?,?,?,1)").bind(id, internalEmail, await passwordHash(randomToken(32))),
+            env.DB.prepare("INSERT INTO users (id,email,password_hash,is_verified,auth_method) VALUES (?,?,?,1,'telegram')").bind(id, internalEmail, await passwordHash(randomToken(32))),
             env.DB.prepare("INSERT INTO profiles (user_id) VALUES (?)").bind(id),
             env.DB.prepare("INSERT INTO agent_settings (user_id) VALUES (?)").bind(id),
             env.DB.prepare("INSERT INTO telegram_links (user_id,telegram_user_id,linked_at) VALUES (?,?,datetime('now'))").bind(id, telegramUserId)
@@ -493,9 +501,10 @@ async function handle(request: Request, env: Env): Promise<Response> {
       await env.DB.prepare("UPDATE telegram_auth_codes SET session_issued_at=NULL WHERE code_hash=? AND user_id=?").bind(codeHash, auth.user_id).run();
       return response(request, { detail: "Не удалось создать сессию. Попробуй ещё раз." }, 500);
     }
-    const user = await env.DB.prepare("SELECT email,is_verified FROM users WHERE id=?").bind(auth.user_id).first<any>();
+    const user = await env.DB.prepare("SELECT email,is_verified,auth_method FROM users WHERE id=?").bind(auth.user_id).first<any>();
     const email = String(user?.email ?? "");
-    return response(request, { authenticated: true, email: email.endsWith("@telegram.local") ? null : email }, 200, { "Set-Cookie": cookie(token, SESSION_DAYS * 86400) });
+    const authMethod = String(user?.auth_method ?? (email.endsWith("@telegram.local") ? "telegram" : "email"));
+    return response(request, { authenticated: true, email: authMethod === "telegram" ? null : email }, 200, { "Set-Cookie": cookie(token, SESSION_DAYS * 86400) });
   }
 
   if (path === "/auth/password-reset/request" && method === "POST") {
@@ -659,7 +668,8 @@ async function handle(request: Request, env: Env): Promise<Response> {
   if (path === "/auth/me" && method === "GET") {
     if (!user) return response(request, { detail: "Authentication required." }, 401);
     const email = String(user.email ?? "");
-    return response(request, { email: email.endsWith("@telegram.local") ? null : email, is_verified: Boolean(user.is_verified), auth_method: email.endsWith("@telegram.local") ? "telegram" : "email" });
+    const authMethod = String(user.auth_method ?? (email.endsWith("@telegram.local") ? "telegram" : "email"));
+    return response(request, { email: authMethod === "telegram" ? null : email, is_verified: Boolean(user.is_verified), auth_method: authMethod });
   }
   if (!user) return response(request, { detail: "Authentication required." }, 401);
   const uid = user.id as string;
