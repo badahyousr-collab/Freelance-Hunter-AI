@@ -90,7 +90,7 @@ export default function DashboardPage() {
         <Link className="brand" href="/dashboard"><span className="brand-mark"><Command size={21} /></span><span>Pipisso<small>FREELANCE HUNTER</small></span></Link>
         <div className="workspace-label">WORKSPACE</div>
         <nav className="nav">
-          <Link className="nav-item active" href="/"><LayoutDashboard size={18} />Overview</Link>
+          <Link className="nav-item active" href="/dashboard"><LayoutDashboard size={18} />Overview</Link>
           <Link className="nav-item" href="/projects"><Search size={18} />Projects</Link>
           <Link className="nav-item" href="/applications"><Send size={18} />Applications</Link>
           <Link className="nav-item" href="/sources"><Workflow size={18} />Sources</Link>
