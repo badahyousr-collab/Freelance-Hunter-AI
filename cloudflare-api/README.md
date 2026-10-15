@@ -14,8 +14,8 @@ This directory contains the first Cloudflare-native API implementation for Freel
 ## Important limitations
 
 - Email delivery is not configured, so verification emails cannot be sent. Do not treat the current registration flow as production-ready email verification.
-- The scan endpoint deliberately returns `501`: no live scheduled ingestion worker is deployed.
-- Marketplace adapters, live scheduled ingestion, AI proposal generation, push notifications, and real application submission are not active. Telegram bot linking, statistics, project listing, and agent controls are implemented in the API, but require the bot service to be deployed and configured.
+- Public Telegram channel preview scanning is implemented for manual scans and a 15-minute Cron Trigger when the user has enabled the AI agent. It reads public previews only; private channels and provider-specific marketplace adapters are not supported yet.
+- Kwork, Freelancehunt, Upwork, and FL.ru live adapters are not active. AI proposal generation, push notifications, and real marketplace application submission are not active. The Telegram bot can run directly as a Cloudflare Worker webhook, so a separate always-on bot host is not required.
 - Integration secrets are not stored until encrypted secret storage is configured. Never add credentials to source files or commit them.
 - D1 has free-plan quotas; it is not unlimited.
 
@@ -47,8 +47,8 @@ The first deployment build applies the checked-in D1 migration remotely. If the 
 
 ## Telegram bot configuration
 
-The Worker uses a server-only secret for bot-to-API requests. Configure a strong random `BOT_API_SECRET` as a **Worker secret** (not a plain variable), and configure the exact same value as a private environment secret on the bot service. Configure `TELEGRAM_BOT_TOKEN` only on the bot service. Set the bot's `API_BASE_URL` to the deployed API Worker URL.
+For the Cloudflare-native webhook bot, configure these as **Worker secrets** (not plain variables): `TELEGRAM_BOT_TOKEN` (a newly issued token), `TELEGRAM_WEBHOOK_SECRET` (a random string of 32+ characters using letters, digits, `_` or `-`), and `BOT_API_SECRET` (a separate strong random secret used to protect setup and server-to-server endpoints). After the secrets are saved, send an authenticated `POST` request to `/telegram/webhook/setup` with header `X-Bot-Secret: <BOT_API_SECRET>`; the Worker registers its webhook URL and Telegram commands. The Python long-polling bot in `apps/bot` remains available for local development, but it is not needed for the free Cloudflare deployment.
 
-The website linking flow is **Security → Telegram → Generate one-time code**, then send `/link CODE` to the bot. The bot exposes `/stats`, `/projects`, `/pause`, and `/resume`. New-project and client-reply push notifications are not implemented yet.
+The website linking flow is **Security → Telegram → Generate one-time code**, then send `/link CODE` to the bot. The bot exposes `/stats`, `/projects`, `/pause`, `/resume`, and `/help`. New-project and client-reply push notifications are not implemented yet. Public Telegram sources can be scanned from the AI-agent page; scheduled scans run every 15 minutes only while the agent is enabled.
 
 If a bot token has been pasted into chat, a ticket, or source control, revoke it in `@BotFather` and use a newly issued token only as a deployment secret.
