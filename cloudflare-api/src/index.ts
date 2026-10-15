@@ -536,6 +536,8 @@ async function handle(request: Request, env: Env): Promise<Response> {
     const source = String(input.source ?? "");
     const identifier = String(input.identifier ?? "").trim();
     if (!sourceCatalog.some(s => s.source === source)) return response(request, { detail: "Unsupported source type." }, 400);
+    const configured = await env.DB.prepare("SELECT COUNT(*) AS total FROM sources WHERE user_id=?").bind(uid).first<any>();
+    if (Number(configured?.total ?? 0) >= 10) return response(request, { detail: "You can configure up to 10 sources per account." }, 429);
     if (source === "telegram" && !/^@[a-zA-Z0-9_]{5,}$/.test(identifier)) return response(request, { detail: "Enter a public Telegram channel username such as @python_jobs." }, 400);
     try {
       await env.DB.prepare("INSERT INTO sources (user_id,source,identifier,is_enabled,status) VALUES (?,?,?,?,?)").bind(uid, source, identifier, input.is_enabled === false ? 0 : 1, source === "telegram" ? "configured" : "pending_integration").run();
@@ -590,6 +592,8 @@ async function handle(request: Request, env: Env): Promise<Response> {
     return response(request, { enabled: Boolean(enabled), is_enabled: Boolean(enabled), auto_draft: Boolean(autoDraft), min_match_score: score });
   }
   if (path === "/agent/scan" && method === "POST") {
+    const recentScan = await env.DB.prepare("SELECT COUNT(*) AS total FROM sources WHERE user_id=? AND is_enabled=1 AND last_scan_at > datetime('now','-1 minute')").bind(uid).first<any>();
+    if (Number(recentScan?.total ?? 0) > 0) return response(request, { detail: "A source was scanned recently. Wait one minute before scanning again." }, 429);
     const result = await scanUserSources(env, uid);
     return response(request, { ...result, message: result.scannedSources ? "Scan completed." : "Add an enabled public Telegram channel to scan." });
   }
