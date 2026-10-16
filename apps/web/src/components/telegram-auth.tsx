@@ -128,7 +128,7 @@ export default function TelegramAuth({ mode }: Props) {
           <h1>{isRegister ? "Создай аккаунт" : "Войди в аккаунт"}</h1>
           <p className="auth-subtitle">
             {isRegister
-              ? "Регистрация через Telegram. Почта и пароль не нужны."
+              ? "Регистрация через Telegram, без отдельного пароля."
               : "Вход через Telegram. Одноразовый код действует 10 минут."}
           </p>
           <div className="telegram-auth-panel">
