@@ -13,7 +13,10 @@
 - [x] Tests for authentication, malformed input, and selected ownership boundaries.
 - [x] Disable email/password login, email verification, and password-reset API routes in Cloudflare API.
 - [x] Remove email login and recovery screens from the website.
-- [ ] Remove legacy email/password columns and email-delivery code from all active schemas/services with a safe migration.
+- [x] Remove email delivery settings/helpers and disable email auth routes in active API code.
+- [x] Add a D1 migration to replace email/password identity fields with Telegram identity keys and anonymize legacy email-only identities.
+- [ ] Apply the D1 migration in Cloudflare and verify existing Telegram accounts can still sign in.
+- [ ] Remove legacy email/password fields from the parallel FastAPI PostgreSQL schema with a tested Alembic migration, or retire that unused auth path.
 - [ ] Verify session expiry, account isolation, and Telegram sign-in against the deployed environment.
 
 ## Phase 3 - Web control panel
