@@ -436,3 +436,27 @@ h1, .page-heading h1, .sub-page-heading h1, .auth-card h1 {
   .auth-molecule-svg, .molecule-status i { animation: none !important; }
   .nav-item, .nav-item svg { transition: none !important; }
 }
+
+
+/* Keep settings actions below the complete grid, never beside the payment field. */
+.sub-form-grid { align-items: start; }
+.sub-form-grid > * { min-width: 0; }
+.settings-save-row {
+  display: flex;
+  justify-content: flex-start;
+  clear: both;
+  width: 100%;
+  margin-top: 18px;
+  position: relative;
+  z-index: 1;
+}
+.settings-save-button { min-height: 40px; white-space: nowrap; }
+.auth-molecule-svg {
+  transform: none !important;
+  transform-style: flat;
+  animation: molecule-drift 8s ease-in-out infinite;
+}
+.auth-molecule-interaction { perspective: 1100px; }
+@media (max-width: 680px) {
+  .settings-save-row { margin-top: 14px; }
+}
