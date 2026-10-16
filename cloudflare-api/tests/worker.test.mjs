@@ -56,6 +56,27 @@ test("Telegram webhook rejects an invalid Telegram secret token", async () => {
   assert.equal(response.status, 401);
 });
 
+test("agent readiness reflects provider and bot configuration", async () => {
+  const response = await worker.fetch(new Request("https://api.example/agent/readiness", {
+    headers: { Cookie: "fh_session=test-session-token" }
+  }), {
+    DB: fakeDb(),
+    AI_API_KEY: "configured-ai-key",
+    AI_MODEL: "configured-model",
+    TELEGRAM_BOT_TOKEN: "configured-bot-token",
+    TELEGRAM_WEBHOOK_SECRET: "configured-webhook-secret",
+    BOT_API_SECRET: "configured-bot-api-secret"
+  });
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), {
+    worker_runtime: true,
+    cron_configured: true,
+    telegram_bot_configured: true,
+    ai_provider_configured: true,
+    marketplace_adapters: []
+  });
+});
+
 test("email registration is disabled in favor of Telegram authentication", async () => {
   const response = await worker.fetch(new Request("https://api.example/auth/register", {
     method: "POST",
