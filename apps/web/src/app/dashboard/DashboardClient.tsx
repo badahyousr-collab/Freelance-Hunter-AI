@@ -17,7 +17,7 @@ type Project = {
   currency: string | null; payment_method: string | null; published_at: string | null;
   discovered_at: string; match_score: number | null; match_reasons: string[];
 };
-type CurrentUser = { email: string | null; is_verified: boolean; auth_method?: string; telegram_user_id?: string | null; created_at?: string | null };
+type CurrentUser = { identity_provider?: string; telegram_user_id?: string | null; created_at?: string | null; display_name?: string | null };
 
 const metricDefinitions = [
   { key: "projects_found" as const, label: "Projects found", change: "All sources", icon: BriefcaseBusiness },
