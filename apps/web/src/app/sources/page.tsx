@@ -11,12 +11,14 @@ type Source = { id: number; source: string; identifier: string; is_enabled: bool
 type RecommendedChannel = { handle: string; label: string; focus: string; language: string };
 
 const recommendedChannels: RecommendedChannel[] = [
-  { handle: "tgram_jobs", label: "Telegram jobs", focus: "IT-заказы, разработка и проекты от заказчиков", language: "RU" },
-  { handle: "job_for_bots", label: "Вакансии для разработчиков ботов", focus: "Заказы на Telegram-ботов и Mini Apps", language: "RU" },
-  { handle: "zerocode_jobs", label: "Запили мне, зерокодер", focus: "Заказы на no-code, автоматизацию и ботов", language: "RU" },
-  { handle: "FreelancehuntProjects", label: "Проєкти Freelancehunt", focus: "Свежие фриланс-проекты, включая разработку", language: "UA/RU" },
-  { handle: "itfreelancers", label: "IT freelance and remote", focus: "IT-проекты, лиды и сотрудничество", language: "EN/RU" },
-  { handle: "frwork3", label: "Фриланс, удалённая работа", focus: "Разовые задачи и удалённые проекты разных направлений", language: "RU" }
+  { handle: "job_for_bots", label: "Вакансии для разработчиков ботов", focus: "Заказы на Telegram-ботов и Mini Apps, часто с ТЗ и бюджетом", language: "RU" },
+  { handle: "zerocode_jobs", label: "Запили мне, зерокодер", focus: "Заказы на no-code, автоматизацию, приложения и ботов", language: "RU" },
+  { handle: "job_developer", label: "Фриланс для разработчиков", focus: "Разработка, удалённые проекты и заказы от клиентов", language: "RU" },
+  { handle: "GetClient", label: "GetClient | Фриланс вакансии", focus: "Заказы по IT, дизайну, маркетингу и другим направлениям", language: "RU" },
+  { handle: "kadrof_work", label: "Вакансии для фрилансеров", focus: "Новые удалённые вакансии и заказы для фрилансеров", language: "RU" },
+  { handle: "frwork3", label: "Фриланс, удалённая работа", focus: "Заказы и вакансии для IT, дизайна, маркетинга и других сфер", language: "RU" },
+  { handle: "FreelancehuntProjects", label: "Проєкти Freelancehunt", focus: "Фриланс-проекты, включая разработку и цифровые услуги", language: "UA/RU" },
+  { handle: "itfreelancers", label: "IT freelance and remote", focus: "IT-проекты, лиды и сотрудничество", language: "EN/RU" }
 ];
 
 export default function SourcesPage() {
@@ -65,7 +67,7 @@ export default function SourcesPage() {
     e.preventDefault(); setBusy(true); setMessage(""); setError("");
     try {
       await saveSource(source, identifier.trim());
-      setMessage("Источник добавлен. Можно запустить сканирование после сохранения профиля навыков.");
+      setMessage("Источник добавлен. Запусти сканирование и проверь, появились ли новые проекты.");
       setIdentifier(""); await load();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Не удалось добавить источник");
@@ -76,7 +78,7 @@ export default function SourcesPage() {
     setAddingChannel(channel.handle); setError(""); setMessage("");
     try {
       await saveSource("telegram", "@" + channel.handle);
-      setMessage("Канал @" + channel.handle + " добавлен. Повторные посты не должны создавать дубликаты.");
+      setMessage("Канал @" + channel.handle + " добавлен. Результат сбора можно проверить после сканирования.");
       await load();
     } catch (e) {
       const text = e instanceof Error ? e.message : "Не удалось добавить канал";
@@ -127,11 +129,11 @@ export default function SourcesPage() {
   const configuredHandles = new Set(items.filter(item => item.source === "telegram").map(item => item.identifier.replace(/^@/, "").toLowerCase()));
 
   return <WorkspacePage title="Источники" subtitle="Подключай публичные Telegram-каналы с заказами и управляй сбором проектов.">
-    {error && <div className="sub-alert error">{error}</div>}
-    {message && <div className="sub-alert">{message}</div>}
+    {error && <div className="sub-alert error" role="alert">{error}</div>}
+    {message && <div className="sub-alert" role="status">{message}</div>}
 
     <section className="content-card">
-      <div className="panel-heading"><div><h2>Подборка Telegram-каналов</h2><p>Публичные каналы с IT-заказами, фриланс-проектами и удалённой работой. Нажми «Добавить», чтобы подключить канал к сканированию.</p></div><Radio size={18}/></div>
+      <div className="panel-heading"><div><h2>Подборка Telegram-каналов</h2><p>Каналы с заказами и проектами. Нажми «Добавить», затем запусти сканирование. Актуальность проверяется по результату, а не только по наличию ссылки.</p></div><Radio size={18}/></div>
       <div className="sub-list">
         {recommendedChannels.map(channel => {
           const configured = configuredHandles.has(channel.handle.toLowerCase());
@@ -150,11 +152,11 @@ export default function SourcesPage() {
           </article>;
         })}
       </div>
-      <p className="sub-muted">Ссылки на публичные каналы собраны по открытым описаниям. Активность и качество постов могут меняться, поэтому статус сканирования проверяется отдельно в твоём списке источников.</p>
+      <p className="sub-muted">Каналы отобраны по публичным страницам и описаниям, доступным на момент проверки. Часть публикаций может быть обычными вакансиями, рекламой или неподходящими заказами. Такие результаты нужно отсеивать фильтрами и проверять после каждого сканирования.</p>
     </section>
 
     <section className="content-card">
-      <div className="panel-heading"><div><h2>Биржи и другие источники</h2><p>Подключение площадки считается рабочим только после реализации адаптера и теста получения реальных объявлений.</p></div><Link className="sub-button" href="/integrations">Подключения ↗</Link></div>
+      <div className="panel-heading"><div><h2>Биржи и другие источники</h2><p>Биржи будут отмечаться рабочими только после реализации адаптера и теста получения реальных объявлений.</p></div><Link className="sub-button" href="/integrations">Подключения ↗</Link></div>
       <form className="sub-form" onSubmit={add}>
         <div className="sub-form-grid">
           <div className="sub-form-field"><label htmlFor="source-kind">Тип источника</label><select id="source-kind" className="sub-select" value={source} onChange={e => setSource(e.target.value)}>{catalog.map(c => <option key={c.source} value={c.source}>{c.label}</option>)}</select></div>
