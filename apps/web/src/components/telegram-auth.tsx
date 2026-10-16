@@ -4,6 +4,8 @@ import { FormEvent, useRef, useState } from "react";
 import Link from "next/link";
 import { ArrowRight, Command, LoaderCircle, Send, Mail, LockKeyhole, Copy, Check, RefreshCw } from "lucide-react";
 
+import OpportunityCube from "@/components/OpportunityCube";
+
 const API = "/api/backend";
 
 type Props = { mode: "register" | "login" };
@@ -157,6 +159,7 @@ export default function TelegramAuth({ mode }: Props) {
           <span className="brand-mark"><Command size={21} /></span>
           <span>Pipisso<small>FREELANCE HUNTER</small></span>
         </Link>
+        <OpportunityCube />
         <div className="auth-eyebrow"><Send size={14} /> TELEGRAM AUTHENTICATION</div>
         <h1>{isRegister ? "Создай аккаунт" : "Войди в аккаунт"}</h1>
         <p className="auth-subtitle">
