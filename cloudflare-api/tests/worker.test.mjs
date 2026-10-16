@@ -36,7 +36,7 @@ function fakeDb({ scan = false, skills = ["python", "telegram"], telegramAuth = 
 test("health endpoint confirms a reachable D1 binding", async () => {
   const response = await worker.fetch(new Request("https://api.example/health"), { DB: fakeDb() });
   assert.equal(response.status, 200);
-  assert.deepEqual(await response.json(), { status: "ok", database: "connected", service: "freelance-hunter-api" });
+  assert.deepEqual(await response.json(), { status: "ok", database: "connected", schema: "ready", service: "freelance-hunter-api" });
 });
 
 test("Telegram webhook rejects requests when webhook secrets are not configured", async () => {
