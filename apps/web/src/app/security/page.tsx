@@ -5,7 +5,7 @@ import { Link2, LogOut, ShieldCheck, Unlink } from "lucide-react";
 import WorkspacePage from "@/components/WorkspacePage";
 
 const API = "/api/backend";
-type User = { auth_method?: string; created_at: string | null; telegram_user_id?: string | null };
+type User = { identity_provider?: string; created_at: string | null; telegram_user_id?: string | null };
 type AgentSettings = { enabled: boolean; telegram_linked: boolean };
 
 export default function SecurityPage() {
