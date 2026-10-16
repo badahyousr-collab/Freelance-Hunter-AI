@@ -14,7 +14,7 @@ def main() -> None:
     user_columns = {row[1] for row in db.execute("PRAGMA table_info(users)")}
     assert {"verification_expires_at", "password_reset_token_hash", "password_reset_expires_at", "auth_method"} <= user_columns
     auth_code_columns = {row[1] for row in db.execute("PRAGMA table_info(telegram_auth_codes)")}
-    assert {"code_hash", "expires_at", "telegram_user_id", "user_id", "authenticated_at", "session_issued_at"} <= auth_code_columns
+    assert {"code_hash", "expires_at", "telegram_user_id", "user_id", "authenticated_at", "session_issued_at", "auth_mode", "error_message"} <= auth_code_columns
 
     db.execute(
         "INSERT INTO users (id,email,password_hash,is_verified) VALUES (?,?,?,1)",
