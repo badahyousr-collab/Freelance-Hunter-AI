@@ -76,3 +76,70 @@ test("source catalog can add a public Telegram job channel", async ({ page }) =>
   await expect(page.getByText(/Канал @tgram_jobs добавлен/i)).toBeVisible();
   await expect(page.locator(".sub-list-row").filter({ hasText: "@tgram_jobs" }).getByText(/Добавлен|Включён/).first()).toBeVisible();
 });
+
+
+test("projects search sends filters to the API and renders returned projects", async ({ page }) => {
+  let lastQuery: string | null = null;
+  await page.route("**/api/backend/projects**", async route => {
+    const url = new URL(route.request().url());
+    lastQuery = url.searchParams.get("q");
+    const projects = lastQuery === "python" ? [{
+      id: 12,
+      source: "telegram",
+      source_project_id: "tgram_jobs:12",
+      url: "https://t.me/tgram_jobs/12",
+      title: "Telegram bot lead collector",
+      description: "Build a Python bot for collecting freelance leads.",
+      language: "en",
+      budget_min: 500,
+      budget_max: 800,
+      currency: "USD",
+      payment_method: null,
+      discovered_at: "2026-10-16T10:00:00Z",
+      match_score: 85,
+      match_reasons: ["Skill match: Python"]
+    }] : [];
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(projects) });
+  });
+
+  await page.goto("/projects");
+  await page.getByLabel("Search projects").fill("python");
+  await page.getByRole("button", { name: /Apply filters/i }).click();
+  await expect.poll(() => lastQuery).toBe("python");
+  await expect(page.getByText("Telegram bot lead collector")).toBeVisible();
+});
+
+test("settings save action sits below the payment fields and persists preferences", async ({ page }) => {
+  const savedProfile: Record<string, unknown> = {
+    display_name: "Dev",
+    skills: ["Python"],
+    languages: ["ru", "en"],
+    min_budget: null,
+    currency: "ALL",
+    payment_preferences: [],
+    excluded_keywords: []
+  };
+  await page.route("**/api/backend/profile", async route => {
+    if (route.request().method() === "GET") {
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(savedProfile) });
+      return;
+    }
+    Object.assign(savedProfile, route.request().postDataJSON() as Record<string, unknown>);
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(savedProfile) });
+  });
+
+  await page.goto("/settings");
+  const paymentInput = page.getByLabel("Способы выплат");
+  const saveButton = page.getByRole("button", { name: "Сохранить настройки" });
+  await expect(paymentInput).toBeVisible();
+  await expect(saveButton).toBeVisible();
+  const paymentBox = await paymentInput.boundingBox();
+  const saveBox = await saveButton.boundingBox();
+  expect(paymentBox).not.toBeNull();
+  expect(saveBox).not.toBeNull();
+  expect(saveBox!.y).toBeGreaterThan(paymentBox!.y + paymentBox!.height);
+  await page.getByLabel("Skills (comma-separated)").fill("Python, FastAPI");
+  await saveButton.click();
+  await expect(page.getByText(/Настройки сохранены/i)).toBeVisible();
+  expect(savedProfile.skills).toEqual(["Python", "FastAPI"]);
+});
