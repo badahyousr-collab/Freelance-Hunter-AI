@@ -7,9 +7,6 @@ interface Env {
   AI_API_KEY?: string;
   AI_API_BASE_URL?: string;
   AI_MODEL?: string;
-  RESEND_API_KEY?: string;
-  EMAIL_FROM?: string;
-  APP_BASE_URL?: string;
 }
 
 const COOKIE = "fh_session";
@@ -60,20 +57,6 @@ async function sha256(value: string): Promise<string> {
   return Array.from(new Uint8Array(digest), b => b.toString(16).padStart(2, "0")).join("");
 }
 
-async function passwordHash(password: string, salt = randomToken(16)): Promise<string> {
-  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(password), "PBKDF2", false, ["deriveBits"]);
-  const bits = await crypto.subtle.deriveBits({ name: "PBKDF2", salt: new TextEncoder().encode(salt), iterations: 210000, hash: "SHA-256" }, key, 256);
-  const digest = Array.from(new Uint8Array(bits), b => b.toString(16).padStart(2, "0")).join("");
-  return `${salt}:${digest}`;
-}
-
-async function verifyPassword(password: string, stored: string): Promise<boolean> {
-  const [salt, expected] = stored.split(":");
-  if (!salt || !expected) return false;
-  const actual = await passwordHash(password, salt);
-  return actual.split(":")[1] === expected;
-}
-
 async function body(request: Request): Promise<Record<string, any>> {
   try { const value = await request.json(); return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, any> : {}; }
   catch { return {}; }
@@ -83,7 +66,7 @@ async function currentUser(request: Request, env: Env): Promise<any | null> {
   const raw = request.headers.get("Cookie")?.split(";").map(v => v.trim()).find(v => v.startsWith(COOKIE + "="))?.slice(COOKIE.length + 1);
   if (!raw) return null;
   const tokenHash = await sha256(raw);
-  const row = await env.DB.prepare("SELECT u.id, u.email, u.is_verified, u.auth_method, u.created_at FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=? AND s.expires_at > datetime('now')").bind(tokenHash).first<any>();
+  const row = await env.DB.prepare("SELECT u.id, u.created_at FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=? AND s.expires_at > datetime('now')").bind(tokenHash).first<any>();
   return row ?? null;
 }
 
@@ -477,20 +460,6 @@ async function handleTelegramWebhook(request: Request, env: Env): Promise<Respon
 }
 
 
-function emailConfigured(env: Env): boolean {
-  return Boolean(env.RESEND_API_KEY && env.EMAIL_FROM && env.APP_BASE_URL);
-}
-
-async function sendTransactionalEmail(env: Env, to: string, subject: string, html: string): Promise<void> {
-  if (!env.RESEND_API_KEY || !env.EMAIL_FROM) throw new Error("Email delivery is not configured");
-  const result = await fetch("https://api.resend.com/emails", {
-    method: "POST",
-    headers: { "Authorization": "Bearer " + env.RESEND_API_KEY, "Content-Type": "application/json" },
-    body: JSON.stringify({ from: env.EMAIL_FROM, to: [to], subject, html }),
-    signal: AbortSignal.timeout(15000)
-  });
-  if (!result.ok) throw new Error("Email provider rejected the message");
-}
 
 async function handle(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
@@ -591,75 +560,6 @@ async function handle(request: Request, env: Env): Promise<Response> {
       return response(request, { detail: "Не удалось создать сессию. Попробуй ещё раз." }, 500);
     }
     return response(request, { authenticated: true, auth_method: "telegram" }, 200, { "Set-Cookie": cookie(token, SESSION_DAYS * 86400) });
-  }
-
-  if (path === "/auth/password-reset/request" && method === "POST") {
-    if (await isRateLimited(request, env, "password-reset", 5)) {
-      return response(request, { detail: "Too many attempts. Please wait 15 minutes and try again." }, 429, { "Retry-After": "900" });
-    }
-    if (!emailConfigured(env)) return response(request, { detail: "Password reset email is not configured yet. Contact the administrator." }, 503);
-    const input = await body(request);
-    const email = String(input.email ?? "").trim().toLowerCase();
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return response(request, { detail: "Enter a valid email address." }, 400);
-    const user = await env.DB.prepare("SELECT id,email FROM users WHERE email=?").bind(email).first<any>();
-    if (user) {
-      const resetToken = randomToken(32);
-      await env.DB.prepare("UPDATE users SET password_reset_token_hash=?,password_reset_expires_at=datetime('now','+1 hour') WHERE id=?").bind(await sha256(resetToken), user.id).run();
-      const resetUrl = String(env.APP_BASE_URL).replace(/\/+$/, "") + "/reset-password?token=" + encodeURIComponent(resetToken);
-      try {
-        await sendTransactionalEmail(env, email, "Reset your Freelance Hunter password",
-          '<div style="font-family:Arial,sans-serif;max-width:560px;margin:auto;color:#222"><h2>Password reset</h2><p>We received a request to reset your password.</p><p><a href="' + resetUrl + '" style="display:inline-block;padding:12px 18px;background:#222;color:#fff;text-decoration:none;border-radius:8px">Choose a new password</a></p><p>This link expires in one hour. If you did not request it, ignore this email.</p></div>');
-      } catch {
-        await env.DB.prepare("UPDATE users SET password_reset_token_hash=NULL,password_reset_expires_at=NULL WHERE id=?").bind(user.id).run();
-        return response(request, { detail: "Could not send the reset email. Check email provider settings and try again." }, 502);
-      }
-    }
-    return response(request, { message: "If an account exists for that address, a password reset link has been sent." });
-  }
-
-  if (path === "/auth/password-reset/confirm" && method === "POST") {
-    if (await isRateLimited(request, env, "password-reset-confirm", 10)) {
-      return response(request, { detail: "Too many attempts. Please wait 15 minutes and try again." }, 429, { "Retry-After": "900" });
-    }
-    const input = await body(request);
-    const token = String(input.token ?? "");
-    const password = String(input.password ?? "");
-    if (!token) return response(request, { detail: "Reset token is required." }, 400);
-    if (password.length < 10 || password.length > 256) return response(request, { detail: "Password must contain 10–256 characters." }, 400);
-    const user = await env.DB.prepare("SELECT id FROM users WHERE password_reset_token_hash=? AND password_reset_expires_at > datetime('now')").bind(await sha256(token)).first<any>();
-    if (!user) return response(request, { detail: "Reset link is invalid or expired. Request a new one." }, 400);
-    const result = await env.DB.prepare("UPDATE users SET password_hash=?,password_reset_token_hash=NULL,password_reset_expires_at=NULL WHERE id=? AND password_reset_token_hash=? AND password_reset_expires_at > datetime('now')")
-      .bind(await passwordHash(password), user.id, await sha256(token)).run();
-    if (!result.meta.changes) return response(request, { detail: "Reset link is invalid or expired. Request a new one." }, 400);
-    await env.DB.prepare("DELETE FROM sessions WHERE user_id=?").bind(user.id).run();
-    return response(request, { message: "Password updated. Sign in with your new password." });
-  }
-
-  if (path === "/auth/verify-email" && method === "POST") {
-    if (await isRateLimited(request, env, "verify-email", 10)) {
-      return response(request, { detail: "Too many attempts. Please wait 15 minutes and try again." }, 429, { "Retry-After": "900" });
-    }
-    const input = await body(request);
-    const token = String(input.token ?? "");
-    if (!token) return response(request, { detail: "Verification token is required." }, 400);
-    const result = await env.DB.prepare("UPDATE users SET is_verified=1, verification_token_hash=NULL, verification_expires_at=NULL WHERE verification_token_hash=? AND verification_expires_at > datetime('now')").bind(await sha256(token)).run();
-    if (!result.meta.changes) return response(request, { detail: "Verification token is invalid or expired." }, 400);
-    return response(request, { message: "Email verified. You can now sign in." });
-  }
-
-  if (path === "/auth/login" && method === "POST") {
-    if (await isRateLimited(request, env, "login", 10)) {
-      return response(request, { detail: "Too many attempts. Please wait 15 minutes and try again." }, 429, { "Retry-After": "900" });
-    }
-    const input = await body(request);
-    const email = String(input.email ?? "").trim().toLowerCase();
-    const password = String(input.password ?? "");
-    const user = await env.DB.prepare("SELECT id,email,password_hash,is_verified FROM users WHERE email=?").bind(email).first<any>();
-    if (!user || !(await verifyPassword(password, user.password_hash))) return response(request, { detail: "Email or password is incorrect." }, 401);
-    if (!user.is_verified) return response(request, { detail: "Verify your email address before signing in." }, 403);
-    const token = randomToken();
-    await env.DB.prepare("INSERT INTO sessions (token_hash,user_id,expires_at) VALUES (?,?,datetime('now', '+14 days'))").bind(await sha256(token), user.id).run();
-    return response(request, { email: user.email, is_verified: Boolean(user.is_verified) }, 200, { "Set-Cookie": cookie(token, SESSION_DAYS * 86400) });
   }
 
   if (path === "/auth/logout" && method === "POST") {
