@@ -1,4 +1,14 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
+
+async function mockAuthenticatedAccount(page: Page) {
+  await page.route("**/api/backend/auth/me", async route => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ identity_provider: "telegram", created_at: "2026-10-16T10:00:00Z", telegram_user_id: "12345", telegram_linked_at: "2026-10-16T10:00:00Z" })
+    });
+  });
+}
 
 for (const path of ["/login", "/register"]) {
   test(`${path} uses Telegram only and has no email/password form`, async ({ page }) => {
@@ -39,6 +49,7 @@ test("Telegram auth displays a short-lived code and a link to the bot", async ({
 
 
 test("source catalog can add a public Telegram job channel", async ({ page }) => {
+  await mockAuthenticatedAccount(page);
   const savedSources: Array<Record<string, unknown>> = [];
   await page.route("**/api/backend/sources/catalog", async route => {
     await route.fulfill({
@@ -89,6 +100,7 @@ test("source catalog can add a public Telegram job channel", async ({ page }) =>
 
 
 test("projects search sends filters to the API and renders returned projects", async ({ page }) => {
+  await mockAuthenticatedAccount(page);
   let lastQuery: string | null = null;
   await page.route("**/api/backend/projects**", async route => {
     const url = new URL(route.request().url());
@@ -120,6 +132,7 @@ test("projects search sends filters to the API and renders returned projects", a
 });
 
 test("settings save action sits below the payment fields and persists preferences", async ({ page }) => {
+  await mockAuthenticatedAccount(page);
   const savedProfile: Record<string, unknown> = {
     display_name: "Dev",
     skills: ["Python"],
@@ -139,6 +152,10 @@ test("settings save action sits below the payment fields and persists preference
   });
 
   await page.goto("/settings");
+  await page.getByRole("button", { name: "Открыть аккаунт" }).click();
+  await expect(page.getByText("Email", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("Telegram", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Открыть аккаунт" }).click();
   const paymentInput = page.getByLabel("Способы выплат");
   const saveButton = page.getByRole("button", { name: "Сохранить настройки" });
   await expect(paymentInput).toBeVisible();
