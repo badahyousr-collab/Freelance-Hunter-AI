@@ -10,7 +10,7 @@ export default async function DashboardPage() {
   if (!session) redirect("/login");
 
   const apiBase = process.env.CLOUDFLARE_API_URL?.trim().replace(new RegExp("/+$"), "");
-  if (!apiBase) redirect("/login");
+  if (!apiBase) return <DashboardClient />;
 
   let authenticated = false;
   try {
