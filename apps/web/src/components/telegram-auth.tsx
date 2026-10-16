@@ -4,7 +4,7 @@ import { FormEvent, useRef, useState } from "react";
 import Link from "next/link";
 import { ArrowRight, Command, LoaderCircle, Send, Mail, LockKeyhole, Copy, Check, RefreshCw } from "lucide-react";
 
-import OpportunityCube from "@/components/OpportunityCube";
+import AuthMolecule from "@/components/AuthMolecule";
 
 const API = "/api/backend";
 
@@ -154,12 +154,12 @@ export default function TelegramAuth({ mode }: Props) {
 
   return (
     <main className="auth-shell">
+      <div className="auth-layout">
       <section className="auth-card">
         <Link href="/" className="auth-brand">
           <span className="brand-mark"><Command size={21} /></span>
           <span>Pipisso<small>FREELANCE HUNTER</small></span>
         </Link>
-        <OpportunityCube />
         <div className="auth-eyebrow"><Send size={14} /> TELEGRAM AUTHENTICATION</div>
         <h1>{isRegister ? "Создай аккаунт" : "Войди в аккаунт"}</h1>
         <p className="auth-subtitle">
@@ -219,6 +219,8 @@ export default function TelegramAuth({ mode }: Props) {
         </div>
         <p className="auth-legal">Сессия защищена HTTP-only cookie. Код можно использовать только один раз.</p>
       </section>
+      <AuthMolecule />
+      </div>
     </main>
   );
 }
