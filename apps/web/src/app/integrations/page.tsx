@@ -1,18 +1,141 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
-import { KeyRound, Plug, Trash2 } from "lucide-react";
+import { useEffect, useState } from "react";
+import { ExternalLink, Plug, Trash2 } from "lucide-react";
 import WorkspacePage from "@/components/WorkspacePage";
 
-const API="/api/backend";
-type Catalog={provider:string;label:string;status:string;setup_note:string};
-type Integration={id:number;provider:string;label:string;status:string;created_at:string};
+const API = "/api/backend";
+type Catalog = { provider: string; label: string; status: string; setup_note: string };
+type Integration = { id: number; provider: string; label: string; status: string; created_at: string };
 
-export default function IntegrationsPage(){
- const [catalog,setCatalog]=useState<Catalog[]>([]);const [items,setItems]=useState<Integration[]>([]);const [provider,setProvider]=useState("upwork");const [secret,setSecret]=useState("");const [loading,setLoading]=useState(true);const [busy,setBusy]=useState(false);const [message,setMessage]=useState("");const [error,setError]=useState("");
- async function load(){setLoading(true);setError("");try{const rs=await Promise.all([fetch(API+"/integrations/catalog",{credentials:"include"}),fetch(API+"/integrations",{credentials:"include"})]);if(rs.some(r=>r.status===401)){window.location.assign("/login");return;}const c=await rs[0].json();const i=await rs[1].json();if(!rs[0].ok||!rs[1].ok)throw new Error(c.detail??i.detail??"Could not load integrations");setCatalog(c);setItems(i);}catch(e){setError(e instanceof Error?e.message:"API connection failed");}finally{setLoading(false);}}
- useEffect(()=>{void load();},[]);
- async function save(e:FormEvent){e.preventDefault();setBusy(true);setError("");setMessage("");try{const r=await fetch(API+"/integrations",{method:"POST",headers:{"Content-Type":"application/json"},credentials:"include",body:JSON.stringify({provider,secret})});const d=await r.json();if(!r.ok)throw new Error(d.detail??"Could not save integration");setItems(old=>[d,...old]);setSecret("");setMessage("Площадка добавлена в список. Авторизация и отправка откликов пока не активны.");}catch(e){setError(e instanceof Error?e.message:"Could not save integration");}finally{setBusy(false);}}
- async function remove(item:Integration){setError("");try{const r=await fetch(API+"/integrations/"+item.id,{method:"DELETE",credentials:"include"});if(!r.ok){const d=await r.json();throw new Error(d.detail??"Could not remove integration");}setItems(old=>old.filter(x=>x.id!==item.id));setMessage("Saved credential deleted.");}catch(e){setError(e instanceof Error?e.message:"Could not remove integration");}}
- return <WorkspacePage title="Integrations" subtitle="Управление подключениями к площадкам. Пароли от аккаунтов здесь не запрашиваются.">{error&&<div className="sub-alert error">{error}</div>}{message&&<div className="sub-alert">{message}</div>}<section className="content-card"><h2><KeyRound size={16} style={{verticalAlign:"middle",marginRight:8}}/>Подключение площадок</h2><p>Не вводи пароль от биржи и не ищи API самостоятельно. Подключение будет выполняться через официальный OAuth или разрешённый площадкой токен. Сейчас добавление ниже сохраняет площадку в списке, но не авторизует аккаунт и не включает автоматическую отправку откликов.</p><form className="sub-form" onSubmit={save}><div className="sub-form-field"><label htmlFor="provider">Marketplace</label><select id="provider" className="sub-select" value={provider} onChange={e=>setProvider(e.target.value)}>{catalog.map(c=><option key={c.provider} value={c.provider}>{c.label}</option>)}</select></div><div className="sub-form-field"><div className="sub-muted">Для выбранной площадки способ авторизации ещё не подключён. Когда адаптер будет готов, здесь появится кнопка официального подключения.</div></div><button className="sub-button primary" type="submit" disabled={busy||!secret.trim()}><Plug size={15}/>{busy?"Добавление…":"Добавить в список"}</button></form></section><section className="content-card"><h2>Saved integrations</h2><p>Список площадок привязан к твоему аккаунту. Реальное подключение появится после реализации и проверки отдельного адаптера для конкретной биржи.</p>{loading?<div className="sub-empty">Loading integrations…</div>:items.length===0?<div className="sub-empty"><Plug size={25}/><strong>No credentials saved</strong><span>Выбери площадку выше. Добавление в список само по себе не подключает аккаунт.</span></div>:<div className="sub-list">{items.map(item=><article className="sub-list-row" key={item.id}><div className="sub-list-main"><strong>{item.label||catalog.find(c=>c.provider===item.provider)?.label||item.provider}</strong><span>Подключение не активно · Добавлено {new Date(item.created_at).toLocaleString()}</span></div><span className="sub-badge pending">{item.status.replaceAll("_"," ")}</span><button className="sub-button danger" onClick={()=>void remove(item)}><Trash2 size={14}/>Delete</button></article>)}</div>}</section><section className="content-card"><h2>Provider readiness</h2><div className="sub-list">{catalog.map(c=><div className="sub-list-row" key={c.provider}><div className="sub-list-main"><strong>{c.label}</strong><span>{c.setup_note}</span></div><span className="sub-badge pending">Не подключено</span></div>)}</div></section></WorkspacePage>;
+const publicUrls: Record<string, string> = {
+  upwork: "https://www.upwork.com/",
+  freelancer: "https://www.freelancer.com/",
+  kwork: "https://kwork.ru/",
+  freelancehunt: "https://freelancehunt.com/",
+  fiverr: "https://www.fiverr.com/",
+};
+
+export default function IntegrationsPage() {
+  const [catalog, setCatalog] = useState<Catalog[]>([]);
+  const [items, setItems] = useState<Integration[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [message, setMessage] = useState("");
+
+  async function load() {
+    setLoading(true);
+    setError("");
+    try {
+      const responses = await Promise.all([
+        fetch(API + "/integrations/catalog", { credentials: "include" }),
+        fetch(API + "/integrations", { credentials: "include" }),
+      ]);
+      if (responses.some((response) => response.status === 401)) {
+        window.location.assign("/login");
+        return;
+      }
+      const catalogData = await responses[0].json();
+      const integrationsData = await responses[1].json();
+      if (!responses[0].ok || !responses[1].ok) {
+        throw new Error(catalogData.detail ?? integrationsData.detail ?? "Не удалось загрузить подключения.");
+      }
+      setCatalog(catalogData);
+      setItems(integrationsData);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Не удалось связаться с API.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => { void load(); }, []);
+
+  async function remove(item: Integration) {
+    setError("");
+    setMessage("");
+    try {
+      const response = await fetch(API + "/integrations/" + item.id, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.detail ?? "Не удалось удалить подключение.");
+      }
+      setItems((current) => current.filter((entry) => entry.id !== item.id));
+      setMessage("Запись подключения удалена.");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Не удалось удалить подключение.");
+    }
+  }
+
+  return (
+    <WorkspacePage
+      title="Подключения"
+      subtitle="Здесь будут появляться реальные подключения к биржам. Пароли от аккаунтов вводить не нужно."
+    >
+      {error && <div className="sub-alert error" role="alert">{error}</div>}
+      {message && <div className="sub-alert" role="status">{message}</div>}
+
+      <section className="content-card">
+        <h2><Plug size={16} style={{ verticalAlign: "middle", marginRight: 8 }} />Биржи фриланса</h2>
+        <p>
+          Список показывает готовность интеграций, а не имитирует подключение. Для каждой площадки
+          отдельно реализуем официальный OAuth или другой разрешённый способ авторизации, затем
+          проверим получение заказов и доступность отправки откликов.
+        </p>
+        {loading ? (
+          <div className="sub-empty">Загружаем список площадок…</div>
+        ) : (
+          <div className="sub-list">
+            {catalog.map((entry) => {
+              const integration = items.find((item) => item.provider === entry.provider);
+              const externalUrl = publicUrls[entry.provider];
+              return (
+                <article className="sub-list-row" key={entry.provider}>
+                  <div className="sub-list-main">
+                    <strong>{entry.label}</strong>
+                    <span>{entry.setup_note}</span>
+                    {integration && <span>Запись: {integration.status.replaceAll("_", " ")}</span>}
+                  </div>
+                  <span className={`sub-badge ${integration?.status === "connected" ? "success" : "pending"}`}>
+                    {integration?.status === "connected" ? "Подключено" : "Интеграция в разработке"}
+                  </span>
+                  {externalUrl && (
+                    <a className="sub-button" href={externalUrl} target="_blank" rel="noreferrer">
+                      <ExternalLink size={14} /> Открыть биржу
+                    </a>
+                  )}
+                  {integration && (
+                    <button className="sub-button danger" type="button" onClick={() => void remove(integration)}>
+                      <Trash2 size={14} /> Удалить запись
+                    </button>
+                  )}
+                </article>
+              );
+            })}
+          </div>
+        )}
+      </section>
+
+      <section className="content-card">
+        <h2>Безопасность подключения</h2>
+        <div className="sub-list">
+          <div className="sub-list-row">
+            <div className="sub-list-main">
+              <strong>Пароли аккаунтов не запрашиваются</strong>
+              <span>Подключение будет идти через официальный экран площадки или ограниченный токен, если биржа это поддерживает.</span>
+            </div>
+          </div>
+          <div className="sub-list-row">
+            <div className="sub-list-main">
+              <strong>Отправка отклика не считается успешной заранее</strong>
+              <span>Статус «Отправлен» появится только после подтверждения со стороны биржи.</span>
+            </div>
+          </div>
+        </div>
+      </section>
+    </WorkspacePage>
+  );
 }
