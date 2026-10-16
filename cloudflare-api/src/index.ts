@@ -467,7 +467,19 @@ async function handle(request: Request, env: Env): Promise<Response> {
   if (path === "/telegram/webhook" && method === "POST") return handleTelegramWebhook(request, env);
   if (method === "GET" && (path === "/health" || path === "/")) {
     const check = await env.DB.prepare("SELECT 1 AS ok").first<{ok:number}>();
-    return response(request, { status: "ok", database: check?.ok === 1 ? "connected" : "unavailable", service: "freelance-hunter-api" });
+    const tables = await env.DB.prepare(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('users','sessions','telegram_auth_codes','auth_rate_limits')"
+    ).all<{ name: string }>();
+    const present = new Set((tables.results ?? []).map(row => row.name));
+    const required = ["users", "sessions", "telegram_auth_codes", "auth_rate_limits"];
+    const missingTables = required.filter(name => !present.has(name));
+    return response(request, {
+      status: check?.ok === 1 && missingTables.length === 0 ? "ok" : "degraded",
+      database: check?.ok === 1 ? "connected" : "unavailable",
+      schema: missingTables.length === 0 ? "ready" : "incomplete",
+      ...(missingTables.length ? { missing_tables: missingTables } : {}),
+      service: "freelance-hunter-api"
+    });
   }
 
   if (path === "/auth/register" && method === "POST") {
@@ -902,7 +914,13 @@ export default {
     try {
       return await handle(request, env);
     } catch (error) {
-      // Avoid leaking database details, credentials, or stack traces to callers.
+      const url = new URL(request.url);
+      // Keep diagnostics in Worker logs, but never return raw errors to callers.
+      console.error("API request failed", {
+        method: request.method,
+        path: url.pathname,
+        error: error instanceof Error ? error.message : "Unknown error"
+      });
       return response(request, { detail: "Internal server error. Check the Cloudflare Worker logs." }, 500);
     }
   },
