@@ -115,7 +115,7 @@ test("Telegram auth status creates a session after the bot confirms the code", a
     body: JSON.stringify({ code: "123456789" })
   }), { DB: fakeDb({ telegramAuth: { user_id: "user-1", authenticated_at: "2026-10-15 10:00:00", session_issued_at: null } }) });
   assert.equal(response.status, 200);
-  assert.deepEqual(await response.json(), { authenticated: true, auth_method: "telegram" });
+  assert.deepEqual(await response.json(), { authenticated: true, identity_provider: "telegram" });
   assert.match(response.headers.get("set-cookie") ?? "", /fh_session=.*HttpOnly/);
 });
 
