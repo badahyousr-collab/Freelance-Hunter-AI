@@ -163,3 +163,9 @@ body {
 .text-link-button { display: inline-flex; align-items: center; gap: 7px; padding: 0; color: var(--accent-cyan); border: 0; background: transparent; cursor: pointer; font-size: 11px; }
 .email-fallback .auth-form { margin-top: 16px; }
 .auth-small-link { color: var(--accent-cyan); font-size: 11px; justify-self: end; }
+
+.telegram-code-actions { display: grid; grid-template-columns: 1fr; gap: 8px; }
+.telegram-code-actions .telegram-open-bot { cursor: pointer; }
+@media (min-width: 360px) {
+  .telegram-code-actions { grid-template-columns: 1fr 1fr; }
+}
