@@ -37,7 +37,7 @@ def client() -> Generator[TestClient, None, None]:
     engine.dispose()
 
 
-def create_telegram_user(client: TestClient, telegram_user_id: int = 12345) -> None:
+def create_telegram_user(client: TestClient, telegram_user_id: int | None = None) -> None:
     db_generator = app.dependency_overrides[get_db]()
     db = next(db_generator)
     try:
