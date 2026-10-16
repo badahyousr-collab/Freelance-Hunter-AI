@@ -83,7 +83,7 @@ async function currentUser(request: Request, env: Env): Promise<any | null> {
   const raw = request.headers.get("Cookie")?.split(";").map(v => v.trim()).find(v => v.startsWith(COOKIE + "="))?.slice(COOKIE.length + 1);
   if (!raw) return null;
   const tokenHash = await sha256(raw);
-  const row = await env.DB.prepare("SELECT u.id, u.email, u.is_verified, u.auth_method FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=? AND s.expires_at > datetime('now')").bind(tokenHash).first<any>();
+  const row = await env.DB.prepare("SELECT u.id, u.email, u.is_verified, u.auth_method, u.created_at FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=? AND s.expires_at > datetime('now')").bind(tokenHash).first<any>();
   return row ?? null;
 }
 
@@ -747,7 +747,15 @@ async function handle(request: Request, env: Env): Promise<Response> {
     if (!user) return response(request, { detail: "Authentication required." }, 401);
     const email = String(user.email ?? "");
     const authMethod = String(user.auth_method ?? (email.endsWith("@telegram.local") ? "telegram" : "email"));
-    return response(request, { email: authMethod === "telegram" ? null : email, is_verified: Boolean(user.is_verified), auth_method: authMethod });
+    const telegramLink = await env.DB.prepare("SELECT telegram_user_id, linked_at FROM telegram_links WHERE user_id=?").bind(user.id).first<any>();
+    return response(request, {
+      email: authMethod === "telegram" ? null : email,
+      is_verified: Boolean(user.is_verified),
+      auth_method: authMethod,
+      created_at: user.created_at ?? null,
+      telegram_user_id: telegramLink?.telegram_user_id ? String(telegramLink.telegram_user_id) : null,
+      telegram_linked_at: telegramLink?.linked_at ?? null
+    });
   }
   if (!user) return response(request, { detail: "Authentication required." }, 401);
   const uid = user.id as string;
