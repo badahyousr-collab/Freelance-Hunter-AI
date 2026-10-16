@@ -659,6 +659,16 @@ async function handle(request: Request, env: Env): Promise<Response> {
   if (!user) return response(request, { detail: "Authentication required." }, 401);
   const uid = user.id as string;
 
+  if (path === "/agent/readiness" && method === "GET") {
+    return response(request, {
+      worker_runtime: true,
+      cron_configured: true,
+      telegram_bot_configured: Boolean(env.TELEGRAM_BOT_TOKEN && env.TELEGRAM_WEBHOOK_SECRET && env.BOT_API_SECRET),
+      ai_provider_configured: Boolean(env.AI_API_KEY && env.AI_MODEL),
+      marketplace_adapters: []
+    });
+  }
+
   if (path === "/dashboard/summary" && method === "GET") {
     const row = await env.DB.prepare(`SELECT
       (SELECT COUNT(*) FROM projects WHERE user_id=?) AS projects_found,
