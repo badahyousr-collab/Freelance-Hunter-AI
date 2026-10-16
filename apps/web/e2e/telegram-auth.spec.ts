@@ -36,3 +36,43 @@ test("Telegram auth displays a short-lived code and a link to the bot", async ({
   await expect(page.getByRole("link", { name: /Открыть Telegram-бота/ })).toHaveAttribute("href", "https://t.me/freelance_hunter_test_bot");
   await expect(page.getByText(/Код действует 10 минут/i)).toBeVisible();
 });
+
+
+test("source catalog can add a public Telegram job channel", async ({ page }) => {
+  const savedSources: Array<Record<string, unknown>> = [];
+  await page.route("**/api/backend/sources/catalog", async route => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify([{
+        source: "telegram",
+        label: "Public Telegram channels",
+        kind: "telegram",
+        capabilities: ["read_public_posts"],
+        setup_note: "Public channel previews are scanned on demand."
+      }])
+    });
+  });
+  await page.route("**/api/backend/sources", async route => {
+    if (route.request().method() === "GET") {
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(savedSources) });
+      return;
+    }
+    const payload = route.request().postDataJSON() as Record<string, unknown>;
+    const handle = String(payload.identifier ?? "");
+    if (savedSources.some(item => item.identifier === handle)) {
+      await route.fulfill({ status: 409, contentType: "application/json", body: JSON.stringify({ detail: "This source is already configured." }) });
+      return;
+    }
+    const item = { id: savedSources.length + 1, source: "telegram", identifier: handle, is_enabled: true, status: "configured", created_at: "2026-10-16T10:00:00Z", last_scan_at: null, last_error: null, last_discovered_count: 0 };
+    savedSources.push(item);
+    await route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify(item) });
+  });
+
+  await page.goto("/sources");
+  const channel = page.locator(".sub-list-row").filter({ hasText: "Telegram jobs" });
+  await expect(channel.getByRole("button", { name: "Добавить" })).toBeVisible();
+  await channel.getByRole("button", { name: "Добавить" }).click();
+  await expect(page.getByText(/Канал @tgram_jobs добавлен/i)).toBeVisible();
+  await expect(page.locator(".sub-list-row").filter({ hasText: "@tgram_jobs" }).getByText(/Добавлен|Включён/).first()).toBeVisible();
+});
