@@ -17,7 +17,7 @@ type Project = {
   currency: string | null; payment_method: string | null; published_at: string | null;
   discovered_at: string; match_score: number | null; match_reasons: string[];
 };
-type CurrentUser = { email: string | null; is_verified: boolean; auth_method?: string; telegram_user_id?: string | null; created_at?: string | null };
+type CurrentUser = { identity_provider?: string; telegram_user_id?: string | null; created_at?: string | null; display_name?: string | null };
 
 const metricDefinitions = [
   { key: "projects_found" as const, label: "Projects found", change: "All sources", icon: BriefcaseBusiness },
@@ -52,21 +52,23 @@ export default function DashboardPage() {
         if (meResponse.status === 401) { window.location.replace("/login"); return; }
         if (!meResponse.ok) throw new Error(`Could not verify session (HTTP ${meResponse.status})`);
         const me = await meResponse.json() as CurrentUser;
-        const [summaryResponse, projectsResponse, sourcesResponse] = await Promise.all([
+        const [summaryResponse, projectsResponse, sourcesResponse, profileResponse] = await Promise.all([
           fetch(`${API}/dashboard/summary`, { credentials: "include" }),
           fetch(`${API}/projects?limit=5`, { credentials: "include" }),
           fetch(`${API}/sources`, { credentials: "include" }),
+          fetch(`${API}/profile`, { credentials: "include" }),
         ]);
-        if (!summaryResponse.ok || !projectsResponse.ok || !sourcesResponse.ok) throw new Error("Could not load dashboard data");
+        if (!summaryResponse.ok || !projectsResponse.ok || !sourcesResponse.ok || !profileResponse.ok) throw new Error("Could not load dashboard data");
         const summaryJson = await summaryResponse.json() as unknown;
         const projectsJson = await projectsResponse.json() as unknown;
         const sourcesJson = await sourcesResponse.json() as unknown;
+        const profileJson = await profileResponse.json() as { display_name?: string | null };
         const summaryData = summaryJson && typeof summaryJson === "object" ? summaryJson as Summary : null;
         const projectData = Array.isArray(projectsJson) ? projectsJson as Project[] : [];
         const sourceData = Array.isArray(sourcesJson) ? sourcesJson as {is_enabled:boolean;last_scan_at:string|null}[] : [];
         const scanTimes = sourceData.map(source => source.last_scan_at).filter((value): value is string => Boolean(value));
         const latestScan = scanTimes.sort((a,b) => new Date(b).getTime() - new Date(a).getTime())[0] ?? null;
-        if (!cancelled) { setUser(me); setSummary(summaryData); setProjects(projectData); setEnabledSources(sourceData.filter(source => source.is_enabled).length); setLastScan(latestScan); }
+        if (!cancelled) { setUser({ ...me, display_name: typeof profileJson.display_name === "string" ? profileJson.display_name : null }); setSummary(summaryData); setProjects(projectData); setEnabledSources(sourceData.filter(source => source.is_enabled).length); setLastScan(latestScan); }
       } catch (err) {
         if (!cancelled) setError(err instanceof Error ? err.message : "Could not connect to the API");
       } finally { if (!cancelled) setLoading(false); }
@@ -100,7 +102,7 @@ export default function DashboardPage() {
         <div className="workspace-label settings-label">АККАУНТ</div>
         <nav className="nav"><Link className="nav-item" href="/settings"><Settings2 size={18} />Настройки</Link></nav>
         <div className="sidebar-bottom"><div className="help-icon"><CircleHelp size={17} /></div><div><strong>Need a hand?</strong><span>Project setup guide</span></div></div>
-        <div className="profile"><div className="avatar">P</div><div className="profile-text"><strong>{user?.auth_method === "telegram" ? "Telegram account" : user?.email ?? (loading ? "Checking session…" : "Not signed in")}</strong><span>{user?.auth_method === "telegram" ? "Telegram connected" : "Personal account"}</span></div><button className="profile-logout" aria-label="Sign out" onClick={signOut} disabled={signingOut}><LogOut size={16} /></button></div>
+        <div className="profile"><div className="avatar">P</div><div className="profile-text"><strong>{user?.display_name?.trim() || (user?.identity_provider === "telegram" ? "Аккаунт в Telegram" : loading ? "Проверяем сессию…" : "Аккаунт")}</strong><span>{user?.identity_provider === "telegram" ? "Telegram подключён" : "Личное пространство"}</span></div><button className="profile-logout" aria-label="Sign out" onClick={signOut} disabled={signingOut}><LogOut size={16} /></button></div>
       </aside>
 
       <section className="content">
