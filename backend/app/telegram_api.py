@@ -58,7 +58,7 @@ def link_telegram_account(
     if expires_at <= now:
         raise HTTPException(status_code=400, detail="Link code has expired")
     user = db.get(User, link.user_id)
-    if user is None or not user.is_active or not user.is_verified:
+    if user is None or not user.is_active or not user.telegram_verified:
         raise HTTPException(status_code=400, detail="Account is unavailable")
     if user.telegram_user_id is not None and user.telegram_user_id != payload.telegram_user_id:
         raise HTTPException(status_code=409, detail="This account is already linked to another Telegram user")
