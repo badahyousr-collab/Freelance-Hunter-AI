@@ -36,6 +36,8 @@ jobs:
           cache: npm
           cache-dependency-path: apps/web/package.json
       - run: npm install
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e
       - run: npm run lint
       - run: npm run build
 
