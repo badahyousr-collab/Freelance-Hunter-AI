@@ -37,34 +37,22 @@ def client() -> Generator[TestClient, None, None]:
     engine.dispose()
 
 
-def test_registration_requires_verification_then_allows_login(client: TestClient) -> None:
-    response = client.post("/auth/register", json={"email": "test@example.com", "password": "correct-horse-battery"})
-    assert response.status_code == 201
-    token = response.json()["verification_token"]
-    assert token
-
-    before_verify = client.post("/auth/login", json={"email": "test@example.com", "password": "correct-horse-battery"})
-    assert before_verify.status_code == 403
-
-    verified = client.post("/auth/verify-email", json={"token": token})
-    assert verified.status_code == 200
-
-    login = client.post("/auth/login", json={"email": "test@example.com", "password": "correct-horse-battery"})
-    assert login.status_code == 200
-    me = client.get("/auth/me")
-    assert me.status_code == 200
-    assert me.json()["email"] == "test@example.com"
-    assert "password_hash" not in me.json()
-
-
-def test_duplicate_email_is_rejected(client: TestClient) -> None:
-    payload = {"email": "duplicate@example.com", "password": "correct-horse-battery"}
-    assert client.post("/auth/register", json=payload).status_code == 201
-    assert client.post("/auth/register", json=payload).status_code == 409
+@pytest.mark.parametrize("path", ["/auth/register", "/auth/login", "/auth/verify-email"])
+def test_email_auth_endpoints_are_disabled(client: TestClient, path: str) -> None:
+    response = client.post(path, json={"email": "test@example.com", "password": "long-enough-password", "token": "old-token"})
+    assert response.status_code == 410
+    assert "Telegram" in response.json()["detail"]
 
 
 def test_me_requires_authentication(client: TestClient) -> None:
     assert client.get("/auth/me").status_code == 401
+
+
+def test_logout_clears_session_cookie(client: TestClient) -> None:
+    response = client.post("/auth/logout")
+    assert response.status_code == 200
+    assert "access_token" in response.headers.get("set-cookie", "")
+    assert "Max-Age=0" in response.headers.get("set-cookie", "")
 
 
 def test_production_settings_reject_placeholder_secrets() -> None:
