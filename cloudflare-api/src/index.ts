@@ -177,15 +177,42 @@ function parseTelegramPreview(html: string, channel: string): TelegramPost[] {
   return posts;
 }
 
-function detectedBudget(text: string): { amount: number; currency: string } | null {
-  const match = text.match(/(?:\bбюджет\b|\bоплата\b|\bдо\b|\bот\b)?\s*([0-9][0-9\s.,]{1,12})\s*(₽|руб(?:лей|ля|ль)?|RUB|USD|EUR|\$|€)/i);
-  if (!match) return null;
-  const normalized = match[1].replace(/\s/g, "").replace(/,(?=\d{3}(?:\D|$))/g, "").replace(",", ".").replace(/[^0-9.]/g, "");
-  const amount = Number(normalized);
+export function detectedBudget(text: string): { amount: number; currency: string } | null {
+  const amountPattern = String.raw`(\d{1,3}(?:[\s\u00a0]\d{3})+(?:[.,]\d+)?|\d+(?:[.,]\d+)?)(?:\s*(тыс\.?|тысяч|k|к))?`;
+  const currencies = String.raw`₽|руб(?:\.|лей|ля|ль)?|RUB|USD|EUR|US\$|CA\$|AU\$|\$|€`;
+  const after = new RegExp(String.raw`(?:\b(?:бюджет|оплата|стоимость|до|от)\b\s*)?(${amountPattern})\s*(${currencies})`, "i").exec(text);
+  const before = new RegExp(String.raw`(US\$|CA\$|AU\$|\$|€)\s*${amountPattern}`, "i").exec(text);
+  if (!after && !before) return null;
+  const rawAmount = after ? after[1] : before?.[2];
+  const rawUnit = after ? after[2] : before?.[3];
+  const rawCurrency = after ? after[3] : before?.[1];
+  if (!rawAmount || !rawCurrency) return null;
+
+  let normalized = rawAmount.replace(/[\s\u00a0]/g, "");
+  const comma = normalized.lastIndexOf(",");
+  const dot = normalized.lastIndexOf(".");
+  if (comma >= 0 && dot >= 0) {
+    const decimalSeparator = comma > dot ? "," : ".";
+    normalized = normalized.replace(/[,.]/g, (separator) => separator === decimalSeparator ? "." : "");
+  } else if (comma >= 0 || dot >= 0) {
+    const separator = comma >= 0 ? "," : ".";
+    const index = normalized.lastIndexOf(separator);
+    const trailingDigits = normalized.length - index - 1;
+    const integerDigits = index;
+    if (trailingDigits === 3 && integerDigits >= 1 && integerDigits <= 3) normalized = normalized.replace(separator, "");
+    else normalized = normalized.replace(separator, ".");
+  }
+  let amount = Number(normalized);
   if (!Number.isFinite(amount) || amount <= 0) return null;
-  const raw = match[2].toLowerCase();
-  const currency = raw.includes("руб") || raw === "₽" || raw === "rub" ? "RUB" : raw === "€" || raw === "eur" ? "EUR" : "USD";
-  return { amount, currency };
+  if (rawUnit && /^(тыс\.?|тысяч|k|к)$/i.test(rawUnit.trim())) amount *= 1000;
+  if (!Number.isFinite(amount) || amount > 1_000_000_000) return null;
+
+  const raw = rawCurrency.toLowerCase().replace(/\./g, "");
+  const currency = raw.includes("руб") || raw === "₽" || raw === "rub"
+    ? "RUB"
+    : raw === "€" || raw === "eur" ? "EUR"
+      : raw === "ca$" ? "CAD" : raw === "au$" ? "AUD" : "USD";
+  return { amount: Math.round(amount * 100) / 100, currency };
 }
 
 async function scanTelegramSource(env: Env, userId: string, source: any): Promise<{ added: number; error?: string }> {
