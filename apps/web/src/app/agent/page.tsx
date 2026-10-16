@@ -5,17 +5,121 @@ import Link from "next/link";
 import { Bot, CheckCircle2, CircleAlert, Pause, Play, Settings2, Workflow } from "lucide-react";
 import WorkspacePage from "@/components/WorkspacePage";
 
-const API="/api/backend";
-type Profile={skills:string[];languages:string[];payment_preferences:string[];min_budget:number|null};
-type Source={is_enabled:boolean;source:string};
-type AgentSettings={enabled:boolean;telegram_linked:boolean};
+const API = "/api/backend";
+type Profile = { skills: string[]; languages: string[]; payment_preferences: string[]; min_budget: number | null };
+type Source = { is_enabled: boolean; source: string };
+type AgentSettings = { enabled: boolean; telegram_linked: boolean };
+type Readiness = {
+  worker_runtime: boolean;
+  cron_configured: boolean;
+  telegram_bot_configured: boolean;
+  ai_provider_configured: boolean;
+  marketplace_adapters: string[];
+};
 
-export default function AgentPage(){
- const [profile,setProfile]=useState<Profile|null>(null);const [sources,setSources]=useState<number>(0);const [agent,setAgent]=useState<AgentSettings|null>(null);const [error,setError]=useState("");const [message,setMessage]=useState("");const [busy,setBusy]=useState(false);const [scanning,setScanning]=useState(false);
- async function load(){try{const rs=await Promise.all([fetch(API+"/profile",{credentials:"include"}),fetch(API+"/sources",{credentials:"include"}),fetch(API+"/agent/settings",{credentials:"include"})]);if(rs.some(r=>r.status===401)){window.location.assign("/login");return;}const p=await rs[0].json();const s=await rs[1].json();const a=await rs[2].json();if(rs.some(r=>!r.ok))throw new Error("Could not load agent configuration");setProfile(p);setSources(s.filter((x:Source)=>x.is_enabled&&x.source==="telegram").length);setAgent(a);}catch(e){setError(e instanceof Error?e.message:"API connection failed");}}
- useEffect(()=>{void load();},[]);
- async function scanNow(){setScanning(true);setError("");setMessage("");try{const r=await fetch(API+"/agent/scan",{method:"POST",credentials:"include"});const d=await r.json();if(!r.ok)throw new Error(d.detail??"Could not queue scan");setMessage("Scan finished: "+Number(d.newProjects??0)+" new projects from "+Number(d.scannedSources??0)+" enabled public Telegram source(s).");if(Array.isArray(d.errors)&&d.errors.length)setError(d.errors.join("; "));}catch(e){setError(e instanceof Error?e.message:"Could not queue scan");}finally{setScanning(false);}}
- async function toggle(){if(!agent)return;setBusy(true);setError("");setMessage("");try{const r=await fetch(API+"/agent/settings",{method:"PATCH",headers:{"Content-Type":"application/json"},credentials:"include",body:JSON.stringify({enabled:!agent.enabled})});const d=await r.json();if(!r.ok)throw new Error(d.detail??"Could not update agent settings");setAgent(d);setMessage(d.enabled?"Agent enabled. Public Telegram channels will be scanned every 15 minutes after deployment is verified. Marketplace adapters are not active yet.":"Agent paused. Scheduled scans are stopped.");}catch(e){setError(e instanceof Error?e.message:"Could not update agent");}finally{setBusy(false);}}
- const checks=[{label:"Skills profile",ok:!!profile&&profile.skills.length>0,detail:"Add skills so project matching can estimate relevance."},{label:"Public Telegram sources",ok:sources>0,detail:"Enabled public channels can be scanned on demand and every 15 minutes while the agent is enabled."},{label:"Cloudflare runtime",ok:false,detail:"Confirm that the latest Worker deployment and Cron Trigger are active."},{label:"Marketplace adapters",ok:false,detail:"Kwork, Freelancehunt, Upwork, and FL.ru collection is not implemented in the deployed Worker yet."},{label:"AI provider configuration",ok:false,detail:"Draft generation is implemented. Set AI_API_KEY and AI_MODEL on the API Worker, then verify a real draft."}];
- return <WorkspacePage title="AI Agent" subtitle="Configure the matching workflow and review readiness before starting automated discovery.">{error&&<div className="sub-alert error">{error}</div>}{message&&<div className="sub-alert">{message}</div>}<section className="content-card"><div className="panel-heading"><div><h2><Bot size={17} style={{verticalAlign:"middle",marginRight:8}}/>Agent control</h2><p>Saved state controls which user subscriptions the worker will scan.</p></div><span className={"sub-badge "+(agent?.enabled?"":"pending")}>{agent?.enabled?"Enabled":"Paused"}</span></div><button className={"sub-button "+(agent?.enabled?"danger":"primary")} style={{marginTop:16}} disabled={busy||!agent} onClick={()=>void toggle()}>{agent?.enabled?<Pause size={15}/>:<Play size={15} />}{busy?"Saving…":agent?.enabled?"Pause agent":"Enable agent"}</button><p style={{marginTop:12}}>Enabling this setting does not install or start the worker. Confirm all readiness items below before expecting automatic scans.</p><button className="sub-button" style={{marginTop:8}} disabled={scanning||sources===0} onClick={()=>void scanNow()}><Workflow size={15}/>{scanning?"Scanning…":"Scan public Telegram channels"}</button></section><section className="content-card"><div className="panel-heading"><div><h2>Readiness checklist</h2><p>The agent is not operational until each required service is configured and verified.</p></div></div><div className="sub-list" style={{marginTop:18}}>{checks.map(c=><div className="sub-list-row" key={c.label}><div className="sub-list-main"><strong>{c.label}</strong><span>{c.detail}</span></div><span className={"sub-badge "+(c.ok?"":"pending")}>{c.ok?<CheckCircle2 size={12}/>:<CircleAlert size={12}/>} {c.ok?"Ready":"Incomplete"}</span></div>)}</div></section><section className="content-card"><h2>Recommended next steps</h2><p>Finish setup in this order. No scan or proposal is reported as completed until the worker confirms it.</p><div className="sub-list"><div className="sub-list-row"><div className="sub-list-main"><strong>1. Set your skills and filters</strong><span>Define languages, minimum budget, payment methods, and excluded terms.</span></div><Link className="sub-button" href="/settings"><Settings2 size={14}/>Open settings</Link></div><div className="sub-list-row"><div className="sub-list-main"><strong>2. Configure discovery sources</strong><span>Add public Telegram channels and select marketplace connectors.</span></div><Link className="sub-button" href="/sources"><Workflow size={14}/>Manage sources</Link></div></div></section><section className="content-card"><h2>Proposal safety</h2><p>Generated proposals should remain drafts until the source adapter confirms submission is available and the configured sending policy allows it. AI-generated text must only use verified profile and portfolio details.</p></section></WorkspacePage>;
+export default function AgentPage() {
+  const [profile, setProfile] = useState<Profile | null>(null);
+  const [sources, setSources] = useState(0);
+  const [agent, setAgent] = useState<AgentSettings | null>(null);
+  const [readiness, setReadiness] = useState<Readiness | null>(null);
+  const [error, setError] = useState("");
+  const [message, setMessage] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [scanning, setScanning] = useState(false);
+
+  async function load() {
+    setError("");
+    try {
+      const rs = await Promise.all([
+        fetch(API + "/profile", { credentials: "include" }),
+        fetch(API + "/sources", { credentials: "include" }),
+        fetch(API + "/agent/settings", { credentials: "include" }),
+        fetch(API + "/agent/readiness", { credentials: "include" })
+      ]);
+      if (rs.some(r => r.status === 401)) { window.location.assign("/login"); return; }
+      const p = await rs[0].json();
+      const s = await rs[1].json();
+      const a = await rs[2].json();
+      const r = await rs[3].json();
+      if (rs.some(response => !response.ok)) throw new Error("Не удалось загрузить состояние AI-агента");
+      setProfile(p);
+      setSources(s.filter((item: Source) => item.is_enabled && item.source === "telegram").length);
+      setAgent(a);
+      setReadiness(r);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Ошибка соединения с API");
+    }
+  }
+
+  useEffect(() => { void load(); }, []);
+
+  async function scanNow() {
+    setScanning(true); setError(""); setMessage("");
+    try {
+      const r = await fetch(API + "/agent/scan", { method: "POST", credentials: "include" });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.detail ?? "Не удалось запустить сканирование");
+      setMessage("Сканирование завершено: новых проектов " + Number(d.newProjects ?? 0) + ", источников " + Number(d.scannedSources ?? 0) + ".");
+      if (Array.isArray(d.errors) && d.errors.length) setError(d.errors.join("; "));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Не удалось запустить сканирование");
+    } finally { setScanning(false); }
+  }
+
+  async function toggle() {
+    if (!agent) return;
+    setBusy(true); setError(""); setMessage("");
+    try {
+      const r = await fetch(API + "/agent/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ enabled: !agent.enabled })
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.detail ?? "Не удалось изменить настройки агента");
+      setAgent(d);
+      setMessage(d.enabled
+        ? "AI-агент включён. Плановое сканирование зависит от активного Cron Trigger."
+        : "AI-агент приостановлен. Плановые сканирования остановлены.");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Не удалось изменить состояние агента");
+    } finally { setBusy(false); }
+  }
+
+  const checks = [
+    { label: "Профиль навыков", ok: Boolean(profile && profile.skills.length > 0), detail: "Укажи навыки, чтобы оценка релевантности отражала твой реальный опыт." },
+    { label: "Публичные Telegram-источники", ok: sources > 0, detail: "Включённые каналы можно сканировать вручную и по расписанию." },
+    { label: "API Worker", ok: Boolean(readiness?.worker_runtime), detail: "Статус получен от текущего API Worker." },
+    { label: "Cron Trigger", ok: Boolean(readiness?.cron_configured), detail: "Триггер настроен на каждые 15 минут. Реальное выполнение по расписанию нужно подтвердить после деплоя." },
+    { label: "Telegram-бот", ok: Boolean(readiness?.telegram_bot_configured), detail: "Нужны TELEGRAM_BOT_TOKEN, TELEGRAM_WEBHOOK_SECRET и BOT_API_SECRET в секретах Worker." },
+    { label: "AI-провайдер", ok: Boolean(readiness?.ai_provider_configured), detail: "Нужны AI_API_KEY и AI_MODEL. После настройки проверим генерацию и оценку реальных заказов." },
+    { label: "Биржи фриланса", ok: Boolean(readiness?.marketplace_adapters.length), detail: "Адаптеры Kwork, Freelancehunt, Upwork и FL.ru пока не реализованы." }
+  ];
+
+  return <WorkspacePage title="AI-агент" subtitle="Настрой отбор заказов и проверь готовность сервисов перед автоматическим поиском.">
+    {error && <div className="sub-alert error">{error}</div>}
+    {message && <div className="sub-alert">{message}</div>}
+    <section className="content-card">
+      <div className="panel-heading"><div><h2><Bot size={17} style={{ verticalAlign: "middle", marginRight: 8 }} />Управление агентом</h2><p>Состояние управляет плановым сканированием включённых источников пользователя.</p></div><span className={"sub-badge " + (agent?.enabled ? "" : "pending")}>{agent?.enabled ? "Включён" : "Приостановлен"}</span></div>
+      <button className={"sub-button " + (agent?.enabled ? "danger" : "primary")} style={{ marginTop: 16 }} disabled={busy || !agent} onClick={() => void toggle()}>
+        {agent?.enabled ? <Pause size={15} /> : <Play size={15} />}{busy ? "Сохраняем…" : agent?.enabled ? "Приостановить агента" : "Включить агента"}
+      </button>
+      <p style={{ marginTop: 12 }}>Включение не заменяет проверку деплоя, секретов и реального выполнения Cron Trigger.</p>
+      <button className="sub-button" style={{ marginTop: 8 }} disabled={scanning || sources === 0} onClick={() => void scanNow()}><Workflow size={15} />{scanning ? "Сканируем…" : "Сканировать Telegram-каналы"}</button>
+    </section>
+    <section className="content-card">
+      <div className="panel-heading"><div><h2>Готовность системы</h2><p>Состояние конфигурации загружается из API, а не задаётся статическими значениями на странице.</p></div></div>
+      <div className="sub-list" style={{ marginTop: 18 }}>{checks.map(check => <div className="sub-list-row" key={check.label}><div className="sub-list-main"><strong>{check.label}</strong><span>{check.detail}</span></div><span className={"sub-badge " + (check.ok ? "" : "pending")}>{check.ok ? <CheckCircle2 size={12} /> : <CircleAlert size={12} />} {check.ok ? "Готово" : "Не готово"}</span></div>)}</div>
+    </section>
+    <section className="content-card">
+      <h2>Следующие шаги</h2>
+      <p>Настрой источники и профиль, затем проверим полный путь от объявления до объяснимой оценки и черновика отклика.</p>
+      <div className="sub-list">
+        <div className="sub-list-row"><div className="sub-list-main"><strong>1. Профиль и фильтры</strong><span>Укажи навыки, языки, минимальный бюджет, способы выплат и исключаемые фразы.</span></div><Link className="sub-button" href="/settings"><Settings2 size={14} />Настройки</Link></div>
+        <div className="sub-list-row"><div className="sub-list-main"><strong>2. Источники заказов</strong><span>Добавь публичные Telegram-каналы и запусти сканирование.</span></div><Link className="sub-button" href="/sources"><Workflow size={14} />Источники</Link></div>
+      </div>
+    </section>
+    <section className="content-card"><h2>Безопасность откликов</h2><p>Сгенерированные отклики сохраняются как черновики. Отправка считается успешной только после подтверждения со стороны площадки. AI не должен выдумывать опыт, клиентов или результаты.</p></section>
+  </WorkspacePage>;
 }
