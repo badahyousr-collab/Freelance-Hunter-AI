@@ -204,3 +204,89 @@ test("dashboard shows the Telegram profile name without an email fallback", asyn
   await expect(page.getByText("Email", { exact: true })).toHaveCount(0);
   await expect(page.locator(".profile-text")).toContainText("Telegram подключён");
 });
+
+
+test("expired session redirects a protected settings page to Telegram login", async ({ page }) => {
+  await page.route("**/api/backend/auth/me", async route => {
+    await route.fulfill({ status: 401, contentType: "application/json", body: JSON.stringify({ detail: "Authentication required." }) });
+  });
+  await page.route("**/api/backend/profile", async route => {
+    await route.fulfill({ status: 401, contentType: "application/json", body: JSON.stringify({ detail: "Authentication required." }) });
+  });
+  await page.goto("/settings");
+  await expect(page).toHaveURL(/\/login$/);
+  await expect(page.getByRole("button", { name: /Продолжить через Telegram/ })).toBeVisible();
+});
+
+test("AI agent toggle and manual scan call the API and show results", async ({ page }) => {
+  await mockAuthenticatedAccount(page);
+  let enabled = false;
+  await page.route("**/api/backend/profile", async route => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ display_name: "Dev", skills: ["Python"], languages: ["ru", "en"], payment_preferences: [], excluded_keywords: [], min_budget: null, currency: "ALL" }) });
+  });
+  await page.route("**/api/backend/sources", async route => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([{ id: 1, source: "telegram", identifier: "@job_for_bots", is_enabled: true, status: "active", last_scan_at: null, last_discovered_count: 0 }]) });
+  });
+  await page.route("**/api/backend/agent/settings", async route => {
+    if (route.request().method() === "PATCH") {
+      enabled = Boolean((route.request().postDataJSON() as { enabled?: boolean }).enabled);
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ enabled, telegram_linked: true }) });
+      return;
+    }
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ enabled, telegram_linked: true }) });
+  });
+  await page.route("**/api/backend/agent/readiness", async route => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ worker_runtime: true, cron_configured: true, telegram_bot_configured: true, ai_provider_configured: false, marketplace_adapters: [] }) });
+  });
+  await page.route("**/api/backend/agent/scan", async route => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ scannedSources: 1, newProjects: 2, errors: [] }) });
+  });
+
+  await page.goto("/agent");
+  await page.getByRole("button", { name: "Включить агента" }).click();
+  await expect(page.getByText(/AI-агент включён/i)).toBeVisible();
+  await expect(page.getByRole("button", { name: "Приостановить агента" })).toBeVisible();
+  await page.getByRole("button", { name: "Сканировать Telegram-каналы" }).click();
+  await expect(page.getByText(/новых проектов 2, источников 1/i)).toBeVisible();
+});
+
+test("integrations page does not ask for marketplace passwords or pretend to connect accounts", async ({ page }) => {
+  await mockAuthenticatedAccount(page);
+  await page.route("**/api/backend/integrations/catalog", async route => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify([
+        { provider: "upwork", label: "Upwork", status: "pending", setup_note: "OAuth adapter is not ready." },
+        { provider: "kwork", label: "Kwork", status: "pending", setup_note: "Adapter is not ready." }
+      ])
+    });
+  });
+  await page.route("**/api/backend/integrations", async route => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([]) });
+  });
+
+  await page.goto("/integrations");
+  await expect(page.getByRole("heading", { name: "Биржи фриланса" })).toBeVisible();
+  await expect(page.getByRole("link", { name: /Открыть биржу/ })).toHaveCount(2);
+  await expect(page.locator('input[type="password"], input[name="secret"]')).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /Подключить|Добавить в список/ })).toHaveCount(0);
+  await expect(page.getByText(/Интеграция в разработке/).first()).toBeVisible();
+});
+
+test("security page logs out and returns to Telegram login", async ({ page }) => {
+  await mockAuthenticatedAccount(page);
+  let logoutCalled = false;
+  await page.route("**/api/backend/agent/settings", async route => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ enabled: false, telegram_linked: false }) });
+  });
+  await page.route("**/api/backend/auth/logout", async route => {
+    logoutCalled = true;
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true }) });
+  });
+
+  await page.goto("/security");
+  await page.getByRole("button", { name: "Выйти из аккаунта" }).click();
+  await expect(page).toHaveURL(/\/login$/);
+  expect(logoutCalled).toBe(true);
+});
