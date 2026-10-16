@@ -99,7 +99,7 @@ export default function IntegrationsPage() {
                     <span>{entry.setup_note}</span>
                     {integration && <span>Запись: {integration.status.replaceAll("_", " ")}</span>}
                   </div>
-                  <span className={`sub-badge ${integration?.status === "connected" ? "success" : "pending"}`}>
+                  <span className="sub-badge pending">
                     {integration?.status === "connected" ? "Подключено" : "Интеграция в разработке"}
                   </span>
                   {externalUrl && (
