@@ -74,6 +74,31 @@ async function requireUser(request: Request, env: Env): Promise<any> {
   return currentUser(request, env);
 }
 
+// Deploy the compatibility Worker before applying D1 migrations. This keeps auth
+// working with either the old or Telegram-only schema during the deployment window.
+async function hasTelegramIdentitySchema(env: Env): Promise<boolean> {
+  try {
+    await env.DB.prepare("SELECT telegram_identity, identity_provider, telegram_verified FROM users LIMIT 0").all();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function linkByCode(env: Env, codeHash: string): Promise<any | null> {
+  if (await hasTelegramIdentitySchema(env)) {
+    return env.DB.prepare("SELECT tl.user_id, u.telegram_verified AS verified FROM telegram_links tl JOIN users u ON u.id=tl.user_id WHERE tl.link_code_hash=? AND tl.expires_at>datetime('now') AND tl.telegram_user_id IS NULL").bind(codeHash).first<any>();
+  }
+  return env.DB.prepare("SELECT tl.user_id, u.is_verified AS verified FROM telegram_links tl JOIN users u ON u.id=tl.user_id WHERE tl.link_code_hash=? AND tl.expires_at>datetime('now') AND tl.telegram_user_id IS NULL").bind(codeHash).first<any>();
+}
+
+async function linkedTelegramAccount(env: Env, telegramUserId: string): Promise<any | null> {
+  if (await hasTelegramIdentitySchema(env)) {
+    return env.DB.prepare("SELECT u.id FROM telegram_links tl JOIN users u ON u.id=tl.user_id WHERE tl.telegram_user_id=? AND u.telegram_verified=1 AND u.identity_provider='telegram'").bind(telegramUserId).first<any>();
+  }
+  return env.DB.prepare("SELECT u.id FROM telegram_links tl JOIN users u ON u.id=tl.user_id WHERE tl.telegram_user_id=? AND u.is_verified=1 AND u.auth_method='telegram'").bind(telegramUserId).first<any>();
+}
+
 const sourceCatalog = [
   { source: "telegram", label: "Public Telegram channels", kind: "telegram", capabilities: ["read_public_posts"], setup_note: "Public channel previews are scanned on demand and every 15 minutes while the AI agent is enabled. Private channels are not supported." },
   { source: "kwork", label: "Kwork", kind: "marketplace", capabilities: ["discover_projects"], setup_note: "Configuration only; a tested marketplace adapter is not yet available." },
@@ -334,10 +359,13 @@ async function handleTelegramWebhook(request: Request, env: Env): Promise<Respon
       const existingAccount = await env.DB.prepare("SELECT user_id FROM telegram_links WHERE telegram_user_id=?").bind(telegramUserId).first<any>();
       let userId = existingAccount?.user_id ? String(existingAccount.user_id) : "";
       let createdUserId = "";
-      const telegramIdentity = `tg:${telegramUserId}`;
+      const telegramIdentitySchema = await hasTelegramIdentitySchema(env);
+      const telegramIdentity = telegramIdentitySchema ? `tg:${telegramUserId}` : `telegram-${telegramUserId}@telegram.local`;
       let priorTelegramAccount: any = null;
       if (!userId) {
-        priorTelegramAccount = await env.DB.prepare("SELECT id FROM users WHERE telegram_identity=? AND identity_provider='telegram'").bind(telegramIdentity).first<any>();
+        priorTelegramAccount = telegramIdentitySchema
+          ? await env.DB.prepare("SELECT id FROM users WHERE telegram_identity=? AND identity_provider='telegram'").bind(telegramIdentity).first<any>()
+          : await env.DB.prepare("SELECT id FROM users WHERE email=? AND auth_method='telegram'").bind(telegramIdentity).first<any>();
         if (priorTelegramAccount?.id) userId = String(priorTelegramAccount.id);
       }
       const authMode = String(authCode.auth_mode ?? "login");
@@ -366,8 +394,11 @@ async function handleTelegramWebhook(request: Request, env: Env): Promise<Respon
       if (!userId) {
         const id = crypto.randomUUID();
         try {
+          const createUser = telegramIdentitySchema
+            ? env.DB.prepare("INSERT INTO users (id,telegram_identity,telegram_verified,identity_provider) VALUES (?,?,1,'telegram')").bind(id, telegramIdentity)
+            : env.DB.prepare("INSERT INTO users (id,email,password_hash,is_verified,auth_method) VALUES (?,?,?,1,'telegram')").bind(id, telegramIdentity, `telegram:${randomToken(32)}`);
           await env.DB.batch([
-            env.DB.prepare("INSERT INTO users (id,telegram_identity,telegram_verified,identity_provider) VALUES (?,?,1,'telegram')").bind(id, telegramIdentity),
+            createUser,
             env.DB.prepare("INSERT INTO profiles (user_id) VALUES (?)").bind(id),
             env.DB.prepare("INSERT INTO agent_settings (user_id) VALUES (?)").bind(id),
             env.DB.prepare("INSERT INTO telegram_links (user_id,telegram_user_id,linked_at) VALUES (?,?,datetime('now'))").bind(id, telegramUserId)
@@ -376,7 +407,9 @@ async function handleTelegramWebhook(request: Request, env: Env): Promise<Respon
           createdUserId = id;
         } catch (error) {
           console.error("telegram_auth_create_account_failed", error);
-          const conflictingUser = await env.DB.prepare("SELECT id,identity_provider FROM users WHERE telegram_identity=?").bind(telegramIdentity).first<any>();
+          const conflictingUser = telegramIdentitySchema
+            ? await env.DB.prepare("SELECT id,identity_provider FROM users WHERE telegram_identity=?").bind(telegramIdentity).first<any>()
+            : await env.DB.prepare("SELECT id,auth_method FROM users WHERE email=?").bind(telegramIdentity).first<any>();
           const racedAccount = await env.DB.prepare("SELECT user_id FROM telegram_links WHERE telegram_user_id=?").bind(telegramUserId).first<any>();
           if (racedAccount?.user_id) {
             userId = String(racedAccount.user_id);
@@ -405,8 +438,8 @@ async function handleTelegramWebhook(request: Request, env: Env): Promise<Respon
       await telegramReply(env, chatId, detail);
       return response(request, { ok: true });
     }
-    const link = await env.DB.prepare("SELECT tl.user_id,u.telegram_verified FROM telegram_links tl JOIN users u ON u.id=tl.user_id WHERE tl.link_code_hash=? AND tl.expires_at>datetime('now') AND tl.telegram_user_id IS NULL").bind(codeHash).first<any>();
-    if (!link || !link.telegram_verified) {
+    const link = await linkByCode(env, codeHash);
+    if (!link || !link.verified) {
       await telegramReply(env, chatId, "Код недействителен, истёк или аккаунт сайта не подтверждён. Создай новый код в настройках сайта.");
       return response(request, { ok: true });
     }
@@ -600,9 +633,9 @@ async function handle(request: Request, env: Env): Promise<Response> {
     const telegramUserId = String(input.telegram_user_id ?? "");
     if (!/^[0-9]{1,24}$/.test(telegramUserId) || !code) return response(request, { detail: "Invalid link request." }, 400);
     const codeHash = await sha256(code);
-    const link = await env.DB.prepare("SELECT tl.user_id, u.telegram_verified FROM telegram_links tl JOIN users u ON u.id=tl.user_id WHERE tl.link_code_hash=? AND tl.expires_at > datetime('now') AND tl.telegram_user_id IS NULL").bind(codeHash).first<any>();
+    const link = await linkByCode(env, codeHash);
     if (!link) return response(request, { detail: "Link code is invalid, expired, or already used." }, 400);
-    if (!link.telegram_verified) return response(request, { detail: "Website account is not verified." }, 400);
+    if (!link.verified) return response(request, { detail: "Website account is not verified." }, 400);
     const existing = await env.DB.prepare("SELECT user_id FROM telegram_links WHERE telegram_user_id=? AND user_id<>?").bind(telegramUserId, link.user_id).first<any>();
     if (existing) return response(request, { detail: "This Telegram account is already linked." }, 409);
     let updated;
@@ -618,7 +651,7 @@ async function handle(request: Request, env: Env): Promise<Response> {
   if (isBotSummary) {
     const telegramUserId = path.slice(botSummaryPrefix.length);
     if (!/^[0-9]{1,24}$/.test(telegramUserId)) return response(request, { detail: "Invalid Telegram user ID." }, 400);
-    const linked = await env.DB.prepare("SELECT u.id FROM telegram_links tl JOIN users u ON u.id=tl.user_id WHERE tl.telegram_user_id=? AND u.telegram_verified=1 AND u.identity_provider='telegram'").bind(telegramUserId).first<any>();
+    const linked = await linkedTelegramAccount(env, telegramUserId);
     if (!linked) return response(request, { detail: "Telegram account is not linked; use /link CODE first." }, 404);
     const row = await env.DB.prepare("SELECT (SELECT COUNT(*) FROM projects WHERE user_id=?) AS projects_found, (SELECT COUNT(*) FROM projects WHERE user_id=? AND match_score IS NOT NULL AND match_score>=60) AS matched_projects, (SELECT COUNT(*) FROM applications WHERE user_id=? AND status IN ('sent','replied','closed')) AS proposals_sent, (SELECT COUNT(*) FROM applications WHERE user_id=? AND replied_at IS NOT NULL) AS client_replies").bind(linked.id, linked.id, linked.id, linked.id).first<any>();
     return response(request, row ?? { projects_found: 0, matched_projects: 0, proposals_sent: 0, client_replies: 0 });
@@ -627,7 +660,7 @@ async function handle(request: Request, env: Env): Promise<Response> {
   if (isBotProjects) {
     const telegramUserId = path.slice(botProjectsPrefix.length);
     if (!/^[0-9]{1,24}$/.test(telegramUserId)) return response(request, { detail: "Invalid Telegram user ID." }, 400);
-    const linked = await env.DB.prepare("SELECT u.id FROM telegram_links tl JOIN users u ON u.id=tl.user_id WHERE tl.telegram_user_id=? AND u.telegram_verified=1 AND u.identity_provider='telegram'").bind(telegramUserId).first<any>();
+    const linked = await linkedTelegramAccount(env, telegramUserId);
     if (!linked) return response(request, { detail: "Telegram account is not linked." }, 404);
     const requestedLimit = Number(url.searchParams.get("limit") ?? 5);
     if (!Number.isInteger(requestedLimit) || requestedLimit < 1 || requestedLimit > 10) return response(request, { detail: "Limit must be between 1 and 10." }, 400);
