@@ -102,7 +102,7 @@ export default function DashboardPage() {
         <div className="workspace-label settings-label">АККАУНТ</div>
         <nav className="nav"><Link className="nav-item" href="/settings"><Settings2 size={18} />Настройки</Link></nav>
         <div className="sidebar-bottom"><div className="help-icon"><CircleHelp size={17} /></div><div><strong>Need a hand?</strong><span>Project setup guide</span></div></div>
-        <div className="profile"><div className="avatar">P</div><div className="profile-text"><strong>{user?.auth_method === "telegram" ? "Telegram account" : user?.email ?? (loading ? "Checking session…" : "Not signed in")}</strong><span>{user?.auth_method === "telegram" ? "Telegram connected" : "Personal account"}</span></div><button className="profile-logout" aria-label="Sign out" onClick={signOut} disabled={signingOut}><LogOut size={16} /></button></div>
+        <div className="profile"><div className="avatar">P</div><div className="profile-text"><strong>{user?.display_name?.trim() || (user?.identity_provider === "telegram" ? "Аккаунт в Telegram" : loading ? "Проверяем сессию…" : "Аккаунт")}</strong><span>{user?.identity_provider === "telegram" ? "Telegram подключён" : "Личное пространство"}</span></div><button className="profile-logout" aria-label="Sign out" onClick={signOut} disabled={signingOut}><LogOut size={16} /></button></div>
       </aside>
 
       <section className="content">
