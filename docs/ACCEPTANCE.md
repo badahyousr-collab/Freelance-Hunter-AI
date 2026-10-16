@@ -15,7 +15,8 @@
 - [x] Remove email delivery settings/helpers and disable email auth routes in active API code.
 - [x] Add a D1 migration that replaces email/password identity fields with Telegram identity keys and anonymizes old email-only identities.
 - [ ] Apply the D1 migration to the deployed Cloudflare database and verify existing Telegram accounts still sign in.
-- [ ] Remove or retire the legacy email/password fields in the parallel FastAPI PostgreSQL schema.
+- [x] Remove email/password fields from the FastAPI user model and add an Alembic migration.
+- [ ] Verify the D1 and PostgreSQL migrations against deployed environments.
 - [ ] Verify Telegram sign-in, session expiry, logout, and cross-account data isolation against the deployed environment.
 
 ## Source ingestion
