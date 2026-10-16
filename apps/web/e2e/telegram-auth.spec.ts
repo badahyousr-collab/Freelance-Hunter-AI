@@ -69,12 +69,22 @@ test("source catalog can add a public Telegram job channel", async ({ page }) =>
     await route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify(item) });
   });
 
+  await page.route("**/api/backend/agent/scan", async route => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ scannedSources: 1, newProjects: 3, errors: [], message: "Scan completed." })
+    });
+  });
+
   await page.goto("/sources");
   const channel = page.locator(".sub-list-row").filter({ hasText: "Telegram jobs" });
   await expect(channel.getByRole("button", { name: "Добавить" })).toBeVisible();
   await channel.getByRole("button", { name: "Добавить" }).click();
   await expect(page.getByText(/Канал @tgram_jobs добавлен/i)).toBeVisible();
   await expect(page.locator(".sub-list-row").filter({ hasText: "@tgram_jobs" }).getByText(/Добавлен|Включён/).first()).toBeVisible();
+  await page.getByRole("button", { name: /Сканировать сейчас/i }).click();
+  await expect(page.getByText(/Источников: 1, новых проектов: 3/i)).toBeVisible();
 });
 
 
