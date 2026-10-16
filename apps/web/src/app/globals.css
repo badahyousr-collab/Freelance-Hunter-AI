@@ -314,3 +314,125 @@ h1, .page-heading h1, .sub-page-heading h1, .auth-card h1 {
   .account-trigger { gap: 4px; }
   .opportunity-cube-stage { margin-left: 0; margin-right: 0; }
 }
+
+
+/* Authentication: form stays on the left, original molecule occupies the right side. */
+.auth-shell {
+  min-height: 100svh;
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+  padding: 0 clamp(22px, 5vw, 84px);
+  overflow: hidden;
+  background: radial-gradient(ellipse at 78% 45%, #24272555 0%, transparent 37%), radial-gradient(ellipse at 15% 0%, #191b1a 0%, transparent 45%), #080909;
+}
+.auth-layout {
+  width: min(100%, 1440px);
+  min-height: 100svh;
+  display: grid;
+  grid-template-columns: minmax(360px, 470px) minmax(0, 1fr);
+  align-items: center;
+  gap: clamp(36px, 7vw, 120px);
+  margin: 0 auto;
+}
+.auth-card {
+  position: relative;
+  z-index: 2;
+  width: 100%;
+  max-width: 470px;
+  justify-self: start;
+  padding: clamp(26px, 3.2vw, 44px);
+  margin: 28px 0;
+  background: linear-gradient(145deg, #121313f5, #0c0d0df5);
+  border-color: #303331;
+  box-shadow: 0 28px 90px #0006;
+}
+.auth-brand { margin-bottom: 32px; }
+.auth-molecule-stage {
+  position: relative;
+  min-width: 0;
+  height: min(92svh, 940px);
+  min-height: 620px;
+  display: grid;
+  place-items: center;
+  isolation: isolate;
+  user-select: none;
+}
+.auth-molecule-stage::before {
+  content: "";
+  position: absolute;
+  width: min(46vw, 650px);
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: radial-gradient(circle, #d8ddd50a 0%, #c9d1c90a 35%, transparent 70%);
+  filter: blur(9px);
+}
+.auth-molecule-grid {
+  position: absolute;
+  inset: 7% -12% 7% 0;
+  opacity: .36;
+  background-image: linear-gradient(#a8ada608 1px, transparent 1px), linear-gradient(90deg, #a8ada608 1px, transparent 1px);
+  background-size: 44px 44px;
+  mask-image: radial-gradient(ellipse at center, black, transparent 72%);
+  pointer-events: none;
+}
+.auth-molecule-interaction {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  display: grid;
+  place-items: center;
+  cursor: grab;
+  touch-action: pan-y;
+  outline: none;
+}
+.auth-molecule-interaction:active { cursor: grabbing; }
+.auth-molecule-svg {
+  width: min(100%, 660px);
+  height: 100%;
+  overflow: visible;
+  transform-style: preserve-3d;
+  filter: drop-shadow(0 22px 65px #0008);
+  transition: transform .16s ease-out;
+  animation: molecule-drift 8s ease-in-out infinite;
+}
+.molecule-bond { stroke: #a9b2aa; stroke-width: 1.35; stroke-opacity: .42; vector-effect: non-scaling-stroke; }
+.molecule-bond-bright { stroke: #e1e6dc; stroke-opacity: .78; stroke-width: 1.8; }
+.molecule-orbit { fill: none; stroke: #aeb7ac; stroke-opacity: .25; stroke-width: 1; stroke-dasharray: 2 7; }
+.molecule-atom { stroke: #cbd2c7; stroke-opacity: .72; stroke-width: 1.1; fill: url(#atomFill); filter: drop-shadow(0 0 8px #b8c5b433); }
+.molecule-atom-core { fill: #e1e6dc; stroke: #fff; stroke-opacity: .8; }
+.molecule-atom-dark { fill: #353b36; }
+.molecule-tag { position: absolute; z-index: 1; display: grid; gap: 5px; pointer-events: none; }
+.molecule-tag span { color: #858b83; font-size: 9px; letter-spacing: 1.7px; }
+.molecule-tag strong { color: #e1e4dc; font-size: 12px; font-weight: 500; letter-spacing: -.2px; }
+.molecule-tag::before { content: ""; width: 23px; height: 1px; background: #b5bdb2; opacity: .65; margin-bottom: 4px; }
+.molecule-tag-one { top: 18%; left: 6%; }
+.molecule-tag-two { right: 1%; top: 39%; }
+.molecule-tag-three { left: 13%; bottom: 16%; }
+.molecule-instruction { position: absolute; bottom: 4%; left: 50%; transform: translateX(-50%); width: max-content; color: #777d75; font-size: 9px; letter-spacing: .8px; text-transform: uppercase; }
+.molecule-status { position: absolute; top: 5%; right: 0; display: flex; align-items: center; gap: 8px; color: #a8ada4; font-size: 9px; letter-spacing: 1.1px; }
+.molecule-status i { width: 5px; height: 5px; border-radius: 50%; background: #c6d5c4; box-shadow: 0 0 12px #c6d5c477; animation: molecule-pulse 2.6s ease-in-out infinite; }
+@keyframes molecule-pulse { 0%,100% { opacity: .4; } 50% { opacity: 1; } }
+@keyframes molecule-drift { 0%,100% { translate: 0 -7px; } 50% { translate: 0 8px; } }
+@media (max-width: 900px) {
+  .auth-shell { padding: 22px; }
+  .auth-layout { grid-template-columns: minmax(340px, .95fr) minmax(260px, .85fr); gap: 20px; }
+  .auth-card { padding: 25px; }
+  .auth-molecule-stage { height: 82svh; min-height: 560px; }
+  .molecule-tag { transform: scale(.85); }
+}
+@media (max-width: 680px) {
+  .auth-shell { padding: 18px 14px; overflow: auto; }
+  .auth-layout { display: flex; flex-direction: column; gap: 8px; justify-content: center; }
+  .auth-card { max-width: 460px; padding: 24px 21px; margin: 12px 0 0; }
+  .auth-molecule-stage { width: 100%; height: 260px; min-height: 260px; order: 2; margin: 0; }
+  .auth-molecule-svg { width: min(100%, 360px); }
+  .auth-molecule-grid { inset: 0; }
+  .molecule-tag { display: none; }
+  .molecule-status { top: 0; right: 8%; }
+  .molecule-instruction { bottom: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .auth-molecule-svg, .molecule-status i { animation: none !important; }
+  .nav-item, .nav-item svg { transition: none !important; }
+}
