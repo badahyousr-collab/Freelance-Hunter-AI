@@ -28,6 +28,7 @@ export default function SourcesPage() {
   const [identifier, setIdentifier] = useState("");
   const [busy, setBusy] = useState(false);
   const [addingChannel, setAddingChannel] = useState("");
+  const [scanning, setScanning] = useState(false);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
@@ -85,6 +86,20 @@ export default function SourcesPage() {
         setMessage("Канал @" + channel.handle + " уже есть в твоих источниках.");
       } else setError(text);
     } finally { setAddingChannel(""); }
+  }
+
+  async function scanNow() {
+    setScanning(true); setError(""); setMessage("");
+    try {
+      const r = await fetch(API + "/agent/scan", { method: "POST", credentials: "include" });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.detail ?? "Не удалось запустить сканирование");
+      const problems = Array.isArray(d.errors) && d.errors.length ? " Ошибки: " + d.errors.join("; ") : "";
+      setMessage("Сканирование завершено. Источников: " + Number(d.scannedSources ?? 0) + ", новых проектов: " + Number(d.newProjects ?? 0) + "." + problems);
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Не удалось запустить сканирование");
+    } finally { setScanning(false); }
   }
 
   async function toggle(item: Source) {
@@ -153,7 +168,7 @@ export default function SourcesPage() {
     </section>
 
     <section className="content-card">
-      <div className="panel-heading"><div><h2>Подключённые источники</h2><p>Здесь отображается состояние источника и результат последнего сканирования.</p></div><button className="sub-button" onClick={() => void load()}><RefreshCw size={14}/>Обновить</button></div>
+      <div className="panel-heading"><div><h2>Подключённые источники</h2><p>Здесь отображается состояние источника и результат последнего сканирования.</p></div><div className="sub-actions"><button className="sub-button" onClick={() => void load()} disabled={loading || scanning}><RefreshCw size={14}/>Обновить</button><button className="sub-button primary" onClick={() => void scanNow()} disabled={loading || scanning || !items.some(item => item.source === "telegram" && item.is_enabled)}><Radio size={14}/>{scanning ? "Сканируем…" : "Сканировать сейчас"}</button></div></div>
       {loading ? <div className="sub-empty">Загружаем источники…</div> : items.length === 0 ? <div className="sub-empty"><Workflow size={25}/><strong>Источники пока не добавлены</strong><span>Добавь канал из подборки выше или укажи публичный Telegram-канал вручную.</span></div> :
         <div className="sub-list">{items.map(item => <article className="sub-list-row" key={item.id}>
           <div className="sub-list-main">
