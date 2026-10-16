@@ -3,7 +3,7 @@
   "name": "freelance-hunter-ai",
   "main": ".open-next/worker.js",
   "compatibility_date": "2026-10-10",
-  "compatibility_flags": ["nodejs_compat"],
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
   "vars": {
     "CLOUDFLARE_API_URL": "https://plain-voice-c13ffreelance-hunter-api.badahyousr.workers.dev"
   },
