@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import worker from "../.test-dist/src/index.js";
 
-function fakeDb({ scan = false, skills = ["python", "telegram"], telegramAuth = null } = {}) {
+function fakeDb({ scan = false, skills = ["python", "telegram"], telegramAuth = null, telegramCode = null, linkedAccount = null } = {}) {
   return {
     prepare(sql) {
       return {
@@ -10,7 +10,9 @@ function fakeDb({ scan = false, skills = ["python", "telegram"], telegramAuth = 
         async run() { return { meta: { changes: 1 } }; },
         async first() {
           if (sql.includes("SELECT attempts FROM auth_rate_limits")) return { attempts: 1 };
-          if (sql.includes("SELECT user_id,authenticated_at,session_issued_at FROM telegram_auth_codes")) return telegramAuth;
+          if (sql.includes("SELECT user_id,authenticated_at,session_issued_at,error_message FROM telegram_auth_codes")) return telegramAuth;
+          if (sql.includes("SELECT code_hash,auth_mode FROM telegram_auth_codes")) return telegramCode;
+          if (sql.includes("SELECT user_id FROM telegram_links WHERE telegram_user_id=?")) return linkedAccount;
           if (sql.includes("SELECT email,is_verified,auth_method FROM users")) return { email: "telegram-123@telegram.local", is_verified: 1, auth_method: "telegram" };
           if (sql.includes("FROM sessions s JOIN users")) return { id: "user-1", email: "test@example.com", is_verified: 1 };
           if (sql.includes("SELECT COUNT(*) AS total FROM sources")) return { total: 0 };
@@ -153,6 +155,63 @@ test("manual scan skips listings below the configured relevance threshold", asyn
   }
 });
 
+
+
+test("Telegram /start asks the user to send a plain code without a command", async () => {
+  const originalFetch = globalThis.fetch;
+  let sentPayload;
+  globalThis.fetch = async (input, init) => {
+    if (String(input).includes("api.telegram.org/botTEST_TOKEN/sendMessage")) {
+      sentPayload = JSON.parse(init.body);
+      return Response.json({ ok: true, result: { message_id: 1 } });
+    }
+    return originalFetch(input, init);
+  };
+  try {
+    const response = await worker.fetch(new Request("https://api.example/telegram/webhook", {
+      method: "POST",
+      headers: { "X-Telegram-Bot-Api-Secret-Token": "webhook-secret", "Content-Type": "application/json" },
+      body: JSON.stringify({ message: { chat: { id: 123, type: "private" }, from: { id: 123 }, text: "/start" } })
+    }), { DB: fakeDb(), TELEGRAM_BOT_TOKEN: "TEST_TOKEN", TELEGRAM_WEBHOOK_SECRET: "webhook-secret" });
+    assert.equal(response.status, 200);
+    assert.match(sentPayload.text, /отправь сюда 9-значный код/i);
+    assert.match(sentPayload.text, /без команд/i);
+    assert.doesNotMatch(sentPayload.text, /\/link/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("Telegram plain code detects an already registered account during registration", async () => {
+  const originalFetch = globalThis.fetch;
+  let sentPayload;
+  globalThis.fetch = async (input, init) => {
+    if (String(input).includes("api.telegram.org/botTEST_TOKEN/sendMessage")) {
+      sentPayload = JSON.parse(init.body);
+      return Response.json({ ok: true, result: { message_id: 1 } });
+    }
+    return originalFetch(input, init);
+  };
+  try {
+    const response = await worker.fetch(new Request("https://api.example/telegram/webhook", {
+      method: "POST",
+      headers: { "X-Telegram-Bot-Api-Secret-Token": "webhook-secret", "Content-Type": "application/json" },
+      body: JSON.stringify({ message: { chat: { id: 123, type: "private" }, from: { id: 123 }, text: "123456789" } })
+    }), {
+      DB: fakeDb({
+        telegramCode: { code_hash: "code-hash", auth_mode: "register" },
+        linkedAccount: { user_id: "already-registered-user" }
+      }),
+      TELEGRAM_BOT_TOKEN: "TEST_TOKEN",
+      TELEGRAM_WEBHOOK_SECRET: "webhook-secret"
+    });
+    assert.equal(response.status, 200);
+    assert.match(sentPayload.text, /уже зарегистрирован/i);
+    assert.match(sentPayload.text, /страницу входа/i);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
 
 test("Telegram help command sends readable multiline text and keyboard", async () => {
   const originalFetch = globalThis.fetch;
