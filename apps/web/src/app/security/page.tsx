@@ -79,7 +79,7 @@ export default function SecurityPage() {
     {message && <div className="sub-alert">{message}</div>}
     <section className="content-card">
       <h2><ShieldCheck size={16} style={{ verticalAlign: "middle", marginRight: 8 }} />Защита аккаунта</h2>
-      <p>Вход выполняется через Telegram. Почта и пароль для аккаунта не используются. Сессия хранится в защищённой HTTP-only cookie.</p>
+      <p>Вход подтверждается одноразовым кодом в Telegram. Отдельный пароль не нужен. Сессия хранится в защищённой HTTP-only cookie.</p>
       <div className="sub-list">
         <div className="sub-list-row"><div className="sub-list-main"><strong>Способ входа</strong><span>Telegram</span></div><span className="sub-badge">Активен</span></div>
         <div className="sub-list-row"><div className="sub-list-main"><strong>Аккаунт создан</strong><span>{user?.created_at ? new Date(user.created_at).toLocaleString() : "Загрузка…"}</span></div></div>
