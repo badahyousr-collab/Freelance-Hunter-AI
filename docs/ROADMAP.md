@@ -25,7 +25,8 @@
 - [x] Projects, applications, sources, AI agent, analytics, settings, integrations, security, registration, and login pages.
 - [x] Dashboard statistics and project lists use persisted API data rather than fabricated counts.
 - [x] Profile preferences and source configuration forms call the API.
-- [ ] Complete browser end-to-end tests for login, dashboard, project filters, source configuration, settings, and logout.
+- [x] Add Playwright smoke tests for Telegram auth, project search, source setup/manual scan, and settings save/layout.
+- [ ] Complete browser end-to-end tests for dashboard, session expiry, logout, and remaining critical forms.
 - [ ] Fix and verify session-expiry handling, empty states, mobile layouts, and all visible controls.
 - [ ] Verify the deployed website against the latest API Worker.
 
@@ -34,7 +35,7 @@
 - [x] Telegram post parser, public channel adapter, scheduled worker, retry behavior, deduplication, and per-source scan health.
 - [x] Per-user source subscriptions and enabled-agent filtering.
 - [x] Authenticated user-scoped manual scan endpoint.
-- [ ] Build a curated catalog of public Telegram job channels, with verified channel URLs, languages, and focus areas.
+- [x] Build a curated catalog of six public Telegram job channels, with URLs, languages, and focus areas.
 - [ ] Configure and test a real scan against several public channels and verify newly stored projects.
 - [ ] Implement and verify provider-specific marketplace discovery adapters where access is permitted.
 - [ ] Add operational monitoring for source failures, scan duration, and new-project counts.
