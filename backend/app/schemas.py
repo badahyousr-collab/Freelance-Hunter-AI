@@ -4,7 +4,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 class UserResponse(BaseModel):
     id: int
-    auth_method: str = "telegram"
+    identity_provider: str = "telegram"
     telegram_user_id: int | None = None
     created_at: datetime
 
