@@ -389,7 +389,7 @@ async function handleTelegramWebhook(request: Request, env: Env): Promise<Respon
         const id = crypto.randomUUID();
         try {
           await env.DB.batch([
-            env.DB.prepare("INSERT INTO users (id,email,password_hash,is_verified,auth_method) VALUES (?,?,?,1,'telegram')").bind(id, internalEmail, await passwordHash(randomToken(32))),
+            env.DB.prepare("INSERT INTO users (id,email,password_hash,is_verified,auth_method) VALUES (?,?,?,1,'telegram')").bind(id, internalEmail, `telegram:${randomToken(32)}`),
             env.DB.prepare("INSERT INTO profiles (user_id) VALUES (?)").bind(id),
             env.DB.prepare("INSERT INTO agent_settings (user_id) VALUES (?)").bind(id),
             env.DB.prepare("INSERT INTO telegram_links (user_id,telegram_user_id,linked_at) VALUES (?,?,datetime('now'))").bind(id, telegramUserId)
