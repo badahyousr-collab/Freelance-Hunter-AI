@@ -52,21 +52,23 @@ export default function DashboardPage() {
         if (meResponse.status === 401) { window.location.replace("/login"); return; }
         if (!meResponse.ok) throw new Error(`Could not verify session (HTTP ${meResponse.status})`);
         const me = await meResponse.json() as CurrentUser;
-        const [summaryResponse, projectsResponse, sourcesResponse] = await Promise.all([
+        const [summaryResponse, projectsResponse, sourcesResponse, profileResponse] = await Promise.all([
           fetch(`${API}/dashboard/summary`, { credentials: "include" }),
           fetch(`${API}/projects?limit=5`, { credentials: "include" }),
           fetch(`${API}/sources`, { credentials: "include" }),
+          fetch(`${API}/profile`, { credentials: "include" }),
         ]);
-        if (!summaryResponse.ok || !projectsResponse.ok || !sourcesResponse.ok) throw new Error("Could not load dashboard data");
+        if (!summaryResponse.ok || !projectsResponse.ok || !sourcesResponse.ok || !profileResponse.ok) throw new Error("Could not load dashboard data");
         const summaryJson = await summaryResponse.json() as unknown;
         const projectsJson = await projectsResponse.json() as unknown;
         const sourcesJson = await sourcesResponse.json() as unknown;
+        const profileJson = await profileResponse.json() as { display_name?: string | null };
         const summaryData = summaryJson && typeof summaryJson === "object" ? summaryJson as Summary : null;
         const projectData = Array.isArray(projectsJson) ? projectsJson as Project[] : [];
         const sourceData = Array.isArray(sourcesJson) ? sourcesJson as {is_enabled:boolean;last_scan_at:string|null}[] : [];
         const scanTimes = sourceData.map(source => source.last_scan_at).filter((value): value is string => Boolean(value));
         const latestScan = scanTimes.sort((a,b) => new Date(b).getTime() - new Date(a).getTime())[0] ?? null;
-        if (!cancelled) { setUser(me); setSummary(summaryData); setProjects(projectData); setEnabledSources(sourceData.filter(source => source.is_enabled).length); setLastScan(latestScan); }
+        if (!cancelled) { setUser({ ...me, display_name: typeof profileJson.display_name === "string" ? profileJson.display_name : null }); setSummary(summaryData); setProjects(projectData); setEnabledSources(sourceData.filter(source => source.is_enabled).length); setLastScan(latestScan); }
       } catch (err) {
         if (!cancelled) setError(err instanceof Error ? err.message : "Could not connect to the API");
       } finally { if (!cancelled) setLoading(false); }
