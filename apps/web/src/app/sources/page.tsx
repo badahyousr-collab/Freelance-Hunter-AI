@@ -11,14 +11,14 @@ type Source = { id: number; source: string; identifier: string; is_enabled: bool
 type RecommendedChannel = { handle: string; label: string; focus: string; language: string };
 
 const recommendedChannels: RecommendedChannel[] = [
-  { handle: "freelancetaverna", label: "Фриланс Таверна", focus: "Разовые заказы и удалённые проекты", language: "RU" },
+  { handle: "tgram_jobs", label: "Telegram jobs", focus: "IT-заказы, разработка и проекты от заказчиков", language: "RU" },
+  { handle: "job_for_bots", label: "Вакансии для разработчиков ботов", focus: "Заказы на Telegram-ботов и Mini Apps", language: "RU" },
+  { handle: "zerocode_jobs", label: "Запили мне, зерокодер", focus: "Заказы на no-code, автоматизацию и ботов", language: "RU" },
+  { handle: "FreelancehuntProjects", label: "Проєкти Freelancehunt", focus: "Свежие фриланс-проекты, включая разработку", language: "UA/RU" },
   { handle: "itfreelancers", label: "IT freelance and remote", focus: "IT-проекты, лиды и сотрудничество", language: "EN/RU" },
   { handle: "frwork3", label: "Фриланс, удалённая работа", focus: "Разовые задачи и удалённые проекты разных направлений", language: "RU" },
-  { handle: "pythonrabota", label: "Python работа", focus: "Python-разработка и backend", language: "RU" },
-  { handle: "python_jbs", label: "Python jobs", focus: "Python и смежные IT-вакансии", language: "RU" },
-  { handle: "python_jobs", label: "Python - вакансии и аналитика", focus: "Python, Flask и разовые подработки", language: "RU/EN" },
-  { handle: "remote_python_jobs", label: "Remote Python Jobs", focus: "Удалённые Python-проекты", language: "EN" },
-  { handle: "remotedevjobs", label: "Remote Dev Jobs", focus: "Удалённая разработка", language: "EN" }
+  { handle: "python_jobs", label: "Python - вакансии и аналитика", focus: "Python, Flask и запросы на разовую работу", language: "RU/EN" },
+  { handle: "Freelanceroff", label: "Freelancer project feed", focus: "Публичная лента проектов с Freelancer.com", language: "EN" }
 ];
 
 export default function SourcesPage() {
