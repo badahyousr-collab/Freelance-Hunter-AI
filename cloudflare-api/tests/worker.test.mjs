@@ -101,6 +101,24 @@ test("Telegram auth status creates a session after the bot confirms the code", a
   assert.match(response.headers.get("set-cookie") ?? "", /fh_session=.*HttpOnly/);
 });
 
+
+test("Telegram auth status exposes duplicate-registration errors to the website", async () => {
+  const response = await worker.fetch(new Request("https://api.example/auth/telegram/status", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "CF-Connecting-IP": "198.51.100.23" },
+    body: JSON.stringify({ code: "123456789" })
+  }), {
+    DB: fakeDb({ telegramAuth: {
+      user_id: null,
+      authenticated_at: null,
+      session_issued_at: null,
+      error_message: "Этот Telegram уже зарегистрирован. Перейди на страницу входа и войди в существующий аккаунт."
+    } })
+  });
+  assert.equal(response.status, 409);
+  assert.match((await response.json()).detail, /уже зарегистрирован/i);
+});
+
 test("unknown API route returns a structured 404", async () => {
   const response = await worker.fetch(new Request("https://api.example/not-a-route", { headers: { Cookie: "fh_session=test-session-token" } }), { DB: fakeDb() });
   assert.equal(response.status, 404);
