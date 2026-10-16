@@ -42,8 +42,19 @@ export default function TelegramAuth({ mode }: Props) {
         credentials: "include",
         body: "{}"
       });
-      const startData = await started.json().catch(() => ({} as ApiError));
-      if (!started.ok) throw new Error(messageFrom(startData, "Не удалось подключиться к Telegram. Попробуй ещё раз."));
+      const startText = await started.text();
+      let startData: ApiError = {};
+      let startIsJson = false;
+      try {
+        startData = JSON.parse(startText) as ApiError;
+        startIsJson = true;
+      } catch {}
+      if (!started.ok) {
+        const fallback = startIsJson
+          ? `Не удалось запустить авторизацию (HTTP ${started.status}).`
+          : `API Worker вернул не-JSON ответ (HTTP ${started.status}). Проверь, что последний деплой API Worker завершился успешно.`;
+        throw new Error(messageFrom(startData, fallback));
+      }
       const authCode = typeof startData.code === "string" ? startData.code : "";
       const target = typeof startData.bot_url === "string" ? startData.bot_url : "";
       if (!/^\d{9}$/.test(authCode) || !target.startsWith("https://t.me/")) {
@@ -62,8 +73,19 @@ export default function TelegramAuth({ mode }: Props) {
           credentials: "include",
           body: JSON.stringify({ code: authCode })
         });
-        const statusData = await statusResponse.json().catch(() => ({} as ApiError));
-        if (!statusResponse.ok) throw new Error(messageFrom(statusData, "Код больше не действует. Создай новый."));
+        const statusText = await statusResponse.text();
+        let statusData: ApiError = {};
+        let statusIsJson = false;
+        try {
+          statusData = JSON.parse(statusText) as ApiError;
+          statusIsJson = true;
+        } catch {}
+        if (!statusResponse.ok) {
+          const fallback = statusIsJson
+            ? `Не удалось проверить код (HTTP ${statusResponse.status}). Создай новый код.`
+            : `API Worker вернул не-JSON ответ при проверке кода (HTTP ${statusResponse.status}). Проверь его деплой.`;
+          throw new Error(messageFrom(statusData, fallback));
+        }
         if (statusData.authenticated === true) {
           window.location.replace("/dashboard");
           return;
