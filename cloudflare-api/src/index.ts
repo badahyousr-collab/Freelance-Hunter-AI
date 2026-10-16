@@ -558,7 +558,7 @@ async function handle(request: Request, env: Env): Promise<Response> {
   }
 
   if (path === "/auth/telegram/status" && method === "POST") {
-    if (await isRateLimited(request, env, "telegram-status", 350)) {
+    if (await isRateLimited(request, env, "telegram-status", 1500)) {
       return response(request, { detail: "Слишком много проверок. Запроси новый код." }, 429, { "Retry-After": "900" });
     }
     const input = await body(request);
