@@ -1,8 +1,8 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useRef, useState } from "react";
 import Link from "next/link";
-import { ArrowRight, Command, LoaderCircle, Send, Mail, LockKeyhole } from "lucide-react";
+import { ArrowRight, Command, LoaderCircle, Send, Mail, LockKeyhole, Copy, Check, RefreshCw } from "lucide-react";
 
 const API = "/api/backend";
 
@@ -25,22 +25,28 @@ export default function TelegramAuth({ mode }: Props) {
   const [code, setCode] = useState("");
   const [botUrl, setBotUrl] = useState("");
   const [message, setMessage] = useState("");
+  const [messageIsError, setMessageIsError] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const pollId = useRef(0);
   const [emailMode, setEmailMode] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
 
   async function startTelegram() {
-    if (busy) return;
+    if (busy && !code) return;
+    const currentPoll = ++pollId.current;
     setBusy(true);
     setCode("");
     setBotUrl("");
+    setCopied(false);
+    setMessageIsError(false);
     setMessage("Создаём одноразовый код...");
     try {
       const started = await fetch(`${API}/auth/telegram/start`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: "{}"
+        body: JSON.stringify({ mode })
       });
       const startText = await started.text();
       let startData: ApiError = {};
@@ -62,11 +68,12 @@ export default function TelegramAuth({ mode }: Props) {
       }
       setCode(authCode);
       setBotUrl(target);
-      setMessage("Открой бота, нажми Start и отправь команду /link с этим кодом. Код действует 10 минут.");
+      setMessage("Открой бота, нажми Start и отправь код обычным сообщением. Код действует 10 минут.");
 
       const deadline = Date.now() + 10 * 60 * 1000;
       while (Date.now() < deadline) {
         await wait(2000);
+        if (currentPoll !== pollId.current) return;
         const statusResponse = await fetch(`${API}/auth/telegram/status`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -91,11 +98,29 @@ export default function TelegramAuth({ mode }: Props) {
           return;
         }
       }
-      setMessage("Срок действия кода истёк. Нажми кнопку ниже, чтобы создать новый.");
+      if (currentPoll === pollId.current) {
+        setMessage("Срок действия кода истёк. Нажми «Обновить код», чтобы создать новый.");
+        setMessageIsError(true);
+      }
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Не удалось связаться с сервером. Попробуй ещё раз.");
+      if (currentPoll === pollId.current) {
+        setMessage(error instanceof Error ? error.message : "Не удалось связаться с сервером. Попробуй ещё раз.");
+        setMessageIsError(true);
+      }
     } finally {
-      setBusy(false);
+      if (currentPoll === pollId.current) setBusy(false);
+    }
+  }
+
+  async function copyCode() {
+    if (!code) return;
+    try {
+      await navigator.clipboard.writeText(code);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1800);
+    } catch {
+      setMessage("Не удалось скопировать код. Выдели его и скопируй вручную.");
+      setMessageIsError(true);
     }
   }
 
@@ -104,6 +129,7 @@ export default function TelegramAuth({ mode }: Props) {
     if (busy) return;
     setBusy(true);
     setMessage("");
+    setMessageIsError(false);
     try {
       const response = await fetch(`${API}/auth/login`, {
         method: "POST",
@@ -116,6 +142,7 @@ export default function TelegramAuth({ mode }: Props) {
       window.location.replace("/dashboard");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Не удалось связаться с сервером. Попробуй ещё раз.");
+      setMessageIsError(true);
     } finally {
       setBusy(false);
     }
@@ -139,27 +166,32 @@ export default function TelegramAuth({ mode }: Props) {
         </p>
 
         <div className="telegram-auth-panel">
-          <button className="primary-button auth-submit" type="button" onClick={startTelegram} disabled={busy}>
-            {busy ? <LoaderCircle className="spin" size={17} /> : <Send size={17} />}
-            {busy ? "Ожидаем подтверждение..." : code ? "Создать новый код" : "Продолжить через Telegram"}
-            {!busy && <ArrowRight size={16} />}
+          <button className="primary-button auth-submit" type="button" onClick={startTelegram} disabled={busy && !code}>
+            {busy && !code ? <LoaderCircle className="spin" size={17} /> : code ? <RefreshCw size={17} /> : <Send size={17} />}
+            {busy && !code ? "Создаём код..." : code ? "Обновить код" : "Продолжить через Telegram"}
+            {!(busy && !code) && <ArrowRight size={16} />}
           </button>
 
           {code && (
             <div className="telegram-code-panel">
               <div className="telegram-code-label">ТВОЙ КОД</div>
               <div className="telegram-code" aria-label={`Код ${code}`}>{code}</div>
-              <a className="secondary-button telegram-open-bot" href={botUrl} target="_blank" rel="noreferrer">
-                <Send size={15} /> Открыть Telegram-бота
-              </a>
+              <div className="telegram-code-actions">
+                <button className="secondary-button telegram-open-bot" type="button" onClick={copyCode}>
+                  {copied ? <Check size={15} /> : <Copy size={15} />} {copied ? "Код скопирован" : "Копировать код"}
+                </button>
+                <a className="secondary-button telegram-open-bot" href={botUrl} target="_blank" rel="noreferrer">
+                  <Send size={15} /> Открыть Telegram-бота
+                </a>
+              </div>
               <p className="auth-legal telegram-instructions">
-                В боте нажми Start, затем отправь <strong>/link {code}</strong>. Не передавай код другим людям.
+                В боте нажми Start и отправь <strong>{code}</strong> обычным сообщением, без команды /link. Не передавай код другим людям.
               </p>
             </div>
           )}
         </div>
 
-        {message && <div className="auth-message" role="status" aria-live="polite">{message}</div>}
+        {message && <div className={`auth-message${messageIsError ? " error" : ""}`} role="status" aria-live="polite">{message}</div>}
 
         {mode === "login" && (
           <div className="email-fallback">
