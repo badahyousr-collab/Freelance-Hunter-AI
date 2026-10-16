@@ -11,6 +11,8 @@ from sqlalchemy.pool import StaticPool
 
 from app.database import Base, get_db
 from app.main import app
+from app.models import User
+from app.security import create_token
 from app import models  # noqa: F401
 
 
@@ -35,16 +37,30 @@ def client() -> Generator[TestClient, None, None]:
     engine.dispose()
 
 
-def create_verified_user(client: TestClient, email: str) -> None:
-    registered = client.post("/auth/register", json={"email": email, "password": "long-secure-password"})
-    assert registered.status_code == 201
-    token = registered.json()["verification_token"]
-    assert client.post("/auth/verify-email", json={"token": token}).status_code == 200
-    assert client.post("/auth/login", json={"email": email, "password": "long-secure-password"}).status_code == 200
+def create_telegram_user(client: TestClient, telegram_user_id: int = 12345) -> None:
+    db_generator = app.dependency_overrides[get_db]()
+    db = next(db_generator)
+    try:
+        user = User(
+            email=f"telegram-{telegram_user_id}@telegram.local",
+            password_hash="test-only-internal-marker",
+            is_verified=True,
+            telegram_user_id=telegram_user_id,
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+        token = create_token(str(user.id), "access", settings.access_token_minutes)
+        client.cookies.set("access_token", token)
+    finally:
+        try:
+            next(db_generator)
+        except StopIteration:
+            pass
 
 
 def test_profile_update_is_persisted_and_normalized(client: TestClient) -> None:
-    create_verified_user(client, "profile@example.com")
+    create_telegram_user(client)
     saved = client.put("/profile", json={
         "display_name": "Developer",
         "skills": [" Python ", "Telegram bots", "Python"],
@@ -64,7 +80,7 @@ def test_profile_update_is_persisted_and_normalized(client: TestClient) -> None:
 
 
 def test_dashboard_counts_are_real_and_empty_initially(client: TestClient) -> None:
-    create_verified_user(client, "dashboard@example.com")
+    create_telegram_user(client)
     response = client.get("/dashboard/summary")
     assert response.status_code == 200
     assert response.json() == {
@@ -83,7 +99,7 @@ def test_workspace_endpoints_require_authentication(client: TestClient) -> None:
 
 
 def test_source_configuration_is_owned_by_current_user(client: TestClient) -> None:
-    create_verified_user(client, "source-owner@example.com")
+    create_telegram_user(client)
     added = client.post("/sources", json={"source": "telegram", "identifier": "@python_jobs"})
     assert added.status_code == 201
     source = added.json()
@@ -106,20 +122,20 @@ def test_source_configuration_is_owned_by_current_user(client: TestClient) -> No
 
 
 def test_marketplace_configuration_is_not_misreported_as_connected(client: TestClient) -> None:
-    create_verified_user(client, "marketplace@example.com")
+    create_telegram_user(client)
     response = client.post("/sources", json={"source": "upwork"})
     assert response.status_code == 201
     assert response.json()["status"] == "pending_integration"
 
 
 def test_source_configuration_rejects_invalid_channel_identifier(client: TestClient) -> None:
-    create_verified_user(client, "invalid-source@example.com")
+    create_telegram_user(client)
     response = client.post("/sources", json={"source": "telegram", "identifier": "https://t.me/not_a_channel"})
     assert response.status_code == 422
 
 
 def test_telegram_link_code_is_single_use_and_agent_control_is_authorized(client: TestClient) -> None:
-    create_verified_user(client, "telegram-link@example.com")
+    create_telegram_user(client)
     code_response = client.post("/telegram/link-code")
     assert code_response.status_code == 200
     code = code_response.json()["code"]
@@ -148,7 +164,7 @@ def test_bot_internal_endpoints_reject_missing_secret(client: TestClient) -> Non
 
 def test_integration_credential_is_saved_without_returning_secret(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "integration_encryption_key", Fernet.generate_key().decode("ascii"))
-    create_verified_user(client, "integration-owner@example.com")
+    create_telegram_user(client)
     response = client.post("/integrations", json={"provider": "freelancer", "secret": "test-api-token-value"})
     assert response.status_code == 201
     data = response.json()
@@ -170,13 +186,13 @@ def test_integration_credential_is_saved_without_returning_secret(client: TestCl
 
 def test_integration_credential_storage_requires_encryption_key(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "integration_encryption_key", None)
-    create_verified_user(client, "integration-no-key@example.com")
+    create_telegram_user(client)
     response = client.post("/integrations", json={"provider": "upwork", "secret": "test-api-token-value"})
     assert response.status_code == 503
 
 
 def test_manual_scan_reports_missing_prerequisites(client: TestClient) -> None:
-    create_verified_user(client, "manual-scan@example.com")
+    create_telegram_user(client)
     disabled = client.post("/agent/scan")
     assert disabled.status_code == 409
 
@@ -193,7 +209,7 @@ def test_manual_scan_reports_missing_prerequisites(client: TestClient) -> None:
 
 
 def test_telegram_recent_projects_requires_bot_secret_and_linked_user(client: TestClient) -> None:
-    create_verified_user(client, "telegram-projects@example.com")
+    create_telegram_user(client)
     code_response = client.post("/telegram/link-code")
     assert code_response.status_code == 200
     code = code_response.json()["code"]
