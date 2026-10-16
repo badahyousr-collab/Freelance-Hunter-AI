@@ -48,7 +48,7 @@ def get_current_user(
     except (jwt.InvalidTokenError, ValueError, TypeError):
         raise HTTPException(status_code=401, detail="Invalid or expired access token") from None
     user = db.get(User, user_id)
-    if user is None or not user.is_active or not user.is_verified:
+    if user is None or not user.is_active or not user.telegram_verified:
         raise HTTPException(status_code=401, detail="User is unavailable")
     return user
 
@@ -57,7 +57,7 @@ def get_current_user(
 def get_me(user: User = Depends(get_current_user)) -> UserResponse:
     return UserResponse(
         id=user.id,
-        auth_method="telegram",
+        identity_provider=user.identity_provider,
         telegram_user_id=user.telegram_user_id,
         created_at=user.created_at,
     )
