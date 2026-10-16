@@ -590,9 +590,6 @@ async function handle(request: Request, env: Env): Promise<Response> {
       await env.DB.prepare("UPDATE telegram_auth_codes SET session_issued_at=NULL WHERE code_hash=? AND user_id=?").bind(codeHash, auth.user_id).run();
       return response(request, { detail: "Не удалось создать сессию. Попробуй ещё раз." }, 500);
     }
-    const user = await env.DB.prepare("SELECT email,is_verified,auth_method FROM users WHERE id=?").bind(auth.user_id).first<any>();
-    const email = String(user?.email ?? "");
-    const authMethod = String(user?.auth_method ?? (email.endsWith("@telegram.local") ? "telegram" : "email"));
     return response(request, { authenticated: true, auth_method: "telegram" }, 200, { "Set-Cookie": cookie(token, SESSION_DAYS * 86400) });
   }
 
