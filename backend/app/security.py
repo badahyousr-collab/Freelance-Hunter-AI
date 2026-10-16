@@ -2,20 +2,9 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import jwt
-from pwdlib import PasswordHash
-
 from app.config import settings
 
-_password_hash = PasswordHash.recommended()
 _ALGORITHM = "HS256"
-
-
-def hash_password(password: str) -> str:
-    return _password_hash.hash(password)
-
-
-def verify_password(password: str, password_hash: str) -> bool:
-    return _password_hash.verify(password, password_hash)
 
 
 def create_token(subject: str, token_type: str, expires_minutes: int) -> str:

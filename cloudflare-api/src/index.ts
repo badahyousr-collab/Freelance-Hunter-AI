@@ -7,9 +7,6 @@ interface Env {
   AI_API_KEY?: string;
   AI_API_BASE_URL?: string;
   AI_MODEL?: string;
-  RESEND_API_KEY?: string;
-  EMAIL_FROM?: string;
-  APP_BASE_URL?: string;
 }
 
 const COOKIE = "fh_session";
@@ -60,20 +57,6 @@ async function sha256(value: string): Promise<string> {
   return Array.from(new Uint8Array(digest), b => b.toString(16).padStart(2, "0")).join("");
 }
 
-async function passwordHash(password: string, salt = randomToken(16)): Promise<string> {
-  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(password), "PBKDF2", false, ["deriveBits"]);
-  const bits = await crypto.subtle.deriveBits({ name: "PBKDF2", salt: new TextEncoder().encode(salt), iterations: 210000, hash: "SHA-256" }, key, 256);
-  const digest = Array.from(new Uint8Array(bits), b => b.toString(16).padStart(2, "0")).join("");
-  return `${salt}:${digest}`;
-}
-
-async function verifyPassword(password: string, stored: string): Promise<boolean> {
-  const [salt, expected] = stored.split(":");
-  if (!salt || !expected) return false;
-  const actual = await passwordHash(password, salt);
-  return actual.split(":")[1] === expected;
-}
-
 async function body(request: Request): Promise<Record<string, any>> {
   try { const value = await request.json(); return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, any> : {}; }
   catch { return {}; }
@@ -83,7 +66,7 @@ async function currentUser(request: Request, env: Env): Promise<any | null> {
   const raw = request.headers.get("Cookie")?.split(";").map(v => v.trim()).find(v => v.startsWith(COOKIE + "="))?.slice(COOKIE.length + 1);
   if (!raw) return null;
   const tokenHash = await sha256(raw);
-  const row = await env.DB.prepare("SELECT u.id, u.email, u.is_verified, u.auth_method, u.created_at FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=? AND s.expires_at > datetime('now')").bind(tokenHash).first<any>();
+  const row = await env.DB.prepare("SELECT u.id, u.created_at FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=? AND s.expires_at > datetime('now')").bind(tokenHash).first<any>();
   return row ?? null;
 }
 
@@ -190,19 +173,14 @@ async function scanTelegramSource(env: Env, userId: string, source: any): Promis
     });
     if (!upstream.ok) throw new Error(`Telegram preview returned HTTP ${upstream.status}`);
     const posts = parseTelegramPreview(await upstream.text(), channel);
-    const profile = await env.DB.prepare("SELECT skills, min_budget, currency, excluded_keywords FROM profiles WHERE user_id=?").bind(userId).first<any>();
-    const settings = await env.DB.prepare("SELECT min_match_score FROM agent_settings WHERE user_id=?").bind(userId).first<any>();
+    const profile = await env.DB.prepare("SELECT skills FROM profiles WHERE user_id=?").bind(userId).first<any>();
     const skills = safeJson(profile?.skills, []).map((x: unknown) => String(x).toLowerCase()).filter(Boolean);
-    const excluded = safeJson(profile?.excluded_keywords, []).map((x: unknown) => String(x).toLowerCase()).filter(Boolean);
     let added = 0;
     for (const post of posts) {
       const text = post.description.toLowerCase();
-      if (excluded.some((word: string) => word && text.includes(word))) continue;
       const budget = detectedBudget(post.description);
-      if (profile?.min_budget != null && budget && String(profile.currency ?? "USD").toUpperCase() !== "ALL" && budget.currency === String(profile.currency ?? "USD").toUpperCase() && budget.amount < Number(profile.min_budget)) continue;
       const matchedSkills = skills.filter((skill: string) => skill.length > 1 && text.includes(skill));
       const score = Math.max(0, Math.min(100, 35 + Math.min(45, matchedSkills.length * 15)));
-      if (score < Number(settings?.min_match_score ?? 60)) continue;
       const reasons = matchedSkills.map((skill: string) => `Упоминание навыка: ${skill}`);
       const result = await env.DB.prepare(`INSERT INTO projects
         (user_id,source,source_project_id,url,title,description,language,budget_min,budget_max,currency,published_at,match_score,match_reasons)
@@ -356,10 +334,10 @@ async function handleTelegramWebhook(request: Request, env: Env): Promise<Respon
       const existingAccount = await env.DB.prepare("SELECT user_id FROM telegram_links WHERE telegram_user_id=?").bind(telegramUserId).first<any>();
       let userId = existingAccount?.user_id ? String(existingAccount.user_id) : "";
       let createdUserId = "";
-      const internalEmail = `telegram-${telegramUserId}@telegram.local`;
+      const telegramIdentity = `tg:${telegramUserId}`;
       let priorTelegramAccount: any = null;
       if (!userId) {
-        priorTelegramAccount = await env.DB.prepare("SELECT id FROM users WHERE email=? AND auth_method='telegram'").bind(internalEmail).first<any>();
+        priorTelegramAccount = await env.DB.prepare("SELECT id FROM users WHERE telegram_identity=? AND identity_provider='telegram'").bind(telegramIdentity).first<any>();
         if (priorTelegramAccount?.id) userId = String(priorTelegramAccount.id);
       }
       const authMode = String(authCode.auth_mode ?? "login");
@@ -389,7 +367,7 @@ async function handleTelegramWebhook(request: Request, env: Env): Promise<Respon
         const id = crypto.randomUUID();
         try {
           await env.DB.batch([
-            env.DB.prepare("INSERT INTO users (id,email,password_hash,is_verified,auth_method) VALUES (?,?,?,1,'telegram')").bind(id, internalEmail, `telegram:${randomToken(32)}`),
+            env.DB.prepare("INSERT INTO users (id,telegram_identity,telegram_verified,identity_provider) VALUES (?,?,1,'telegram')").bind(id, telegramIdentity),
             env.DB.prepare("INSERT INTO profiles (user_id) VALUES (?)").bind(id),
             env.DB.prepare("INSERT INTO agent_settings (user_id) VALUES (?)").bind(id),
             env.DB.prepare("INSERT INTO telegram_links (user_id,telegram_user_id,linked_at) VALUES (?,?,datetime('now'))").bind(id, telegramUserId)
@@ -398,7 +376,7 @@ async function handleTelegramWebhook(request: Request, env: Env): Promise<Respon
           createdUserId = id;
         } catch (error) {
           console.error("telegram_auth_create_account_failed", error);
-          const conflictingUser = await env.DB.prepare("SELECT id,auth_method FROM users WHERE email=?").bind(internalEmail).first<any>();
+          const conflictingUser = await env.DB.prepare("SELECT id,identity_provider FROM users WHERE telegram_identity=?").bind(telegramIdentity).first<any>();
           const racedAccount = await env.DB.prepare("SELECT user_id FROM telegram_links WHERE telegram_user_id=?").bind(telegramUserId).first<any>();
           if (racedAccount?.user_id) {
             userId = String(racedAccount.user_id);
@@ -427,8 +405,8 @@ async function handleTelegramWebhook(request: Request, env: Env): Promise<Respon
       await telegramReply(env, chatId, detail);
       return response(request, { ok: true });
     }
-    const link = await env.DB.prepare("SELECT tl.user_id,u.is_verified FROM telegram_links tl JOIN users u ON u.id=tl.user_id WHERE tl.link_code_hash=? AND tl.expires_at>datetime('now') AND tl.telegram_user_id IS NULL").bind(codeHash).first<any>();
-    if (!link || !link.is_verified) {
+    const link = await env.DB.prepare("SELECT tl.user_id,u.telegram_verified FROM telegram_links tl JOIN users u ON u.id=tl.user_id WHERE tl.link_code_hash=? AND tl.expires_at>datetime('now') AND tl.telegram_user_id IS NULL").bind(codeHash).first<any>();
+    if (!link || !link.telegram_verified) {
       await telegramReply(env, chatId, "Код недействителен, истёк или аккаунт сайта не подтверждён. Создай новый код в настройках сайта.");
       return response(request, { ok: true });
     }
@@ -477,20 +455,6 @@ async function handleTelegramWebhook(request: Request, env: Env): Promise<Respon
 }
 
 
-function emailConfigured(env: Env): boolean {
-  return Boolean(env.RESEND_API_KEY && env.EMAIL_FROM && env.APP_BASE_URL);
-}
-
-async function sendTransactionalEmail(env: Env, to: string, subject: string, html: string): Promise<void> {
-  if (!env.RESEND_API_KEY || !env.EMAIL_FROM) throw new Error("Email delivery is not configured");
-  const result = await fetch("https://api.resend.com/emails", {
-    method: "POST",
-    headers: { "Authorization": "Bearer " + env.RESEND_API_KEY, "Content-Type": "application/json" },
-    body: JSON.stringify({ from: env.EMAIL_FROM, to: [to], subject, html }),
-    signal: AbortSignal.timeout(15000)
-  });
-  if (!result.ok) throw new Error("Email provider rejected the message");
-}
 
 async function handle(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
@@ -517,7 +481,18 @@ async function handle(request: Request, env: Env): Promise<Response> {
   }
 
   if (path === "/auth/register" && method === "POST") {
-    return response(request, { detail: "Регистрация по email отключена. Используй вход через Telegram." }, 410);
+    return response(request, { detail: "Регистрация доступна только через Telegram." }, 410);
+  }
+
+  // Email/password identity is disabled. All account creation and access must use Telegram.
+  const disabledEmailAuthPaths = new Set([
+    "/auth/login",
+    "/auth/password-reset/request",
+    "/auth/password-reset/confirm",
+    "/auth/verify-email"
+  ]);
+  if (method === "POST" && disabledEmailAuthPaths.has(path)) {
+    return response(request, { detail: "Вход, регистрация и восстановление доступа доступны только через Telegram." }, 410);
   }
 
   if (path === "/auth/telegram/start" && method === "POST") {
@@ -579,79 +554,7 @@ async function handle(request: Request, env: Env): Promise<Response> {
       await env.DB.prepare("UPDATE telegram_auth_codes SET session_issued_at=NULL WHERE code_hash=? AND user_id=?").bind(codeHash, auth.user_id).run();
       return response(request, { detail: "Не удалось создать сессию. Попробуй ещё раз." }, 500);
     }
-    const user = await env.DB.prepare("SELECT email,is_verified,auth_method FROM users WHERE id=?").bind(auth.user_id).first<any>();
-    const email = String(user?.email ?? "");
-    const authMethod = String(user?.auth_method ?? (email.endsWith("@telegram.local") ? "telegram" : "email"));
-    return response(request, { authenticated: true, email: authMethod === "telegram" ? null : email }, 200, { "Set-Cookie": cookie(token, SESSION_DAYS * 86400) });
-  }
-
-  if (path === "/auth/password-reset/request" && method === "POST") {
-    if (await isRateLimited(request, env, "password-reset", 5)) {
-      return response(request, { detail: "Too many attempts. Please wait 15 minutes and try again." }, 429, { "Retry-After": "900" });
-    }
-    if (!emailConfigured(env)) return response(request, { detail: "Password reset email is not configured yet. Contact the administrator." }, 503);
-    const input = await body(request);
-    const email = String(input.email ?? "").trim().toLowerCase();
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return response(request, { detail: "Enter a valid email address." }, 400);
-    const user = await env.DB.prepare("SELECT id,email FROM users WHERE email=?").bind(email).first<any>();
-    if (user) {
-      const resetToken = randomToken(32);
-      await env.DB.prepare("UPDATE users SET password_reset_token_hash=?,password_reset_expires_at=datetime('now','+1 hour') WHERE id=?").bind(await sha256(resetToken), user.id).run();
-      const resetUrl = String(env.APP_BASE_URL).replace(/\/+$/, "") + "/reset-password?token=" + encodeURIComponent(resetToken);
-      try {
-        await sendTransactionalEmail(env, email, "Reset your Freelance Hunter password",
-          '<div style="font-family:Arial,sans-serif;max-width:560px;margin:auto;color:#222"><h2>Password reset</h2><p>We received a request to reset your password.</p><p><a href="' + resetUrl + '" style="display:inline-block;padding:12px 18px;background:#222;color:#fff;text-decoration:none;border-radius:8px">Choose a new password</a></p><p>This link expires in one hour. If you did not request it, ignore this email.</p></div>');
-      } catch {
-        await env.DB.prepare("UPDATE users SET password_reset_token_hash=NULL,password_reset_expires_at=NULL WHERE id=?").bind(user.id).run();
-        return response(request, { detail: "Could not send the reset email. Check email provider settings and try again." }, 502);
-      }
-    }
-    return response(request, { message: "If an account exists for that address, a password reset link has been sent." });
-  }
-
-  if (path === "/auth/password-reset/confirm" && method === "POST") {
-    if (await isRateLimited(request, env, "password-reset-confirm", 10)) {
-      return response(request, { detail: "Too many attempts. Please wait 15 minutes and try again." }, 429, { "Retry-After": "900" });
-    }
-    const input = await body(request);
-    const token = String(input.token ?? "");
-    const password = String(input.password ?? "");
-    if (!token) return response(request, { detail: "Reset token is required." }, 400);
-    if (password.length < 10 || password.length > 256) return response(request, { detail: "Password must contain 10–256 characters." }, 400);
-    const user = await env.DB.prepare("SELECT id FROM users WHERE password_reset_token_hash=? AND password_reset_expires_at > datetime('now')").bind(await sha256(token)).first<any>();
-    if (!user) return response(request, { detail: "Reset link is invalid or expired. Request a new one." }, 400);
-    const result = await env.DB.prepare("UPDATE users SET password_hash=?,password_reset_token_hash=NULL,password_reset_expires_at=NULL WHERE id=? AND password_reset_token_hash=? AND password_reset_expires_at > datetime('now')")
-      .bind(await passwordHash(password), user.id, await sha256(token)).run();
-    if (!result.meta.changes) return response(request, { detail: "Reset link is invalid or expired. Request a new one." }, 400);
-    await env.DB.prepare("DELETE FROM sessions WHERE user_id=?").bind(user.id).run();
-    return response(request, { message: "Password updated. Sign in with your new password." });
-  }
-
-  if (path === "/auth/verify-email" && method === "POST") {
-    if (await isRateLimited(request, env, "verify-email", 10)) {
-      return response(request, { detail: "Too many attempts. Please wait 15 minutes and try again." }, 429, { "Retry-After": "900" });
-    }
-    const input = await body(request);
-    const token = String(input.token ?? "");
-    if (!token) return response(request, { detail: "Verification token is required." }, 400);
-    const result = await env.DB.prepare("UPDATE users SET is_verified=1, verification_token_hash=NULL, verification_expires_at=NULL WHERE verification_token_hash=? AND verification_expires_at > datetime('now')").bind(await sha256(token)).run();
-    if (!result.meta.changes) return response(request, { detail: "Verification token is invalid or expired." }, 400);
-    return response(request, { message: "Email verified. You can now sign in." });
-  }
-
-  if (path === "/auth/login" && method === "POST") {
-    if (await isRateLimited(request, env, "login", 10)) {
-      return response(request, { detail: "Too many attempts. Please wait 15 minutes and try again." }, 429, { "Retry-After": "900" });
-    }
-    const input = await body(request);
-    const email = String(input.email ?? "").trim().toLowerCase();
-    const password = String(input.password ?? "");
-    const user = await env.DB.prepare("SELECT id,email,password_hash,is_verified FROM users WHERE email=?").bind(email).first<any>();
-    if (!user || !(await verifyPassword(password, user.password_hash))) return response(request, { detail: "Email or password is incorrect." }, 401);
-    if (!user.is_verified) return response(request, { detail: "Verify your email address before signing in." }, 403);
-    const token = randomToken();
-    await env.DB.prepare("INSERT INTO sessions (token_hash,user_id,expires_at) VALUES (?,?,datetime('now', '+14 days'))").bind(await sha256(token), user.id).run();
-    return response(request, { email: user.email, is_verified: Boolean(user.is_verified) }, 200, { "Set-Cookie": cookie(token, SESSION_DAYS * 86400) });
+    return response(request, { authenticated: true, identity_provider: "telegram" }, 200, { "Set-Cookie": cookie(token, SESSION_DAYS * 86400) });
   }
 
   if (path === "/auth/logout" && method === "POST") {
@@ -697,9 +600,9 @@ async function handle(request: Request, env: Env): Promise<Response> {
     const telegramUserId = String(input.telegram_user_id ?? "");
     if (!/^[0-9]{1,24}$/.test(telegramUserId) || !code) return response(request, { detail: "Invalid link request." }, 400);
     const codeHash = await sha256(code);
-    const link = await env.DB.prepare("SELECT tl.user_id, u.is_verified FROM telegram_links tl JOIN users u ON u.id=tl.user_id WHERE tl.link_code_hash=? AND tl.expires_at > datetime('now') AND tl.telegram_user_id IS NULL").bind(codeHash).first<any>();
+    const link = await env.DB.prepare("SELECT tl.user_id, u.telegram_verified FROM telegram_links tl JOIN users u ON u.id=tl.user_id WHERE tl.link_code_hash=? AND tl.expires_at > datetime('now') AND tl.telegram_user_id IS NULL").bind(codeHash).first<any>();
     if (!link) return response(request, { detail: "Link code is invalid, expired, or already used." }, 400);
-    if (!link.is_verified) return response(request, { detail: "Website account is not verified." }, 400);
+    if (!link.telegram_verified) return response(request, { detail: "Website account is not verified." }, 400);
     const existing = await env.DB.prepare("SELECT user_id FROM telegram_links WHERE telegram_user_id=? AND user_id<>?").bind(telegramUserId, link.user_id).first<any>();
     if (existing) return response(request, { detail: "This Telegram account is already linked." }, 409);
     let updated;
@@ -715,7 +618,7 @@ async function handle(request: Request, env: Env): Promise<Response> {
   if (isBotSummary) {
     const telegramUserId = path.slice(botSummaryPrefix.length);
     if (!/^[0-9]{1,24}$/.test(telegramUserId)) return response(request, { detail: "Invalid Telegram user ID." }, 400);
-    const linked = await env.DB.prepare("SELECT u.id FROM telegram_links tl JOIN users u ON u.id=tl.user_id WHERE tl.telegram_user_id=? AND u.is_verified=1").bind(telegramUserId).first<any>();
+    const linked = await env.DB.prepare("SELECT u.id FROM telegram_links tl JOIN users u ON u.id=tl.user_id WHERE tl.telegram_user_id=? AND u.telegram_verified=1 AND u.identity_provider='telegram'").bind(telegramUserId).first<any>();
     if (!linked) return response(request, { detail: "Telegram account is not linked; use /link CODE first." }, 404);
     const row = await env.DB.prepare("SELECT (SELECT COUNT(*) FROM projects WHERE user_id=?) AS projects_found, (SELECT COUNT(*) FROM projects WHERE user_id=? AND match_score IS NOT NULL AND match_score>=60) AS matched_projects, (SELECT COUNT(*) FROM applications WHERE user_id=? AND status IN ('sent','replied','closed')) AS proposals_sent, (SELECT COUNT(*) FROM applications WHERE user_id=? AND replied_at IS NOT NULL) AS client_replies").bind(linked.id, linked.id, linked.id, linked.id).first<any>();
     return response(request, row ?? { projects_found: 0, matched_projects: 0, proposals_sent: 0, client_replies: 0 });
@@ -724,7 +627,7 @@ async function handle(request: Request, env: Env): Promise<Response> {
   if (isBotProjects) {
     const telegramUserId = path.slice(botProjectsPrefix.length);
     if (!/^[0-9]{1,24}$/.test(telegramUserId)) return response(request, { detail: "Invalid Telegram user ID." }, 400);
-    const linked = await env.DB.prepare("SELECT u.id FROM telegram_links tl JOIN users u ON u.id=tl.user_id WHERE tl.telegram_user_id=? AND u.is_verified=1").bind(telegramUserId).first<any>();
+    const linked = await env.DB.prepare("SELECT u.id FROM telegram_links tl JOIN users u ON u.id=tl.user_id WHERE tl.telegram_user_id=? AND u.telegram_verified=1 AND u.identity_provider='telegram'").bind(telegramUserId).first<any>();
     if (!linked) return response(request, { detail: "Telegram account is not linked." }, 404);
     const requestedLimit = Number(url.searchParams.get("limit") ?? 5);
     if (!Number.isInteger(requestedLimit) || requestedLimit < 1 || requestedLimit > 10) return response(request, { detail: "Limit must be between 1 and 10." }, 400);
@@ -745,13 +648,9 @@ async function handle(request: Request, env: Env): Promise<Response> {
   const user = await requireUser(request, env);
   if (path === "/auth/me" && method === "GET") {
     if (!user) return response(request, { detail: "Authentication required." }, 401);
-    const email = String(user.email ?? "");
-    const authMethod = String(user.auth_method ?? (email.endsWith("@telegram.local") ? "telegram" : "email"));
     const telegramLink = await env.DB.prepare("SELECT telegram_user_id, linked_at FROM telegram_links WHERE user_id=?").bind(user.id).first<any>();
     return response(request, {
-      email: authMethod === "telegram" ? null : email,
-      is_verified: Boolean(user.is_verified),
-      auth_method: authMethod,
+      identity_provider: "telegram",
       created_at: user.created_at ?? null,
       telegram_user_id: telegramLink?.telegram_user_id ? String(telegramLink.telegram_user_id) : null,
       telegram_linked_at: telegramLink?.linked_at ?? null
@@ -759,6 +658,16 @@ async function handle(request: Request, env: Env): Promise<Response> {
   }
   if (!user) return response(request, { detail: "Authentication required." }, 401);
   const uid = user.id as string;
+
+  if (path === "/agent/readiness" && method === "GET") {
+    return response(request, {
+      worker_runtime: true,
+      cron_configured: true,
+      telegram_bot_configured: Boolean(env.TELEGRAM_BOT_TOKEN && env.TELEGRAM_WEBHOOK_SECRET && env.BOT_API_SECRET),
+      ai_provider_configured: Boolean(env.AI_API_KEY && env.AI_MODEL),
+      marketplace_adapters: []
+    });
+  }
 
   if (path === "/dashboard/summary" && method === "GET") {
     const row = await env.DB.prepare(`SELECT

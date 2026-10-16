@@ -37,6 +37,8 @@ jobs:
           cache-dependency-path: apps/web/package.json
       - run: npm install
       - run: npm run lint
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e
       - run: npm run build
 
   cloudflare-api:

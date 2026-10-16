@@ -10,8 +10,6 @@ migrations_dir = "migrations"
 
 [vars]
 APP_ENV = "production"
-APP_BASE_URL = "https://freelance-hunter-ai.badahyousr.workers.dev"
-EMAIL_FROM = "onboarding@resend.dev"
 
 [triggers]
 crons = ["*/15 * * * *"]

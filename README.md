@@ -1,36 +1,38 @@
-# Pipisso — Freelance Hunter
+# Pipisso - Freelance Hunter
 
-Freelance Hunter is one of the systems in the Pipisso ecosystem, focused on AI-assisted freelance opportunity discovery and proposal management through a web workspace and Telegram companion bot.
+Freelance Hunter is part of the Pipisso ecosystem. It discovers freelance opportunities, ranks them against a user's profile, and helps manage proposals through a web workspace and Telegram bot.
 
 ## Product goals
 
 - Discover projects from freelance marketplaces and public Telegram channels.
-- Normalize and deduplicate listings from independent source adapters.
-- Match opportunities against each user's skills, language, budget, freshness, and payment preferences.
-- Draft personalized proposals in Russian or English.
-- Track proposal lifecycle and report accurate statistics in the web dashboard and Telegram.
+- Normalize and deduplicate listings through source adapters.
+- Match opportunities against skills, language, budget, freshness, and payment preferences.
+- Draft personalized proposals in Russian or English without inventing experience.
+- Track the proposal lifecycle and report only confirmed outcomes.
 - Keep user data and integration credentials isolated and protected.
+- Use Telegram as the only account registration and sign-in method. Email/password authentication is disabled.
 
 ## Repository layout
 
-- `apps/web` — Next.js + TypeScript web application.
-- `apps/bot` — Telegram bot (aiogram).
-- `backend` — FastAPI application and domain modules.
-- `sources` — source-adapter contracts and integrations.
-- `docs` — product specification, architecture, roadmap, and acceptance criteria.
+- `apps/web` - Next.js + TypeScript web application.
+- `apps/bot` - Telegram bot (aiogram).
+- `backend` - FastAPI application and domain modules.
+- `sources` - source-adapter contracts and integrations.
+- `docs` - product specification, architecture, roadmap, and acceptance criteria.
 
-## Current status
-
-The current Cloudflare implementation includes D1-backed accounts and sessions, email verification/password reset flows, per-user workspace data, public Telegram channel scanning, a Cloudflare webhook bot, and profile-grounded AI proposal drafts.
+## Current implementation status
 
 - Website: https://freelance-hunter-ai.badahyousr.workers.dev/
 - API health endpoint: https://plain-voice-c13ffreelance-hunter-api.badahyousr.workers.dev/health
-- Public Telegram channels: manual scan plus a 15-minute Cron Trigger while the agent is enabled.
-- Telegram bot: Worker webhook mode; no separate always-on bot server is required.
-- Proposal drafting: OpenAI-compatible API configuration is required; drafts are saved but never reported as sent.
-- Still pending: production secrets/email sender setup, live runtime verification, provider-specific marketplace adapters, actual proposal submission, reply synchronization, and push notifications.
+- Telegram sign-in: one-time code with a short expiry and HTTP-only session cookie.
+- Public Telegram channel ingestion: manual scan and a 15-minute Cron Trigger while the agent is enabled.
+- AI proposal drafts: require an OpenAI-compatible provider configuration and are saved as drafts, never marked as sent.
+- Marketplace discovery and proposal submission: provider-specific adapters are not yet implemented.
+- Live deployment verification and browser end-to-end checks remain required.
 
-GitHub CI verifies the backend tests/migrations, frontend lint/build, and Cloudflare Worker typecheck. A green CI run does not replace the final end-to-end test against the deployed Cloudflare account. The application must never report a proposal as sent unless the source adapter confirms the result.
+Email login, password recovery, and email verification routes in the Cloudflare API return HTTP 410. The legacy database schema still contains compatibility fields for older accounts; removing those columns requires a migration validated against the deployed D1 database and the parallel FastAPI schema. The product must not present email as an account feature.
+
+A green CI run does not replace an end-to-end test against the deployed Cloudflare account. An application must never report a proposal as sent unless the source adapter confirms the result.
 
 ## Local development
 
@@ -41,4 +43,4 @@ Prerequisites: Docker Compose, Python 3.12+, Node.js 20+.
 3. Follow the backend and web instructions in their respective directories.
 4. Run tests with `cd backend && python -m pytest`.
 
-See [the roadmap](docs/ROADMAP.md), [architecture](docs/ARCHITECTURE.md), [acceptance checklist](docs/ACCEPTANCE.md), [local development](docs/LOCAL_DEVELOPMENT.md), [Telegram setup](docs/TELEGRAM_SETUP.md), and [integration notes](docs/INTEGRATIONS.md).
+See [the roadmap](docs/ROADMAP.md), [architecture](docs/ARCHITECTURE.md), [acceptance checklist](docs/ACCEPTANCE.md), [local development](docs/LOCAL_DEVELOPMENT.md), [Telegram setup](docs/TELEGRAM_SETUP.md), [public Telegram sources](docs/TELEGRAM_SOURCES.md), and [integration notes](docs/INTEGRATIONS.md).

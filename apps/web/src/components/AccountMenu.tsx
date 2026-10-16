@@ -7,9 +7,7 @@ import { CheckCircle2, ChevronDown, LogOut, Send, Settings2, ShieldCheck, UserRo
 const API = "/api/backend";
 
 type Account = {
-  email: string | null;
-  is_verified: boolean;
-  auth_method: string;
+  identity_provider: string;
   created_at: string | null;
   telegram_user_id: string | null;
   telegram_linked_at: string | null;
@@ -73,8 +71,8 @@ export default function AccountMenu() {
     }
   }
 
-  const telegramAccount = account?.auth_method === "telegram";
-  const accountLabel = profileName || account?.email || (telegramAccount ? "Аккаунт в Telegram" : loading ? "Загрузка аккаунта" : "Аккаунт");
+  const telegramAccount = account?.identity_provider === "telegram";
+  const accountLabel = profileName || (telegramAccount ? "Аккаунт в Telegram" : loading ? "Загрузка аккаунта" : "Аккаунт");
   const avatar = telegramAccount ? <Send size={17} /> : <UserRound size={17} />;
 
   return (
@@ -89,8 +87,7 @@ export default function AccountMenu() {
           <div className="account-popover-heading"><span className="account-trigger-avatar">{avatar}</span><div><strong>{accountLabel}</strong><span>{account ? "Signed in" : loading ? "Checking session…" : "Account details unavailable"}</span></div></div>
           {error && <p className="account-error">{error}</p>}
           <div className="account-detail-list">
-            <div className="account-detail"><span>Способ входа</span><strong>{telegramAccount ? "Telegram" : account?.auth_method === "email" ? "Email and password" : "Loading…"}</strong></div>
-            {account?.email && <div className="account-detail"><span>Email</span><strong>{account.email}</strong></div>}
+            <div className="account-detail"><span>Способ входа</span><strong>{telegramAccount ? "Telegram" : loading ? "Загрузка…" : "Недоступен"}</strong></div>
             <div className="account-detail"><span>Telegram</span><strong>{account?.telegram_user_id ? "ID " + account.telegram_user_id : "Not linked"}</strong></div>
             <div className="account-detail"><span>Дата создания</span><strong>{account?.created_at ? new Date(account.created_at).toLocaleDateString() : "Not available"}</strong></div>
             <div className="account-connection"><CheckCircle2 size={15} /><span>{account?.telegram_user_id ? "Telegram connection active" : "Telegram is not linked to this account"}</span></div>

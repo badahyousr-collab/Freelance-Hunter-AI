@@ -6,43 +6,47 @@
 - [x] Setup instructions and current limitations are documented.
 
 ## Backend and identity
-- [x] Health endpoints return expected status.
-- [x] Invalid input is rejected by Pydantic/FastAPI validation.
-- [x] Passwords are securely hashed.
-- [x] Email verification tokens expire; Telegram link codes are expiring and single-use.
+- [x] Telegram sign-in uses a one-time code with an expiry and single-use session issuance.
+- [x] Successful sign-in sets an HTTP-only session cookie.
+- [x] Email/password login, email verification, and password-reset API routes return HTTP 410 in the Cloudflare API.
+- [x] Website email login and recovery pages are removed.
 - [x] Protected endpoints reject unauthenticated requests.
-- [x] User-owned source/integration/application data are queried with owner checks.
-- [x] Integration secrets are encrypted before persistence and never returned by the API.
-- [x] Password reset request/confirm flows use expiring, single-use tokens and invalidate active sessions.
-- [x] Resend-based verification/reset email integration and D1 rate limits are implemented.
-- [ ] Configure the verified sender, API key, and website URL; test email delivery in production.
+- [x] User-owned source, project, application, and integration data use owner checks.
+- [x] Remove email delivery settings/helpers and disable email auth routes in active API code.
+- [x] Add a D1 migration that replaces email/password identity fields with Telegram identity keys and anonymizes old email-only identities.
+- [ ] Apply the D1 migration to the deployed Cloudflare database and verify existing Telegram accounts still sign in.
+- [x] Remove email/password fields from the FastAPI user model and add an Alembic migration.
+- [ ] Verify the D1 and PostgreSQL migrations against deployed environments.
+- [ ] Verify Telegram sign-in, session expiry, logout, and cross-account data isolation against the deployed environment.
 
 ## Source ingestion
 - [x] Telegram posts normalize to the common project model.
 - [x] Duplicate Telegram posts are deduplicated per user and channel.
 - [x] Scan failures and last-scan metadata are persisted; scheduled scans retry on the next Cron interval.
 - [x] Excluded-keyword filtering and basic detected-budget filtering are implemented in the Cloudflare scanner.
-- [x] Authenticated manual scan runs against the current user’s enabled public Telegram sources.
+- [x] Authenticated manual scan runs against the current user's enabled public Telegram sources.
+- [ ] Curated public Telegram job-channel catalog is populated with verified URLs and category/language labels.
 - [ ] Verify a real public channel scan and scheduled Cron execution against the deployed Worker.
-- [ ] Marketplace adapters are implemented and verified; catalog entries currently marked pending are not live integrations.
+- [ ] Marketplace adapters are implemented and verified; catalog entries marked pending are not live integrations.
 
 ## AI and proposals
 - [x] Draft endpoint requires authentication and verifies project ownership.
 - [x] Proposal prompt treats listing content as untrusted and forbids fabricated experience.
 - [x] Provider absence is reported as a configuration error.
-- [ ] A real model provider is configured and proposal quality is evaluated.
+- [ ] A real model provider is configured and proposal quality is evaluated in Russian and English.
+- [ ] Labeled test set measures matching quality and hard filters cannot be overridden by AI.
 - [ ] No provider submission is marked sent without source confirmation.
 
 ## Web and Telegram
 - [x] Dashboard numbers come from persisted API records.
 - [x] Loading, empty, and error states are present on core pages.
-- [x] Telegram linking is expiring, single-use, and verified server-side.
+- [x] Telegram account linking is expiring, single-use, and verified server-side.
 - [x] Bot setup and server-to-server endpoints require a shared secret.
-- [x] Cloudflare webhook bot and website use the same D1 source of truth.
 - [ ] Configure a newly issued BotFather token and webhook secret, then test real Telegram messages.
-- [ ] Browser end-to-end flows are tested.
+- [ ] Browser end-to-end flows are tested on the deployed site.
+- [ ] Every visible button and form has a verified action or is explicitly marked unavailable.
 
 ## Verification record
-- CI workflow: latest verified run is recorded in GitHub Actions; it checks backend tests/migrations, frontend lint/build, and Cloudflare Worker typecheck.
-- Live service verification: pending Cloudflare deployment/secrets, verified email sender, AI provider, and Telegram webhook setup.
-- Known limitations: provider-specific marketplace discovery/authentication/submission/reply adapters, push notifications, and automatic client-reply sync are not implemented. Telegram ingestion supports public channel previews only.
+- CI must verify backend tests/migrations, frontend lint/build, and Cloudflare Worker typecheck.
+- Live service verification is pending until Telegram secrets, AI provider configuration, and public channel scans are tested.
+- Known limitations: provider-specific marketplace discovery/authentication/submission/reply adapters and push notifications are not yet implemented. Telegram ingestion currently reads public channel previews only.

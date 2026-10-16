@@ -43,9 +43,9 @@ def test_scan_enabled_sources_persists_projects_and_creates_user_matches(monkeyp
 
     with TestingSession() as db:
         user = User(
-            email="scan-test@example.com",
-            password_hash="not-used-in-this-test",
-            is_verified=True,
+            identity_provider="telegram",
+            telegram_verified=True,
+            telegram_user_id=555123,
             is_active=True,
             agent_enabled=True,
         )

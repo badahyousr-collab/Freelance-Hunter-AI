@@ -14,8 +14,7 @@ function fakeDb({ scan = false, skills = ["python", "telegram"], telegramAuth = 
           if (sql.includes("SELECT user_id,authenticated_at,session_issued_at,error_message FROM telegram_auth_codes")) return telegramAuth;
           if (sql.includes("SELECT code_hash,auth_mode FROM telegram_auth_codes")) return telegramCode;
           if (sql.includes("SELECT user_id FROM telegram_links WHERE telegram_user_id=?")) return linkedAccount;
-          if (sql.includes("SELECT email,is_verified,auth_method FROM users")) return { email: "telegram-123@telegram.local", is_verified: 1, auth_method: "telegram" };
-          if (sql.includes("FROM sessions s JOIN users")) return { id: "user-1", email: "test@example.com", is_verified: 1 };
+          if (sql.includes("FROM sessions s JOIN users")) return { id: "user-1", created_at: "2026-10-16 10:00:00" };
           if (sql.includes("SELECT COUNT(*) AS total FROM sources")) return { total: 0 };
           if (sql.includes("SELECT skills, min_budget, currency, excluded_keywords")) return { skills: JSON.stringify(skills), min_budget: null, currency: "USD", excluded_keywords: "[]" };
           if (sql.includes("SELECT min_match_score FROM agent_settings")) return { min_match_score: 60 };
@@ -57,6 +56,27 @@ test("Telegram webhook rejects an invalid Telegram secret token", async () => {
   assert.equal(response.status, 401);
 });
 
+test("agent readiness reflects provider and bot configuration", async () => {
+  const response = await worker.fetch(new Request("https://api.example/agent/readiness", {
+    headers: { Cookie: "fh_session=test-session-token" }
+  }), {
+    DB: fakeDb(),
+    AI_API_KEY: "configured-ai-key",
+    AI_MODEL: "configured-model",
+    TELEGRAM_BOT_TOKEN: "configured-bot-token",
+    TELEGRAM_WEBHOOK_SECRET: "configured-webhook-secret",
+    BOT_API_SECRET: "configured-bot-api-secret"
+  });
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), {
+    worker_runtime: true,
+    cron_configured: true,
+    telegram_bot_configured: true,
+    ai_provider_configured: true,
+    marketplace_adapters: []
+  });
+});
+
 test("email registration is disabled in favor of Telegram authentication", async () => {
   const response = await worker.fetch(new Request("https://api.example/auth/register", {
     method: "POST",
@@ -65,6 +85,23 @@ test("email registration is disabled in favor of Telegram authentication", async
   }), { DB: fakeDb(), APP_ENV: "production" });
   assert.equal(response.status, 410);
   assert.match((await response.json()).detail, /through Telegram|Telegram/i);
+});
+
+test("email login, verification, and password recovery endpoints are disabled", async () => {
+  const paths = [
+    "/auth/login",
+    "/auth/verify-email",
+    "/auth/password-reset/request",
+    "/auth/password-reset/confirm"
+  ];
+  for (const path of paths) {
+    const response = await worker.fetch(new Request("https://api.example" + path, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "CF-Connecting-IP": "198.51.100.25" },
+      body: JSON.stringify({ email: "test@example.com", password: "long-enough-password", token: "old-token" })
+    }), { DB: fakeDb(), APP_ENV: "production" });
+    assert.equal(response.status, 410, path + " should be disabled");
+  }
 });
 
 test("Telegram auth start returns a nine-digit code valid for ten minutes", async () => {
@@ -98,7 +135,7 @@ test("Telegram auth status creates a session after the bot confirms the code", a
     body: JSON.stringify({ code: "123456789" })
   }), { DB: fakeDb({ telegramAuth: { user_id: "user-1", authenticated_at: "2026-10-15 10:00:00", session_issued_at: null } }) });
   assert.equal(response.status, 200);
-  assert.deepEqual(await response.json(), { authenticated: true, email: null });
+  assert.deepEqual(await response.json(), { authenticated: true, identity_provider: "telegram" });
   assert.match(response.headers.get("set-cookie") ?? "", /fh_session=.*HttpOnly/);
 });
 
@@ -151,7 +188,7 @@ test("manual scan ingests and normalizes a public Telegram listing", async () =>
 });
 
 
-test("manual scan skips listings below the configured relevance threshold", async () => {
+test("manual scan persists low-relevance listings for the matching stage", async () => {
   const originalFetch = globalThis.fetch;
   const html = '<div class="tgme_widget_message_wrap" data-post="python_jobs/124"><div class="tgme_widget_message_text js-message_text" dir="auto">We need a Python developer to build a Telegram bot for a freelance project. Budget 500 USD.</div></div>';
   globalThis.fetch = async (input, init) => {
@@ -167,7 +204,7 @@ test("manual scan skips listings below the configured relevance threshold", asyn
     assert.equal(response.status, 200);
     const result = await response.json();
     assert.equal(result.scannedSources, 1);
-    assert.equal(result.newProjects, 0);
+    assert.equal(result.newProjects, 1);
     assert.deepEqual(result.errors, []);
   } finally {
     globalThis.fetch = originalFetch;
