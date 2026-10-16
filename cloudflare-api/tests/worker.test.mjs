@@ -167,7 +167,7 @@ test("manual scan ingests and normalizes a public Telegram listing", async () =>
 });
 
 
-test("manual scan skips listings below the configured relevance threshold", async () => {
+test("manual scan persists low-relevance listings for the matching stage", async () => {
   const originalFetch = globalThis.fetch;
   const html = '<div class="tgme_widget_message_wrap" data-post="python_jobs/124"><div class="tgme_widget_message_text js-message_text" dir="auto">We need a Python developer to build a Telegram bot for a freelance project. Budget 500 USD.</div></div>';
   globalThis.fetch = async (input, init) => {
@@ -183,7 +183,7 @@ test("manual scan skips listings below the configured relevance threshold", asyn
     assert.equal(response.status, 200);
     const result = await response.json();
     assert.equal(result.scannedSources, 1);
-    assert.equal(result.newProjects, 0);
+    assert.equal(result.newProjects, 1);
     assert.deepEqual(result.errors, []);
   } finally {
     globalThis.fetch = originalFetch;
