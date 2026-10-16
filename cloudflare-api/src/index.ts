@@ -327,21 +327,23 @@ async function handleTelegramWebhook(request: Request, env: Env): Promise<Respon
   const isHelp = ["/help", "❓ помощь"].includes(normalized) || rawText === "❓ Помощь";
 
   if (command === "/start") {
-    await telegramReply(env, chatId, "Бот Freelance Hunter подключён. Для регистрации или входа открой сайт, нажми «Продолжить через Telegram», затем отправь сюда <code>/link КОД</code>. Код действует 10 минут.");
+    await telegramReply(env, chatId, "Чтобы зарегистрироваться или войти, открой сайт и нажми «Продолжить через Telegram». Затем просто отправь сюда 9-значный код с сайта отдельным сообщением. Никаких команд вводить не нужно. Код действует 10 минут.");
     return response(request, { ok: true });
   }
   if (isHelp) {
-    await telegramReply(env, chatId, "Команды:\n/link КОД - подтвердить вход или регистрацию\n/stats - статистика\n/projects - последние заказы\n/pause - приостановить агента\n/resume - возобновить агента");
+    await telegramReply(env, chatId, "Как войти: открой сайт, нажми «Продолжить через Telegram» и отправь сюда код обычным сообщением. Команды для управления: /stats, /projects, /pause, /resume.");
     return response(request, { ok: true });
   }
-  if (command === "/link") {
+  const isLinkCommand = command === "/link";
+  const plainAuthCode = /^\\d{9}$/.test(rawText);
+  if (isLinkCommand || plainAuthCode) {
     if (message?.chat?.type !== "private") {
       await telegramReply(env, chatId, "Для безопасности отправь код в личном чате с ботом, не в группе.");
       return response(request, { ok: true });
     }
-    const code = String(args[0] ?? "").trim().toUpperCase();
+    const code = String(isLinkCommand ? (args[0] ?? "") : rawText).trim().toUpperCase();
     if (!code) {
-      await telegramReply(env, chatId, "Укажи код: <code>/link КОД</code>");
+      await telegramReply(env, chatId, "Открой сайт, запроси код и отправь сюда 9 цифр обычным сообщением.");
       return response(request, { ok: true });
     }
     if (await isRateLimitedIdentity(env, "telegram-link", telegramUserId, 10)) {
@@ -349,18 +351,38 @@ async function handleTelegramWebhook(request: Request, env: Env): Promise<Respon
       return response(request, { ok: true });
     }
     const codeHash = await sha256(code);
-    const authCode = await env.DB.prepare("SELECT code_hash FROM telegram_auth_codes WHERE code_hash=? AND expires_at>datetime('now') AND user_id IS NULL").bind(codeHash).first<any>();
+    const authCode = await env.DB.prepare("SELECT code_hash,auth_mode FROM telegram_auth_codes WHERE code_hash=? AND expires_at>datetime('now') AND user_id IS NULL AND error_message IS NULL").bind(codeHash).first<any>();
     if (authCode) {
       const existingAccount = await env.DB.prepare("SELECT user_id FROM telegram_links WHERE telegram_user_id=?").bind(telegramUserId).first<any>();
       let userId = existingAccount?.user_id ? String(existingAccount.user_id) : "";
       let createdUserId = "";
       const internalEmail = `telegram-${telegramUserId}@telegram.local`;
+      let priorTelegramAccount: any = null;
       if (!userId) {
-        const priorTelegramAccount = await env.DB.prepare("SELECT id FROM users WHERE email=? AND auth_method='telegram'").bind(internalEmail).first<any>();
-        if (priorTelegramAccount?.id) {
-          userId = String(priorTelegramAccount.id);
-          await env.DB.prepare("UPDATE telegram_links SET telegram_user_id=?,linked_at=datetime('now') WHERE user_id=?")
-            .bind(telegramUserId, userId).run();
+        priorTelegramAccount = await env.DB.prepare("SELECT id FROM users WHERE email=? AND auth_method='telegram'").bind(internalEmail).first<any>();
+        if (priorTelegramAccount?.id) userId = String(priorTelegramAccount.id);
+      }
+      const authMode = String(authCode.auth_mode ?? "login");
+      if (authMode === "register" && userId) {
+        const detail = "Этот Telegram уже зарегистрирован. Перейди на страницу входа и войди в существующий аккаунт.";
+        await env.DB.prepare("UPDATE telegram_auth_codes SET error_message=? WHERE code_hash=? AND user_id IS NULL").bind(detail, codeHash).run();
+        await telegramReply(env, chatId, detail);
+        return response(request, { ok: true });
+      }
+      if (authMode === "login" && !userId) {
+        const detail = "Аккаунт с этим Telegram не найден. Сначала создай аккаунт на сайте.";
+        await env.DB.prepare("UPDATE telegram_auth_codes SET error_message=? WHERE code_hash=? AND user_id IS NULL").bind(detail, codeHash).run();
+        await telegramReply(env, chatId, detail);
+        return response(request, { ok: true });
+      }
+      if (priorTelegramAccount?.id && !existingAccount?.user_id) {
+        try {
+          await env.DB.prepare("INSERT INTO telegram_links (user_id,telegram_user_id,linked_at) VALUES (?,?,datetime('now')) ON CONFLICT(user_id) DO UPDATE SET telegram_user_id=excluded.telegram_user_id,linked_at=datetime('now')").bind(userId, telegramUserId).run();
+        } catch {
+          const detail = "Этот Telegram уже связан с другим аккаунтом. Войди в ранее связанный аккаунт.";
+          await env.DB.prepare("UPDATE telegram_auth_codes SET error_message=? WHERE code_hash=? AND user_id IS NULL").bind(detail, codeHash).run();
+          await telegramReply(env, chatId, detail);
+          return response(request, { ok: true });
         }
       }
       if (!userId) {
@@ -374,23 +396,35 @@ async function handleTelegramWebhook(request: Request, env: Env): Promise<Respon
           ]);
           userId = id;
           createdUserId = id;
-        } catch {
+        } catch (error) {
+          console.error("telegram_auth_create_account_failed", error);
+          const conflictingUser = await env.DB.prepare("SELECT id,auth_method FROM users WHERE email=?").bind(internalEmail).first<any>();
           const racedAccount = await env.DB.prepare("SELECT user_id FROM telegram_links WHERE telegram_user_id=?").bind(telegramUserId).first<any>();
-          if (!racedAccount?.user_id) {
-            await telegramReply(env, chatId, "Не удалось создать аккаунт. Попробуй запросить новый код на сайте.");
+          if (racedAccount?.user_id) {
+            userId = String(racedAccount.user_id);
+          } else {
+            const detail = conflictingUser?.id
+              ? "Аккаунт для этого Telegram уже существует. Перейди на страницу входа."
+              : "Не удалось создать аккаунт из-за ошибки базы данных. Нажми «Обновить код» на сайте и попробуй ещё раз.";
+            await env.DB.prepare("UPDATE telegram_auth_codes SET error_message=? WHERE code_hash=? AND user_id IS NULL").bind(detail, codeHash).run();
+            await telegramReply(env, chatId, detail);
             return response(request, { ok: true });
           }
-          userId = String(racedAccount.user_id);
         }
       }
-      const accepted = await env.DB.prepare("UPDATE telegram_auth_codes SET telegram_user_id=?,user_id=?,authenticated_at=datetime('now') WHERE code_hash=? AND expires_at>datetime('now') AND user_id IS NULL")
+      const accepted = await env.DB.prepare("UPDATE telegram_auth_codes SET telegram_user_id=?,user_id=?,authenticated_at=datetime('now'),error_message=NULL WHERE code_hash=? AND expires_at>datetime('now') AND user_id IS NULL AND error_message IS NULL")
         .bind(telegramUserId, userId, codeHash).run();
       if (!accepted.meta.changes) {
         if (createdUserId) await env.DB.prepare("DELETE FROM users WHERE id=?").bind(createdUserId).run();
         await telegramReply(env, chatId, "Код уже использован или истёк. Запроси новый на сайте.");
         return response(request, { ok: true });
       }
-      await telegramReply(env, chatId, "Telegram подтверждён. Вернись на сайт, вход завершится автоматически.");
+      await telegramReply(env, chatId, authMode === "register" ? "Аккаунт создан. Вернись на сайт, вход завершится автоматически." : "Вход подтверждён. Вернись на сайт, вход завершится автоматически.");
+      return response(request, { ok: true });
+    }
+    if (plainAuthCode) {
+      const detail = "Код недействителен или истёк. Нажми «Обновить код» на сайте и отправь новый.";
+      await telegramReply(env, chatId, detail);
       return response(request, { ok: true });
     }
     const link = await env.DB.prepare("SELECT tl.user_id,u.is_verified FROM telegram_links tl JOIN users u ON u.id=tl.user_id WHERE tl.link_code_hash=? AND tl.expires_at>datetime('now') AND tl.telegram_user_id IS NULL").bind(codeHash).first<any>();
@@ -493,10 +527,12 @@ async function handle(request: Request, env: Env): Promise<Response> {
     if (!env.TELEGRAM_BOT_TOKEN || !env.TELEGRAM_WEBHOOK_SECRET) return response(request, { detail: "Telegram-бот не настроен. Проверь TELEGRAM_BOT_TOKEN и TELEGRAM_WEBHOOK_SECRET." }, 503);
     const digits = new Uint32Array(1);
     crypto.getRandomValues(digits);
+    const input = await body(request);
+    const authMode = input.mode === "register" ? "register" : "login";
     const code = String(digits[0] % 1000000000).padStart(9, "0");
     const codeHash = await sha256(code);
     await env.DB.prepare("DELETE FROM telegram_auth_codes WHERE expires_at<=datetime('now') OR session_issued_at IS NOT NULL").run();
-    const saved = await env.DB.prepare("INSERT INTO telegram_auth_codes (code_hash,expires_at) VALUES (?,datetime('now','+10 minutes')) ON CONFLICT(code_hash) DO NOTHING").bind(codeHash).run();
+    const saved = await env.DB.prepare("INSERT INTO telegram_auth_codes (code_hash,expires_at,auth_mode) VALUES (?,datetime('now','+10 minutes'),?) ON CONFLICT(code_hash) DO NOTHING").bind(codeHash, authMode).run();
     if (!saved.meta.changes) return response(request, { detail: "Не удалось создать код. Нажми ещё раз." }, 503);
     try {
       const bot = await telegramApi(env, "getMe", {});
@@ -529,8 +565,9 @@ async function handle(request: Request, env: Env): Promise<Response> {
     const code = String(input.code ?? "").replace(/\s/g, "");
     if (!/^\d{9}$/.test(code)) return response(request, { detail: "Неверный формат кода." }, 400);
     const codeHash = await sha256(code);
-    const auth = await env.DB.prepare("SELECT user_id,authenticated_at,session_issued_at FROM telegram_auth_codes WHERE code_hash=? AND expires_at>datetime('now')").bind(codeHash).first<any>();
+    const auth = await env.DB.prepare("SELECT user_id,authenticated_at,session_issued_at,error_message FROM telegram_auth_codes WHERE code_hash=? AND expires_at>datetime('now')").bind(codeHash).first<any>();
     if (!auth) return response(request, { detail: "Код истёк. Создай новый." }, 410);
+    if (auth.error_message) return response(request, { detail: String(auth.error_message), authenticated: false, status: "rejected" }, 409);
     if (!auth.user_id || !auth.authenticated_at) return response(request, { authenticated: false, status: "pending" });
     if (auth.session_issued_at) return response(request, { detail: "Этот код уже использован. Создай новый." }, 410);
     const claimed = await env.DB.prepare("UPDATE telegram_auth_codes SET session_issued_at=datetime('now') WHERE code_hash=? AND user_id=? AND session_issued_at IS NULL AND expires_at>datetime('now')").bind(codeHash, auth.user_id).run();
