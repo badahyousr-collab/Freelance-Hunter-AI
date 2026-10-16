@@ -559,7 +559,7 @@ async function handle(request: Request, env: Env): Promise<Response> {
       await env.DB.prepare("UPDATE telegram_auth_codes SET session_issued_at=NULL WHERE code_hash=? AND user_id=?").bind(codeHash, auth.user_id).run();
       return response(request, { detail: "Не удалось создать сессию. Попробуй ещё раз." }, 500);
     }
-    return response(request, { authenticated: true, auth_method: "telegram" }, 200, { "Set-Cookie": cookie(token, SESSION_DAYS * 86400) });
+    return response(request, { authenticated: true, identity_provider: "telegram" }, 200, { "Set-Cookie": cookie(token, SESSION_DAYS * 86400) });
   }
 
   if (path === "/auth/logout" && method === "POST") {
@@ -655,7 +655,7 @@ async function handle(request: Request, env: Env): Promise<Response> {
     if (!user) return response(request, { detail: "Authentication required." }, 401);
     const telegramLink = await env.DB.prepare("SELECT telegram_user_id, linked_at FROM telegram_links WHERE user_id=?").bind(user.id).first<any>();
     return response(request, {
-      auth_method: "telegram",
+      identity_provider: "telegram",
       created_at: user.created_at ?? null,
       telegram_user_id: telegramLink?.telegram_user_id ? String(telegramLink.telegram_user_id) : null,
       telegram_linked_at: telegramLink?.linked_at ?? null
