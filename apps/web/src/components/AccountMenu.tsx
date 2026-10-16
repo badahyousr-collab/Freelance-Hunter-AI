@@ -13,11 +13,13 @@ type Account = {
   created_at: string | null;
   telegram_user_id: string | null;
   telegram_linked_at: string | null;
+  display_name?: string | null;
 };
 
 export default function AccountMenu() {
   const [open, setOpen] = useState(false);
   const [account, setAccount] = useState<Account | null>(null);
+  const [profileName, setProfileName] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [signingOut, setSigningOut] = useState(false);
@@ -25,6 +27,12 @@ export default function AccountMenu() {
 
   useEffect(() => {
     let active = true;
+    const refreshProfileName = () => fetch(API + "/profile", { credentials: "include", cache: "no-store" })
+      .then(async response => response.ok ? response.json() : null)
+      .then(profile => { if (active) setProfileName(typeof profile?.display_name === "string" ? profile.display_name.trim() : ""); })
+      .catch(() => { if (active) setProfileName(""); });
+    refreshProfileName();
+    window.addEventListener("profile-updated", refreshProfileName);
     fetch(API + "/auth/me", { credentials: "include", cache: "no-store" })
       .then(async response => {
         if (response.status === 401) {
@@ -38,7 +46,7 @@ export default function AccountMenu() {
       .then(data => { if (active && data) setAccount(data); })
       .catch(error => { if (active) setError(error instanceof Error ? error.message : "Не удалось загрузить аккаунт"); })
       .finally(() => { if (active) setLoading(false); });
-    return () => { active = false; };
+    return () => { active = false; window.removeEventListener("profile-updated", refreshProfileName); };
   }, []);
 
   useEffect(() => {
@@ -66,29 +74,30 @@ export default function AccountMenu() {
   }
 
   const telegramAccount = account?.auth_method === "telegram";
+  const accountLabel = profileName || account?.email || (telegramAccount ? "Аккаунт в Telegram" : loading ? "Загрузка аккаунта" : "Аккаунт");
   const avatar = telegramAccount ? <Send size={17} /> : <UserRound size={17} />;
 
   return (
     <div className="account-menu" ref={root}>
       <button className="account-trigger" type="button" aria-label="Открыть аккаунт" aria-expanded={open} onClick={() => setOpen(value => !value)}>
         <span className="account-trigger-avatar">{avatar}</span>
-        <span className="account-trigger-copy"><strong>{account?.email ?? (telegramAccount ? "Telegram account" : loading ? "Loading account" : "Account")}</strong><small>{telegramAccount ? "Telegram connected" : "Personal workspace"}</small></span>
+        <span className="account-trigger-copy"><strong>{accountLabel}</strong><small>{telegramAccount ? "Telegram подключён" : "Личное пространство"}</small></span>
         <ChevronDown className={open ? "account-chevron open" : "account-chevron"} size={14} />
       </button>
       {open && (
         <section className="account-popover" aria-label="Account details">
-          <div className="account-popover-heading"><span className="account-trigger-avatar">{avatar}</span><div><strong>{telegramAccount ? "Telegram account" : account?.email ?? "Personal account"}</strong><span>{account ? "Signed in" : loading ? "Checking session…" : "Account details unavailable"}</span></div></div>
+          <div className="account-popover-heading"><span className="account-trigger-avatar">{avatar}</span><div><strong>{accountLabel}</strong><span>{account ? "Signed in" : loading ? "Checking session…" : "Account details unavailable"}</span></div></div>
           {error && <p className="account-error">{error}</p>}
           <div className="account-detail-list">
-            <div className="account-detail"><span>Sign-in method</span><strong>{telegramAccount ? "Telegram" : account?.auth_method === "email" ? "Email and password" : "Loading…"}</strong></div>
+            <div className="account-detail"><span>Способ входа</span><strong>{telegramAccount ? "Telegram" : account?.auth_method === "email" ? "Email and password" : "Loading…"}</strong></div>
             {account?.email && <div className="account-detail"><span>Email</span><strong>{account.email}</strong></div>}
             <div className="account-detail"><span>Telegram</span><strong>{account?.telegram_user_id ? "ID " + account.telegram_user_id : "Not linked"}</strong></div>
-            <div className="account-detail"><span>Account created</span><strong>{account?.created_at ? new Date(account.created_at).toLocaleDateString() : "Not available"}</strong></div>
+            <div className="account-detail"><span>Дата создания</span><strong>{account?.created_at ? new Date(account.created_at).toLocaleDateString() : "Not available"}</strong></div>
             <div className="account-connection"><CheckCircle2 size={15} /><span>{account?.telegram_user_id ? "Telegram connection active" : "Telegram is not linked to this account"}</span></div>
           </div>
           <div className="account-menu-links">
-            <Link href="/settings" onClick={() => setOpen(false)}><Settings2 size={15} />Profile preferences</Link>
-            <Link href="/security" onClick={() => setOpen(false)}><ShieldCheck size={15} />Account and security</Link>
+            <Link href="/settings" onClick={() => setOpen(false)}><Settings2 size={15} />Настройки профиля</Link>
+            <Link href="/security" onClick={() => setOpen(false)}><ShieldCheck size={15} />Аккаунт и безопасность</Link>
             <button type="button" onClick={() => void signOut()} disabled={signingOut}><LogOut size={15} />{signingOut ? "Signing out…" : "Sign out"}</button>
           </div>
         </section>
