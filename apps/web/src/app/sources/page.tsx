@@ -64,7 +64,7 @@ export default function SourcesPage() {
   async function add(e: FormEvent) {
     e.preventDefault(); setBusy(true); setMessage(""); setError("");
     try {
-      const d = await saveSource(source, identifier.trim());
+      await saveSource(source, identifier.trim());
       setMessage("Источник добавлен. Можно запустить сканирование после сохранения профиля навыков.");
       setIdentifier(""); await load();
     } catch (e) {
