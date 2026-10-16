@@ -1,32 +1,12 @@
 from datetime import datetime
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
-
-
-class RegisterRequest(BaseModel):
-    email: EmailStr
-    password: str = Field(min_length=10, max_length=128)
-
-
-class VerifyEmailRequest(BaseModel):
-    token: str = Field(min_length=20, max_length=2048)
-
-
-class LoginRequest(BaseModel):
-    email: EmailStr
-    password: str = Field(min_length=1, max_length=128)
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class UserResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
     id: int
-    email: EmailStr
-    is_verified: bool
+    auth_method: str = "telegram"
+    telegram_user_id: int | None = None
     created_at: datetime
-
-
-class RegisterResponse(BaseModel):
-    message: str
-    verification_token: str | None = None
 
 
 class ProfileUpdate(BaseModel):
