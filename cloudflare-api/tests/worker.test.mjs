@@ -4,6 +4,7 @@ import worker from "../.test-dist/src/index.js";
 
 function fakeDb({ scan = false, skills = ["python", "telegram"], telegramAuth = null, telegramCode = null, linkedAccount = null } = {}) {
   return {
+    async batch(statements) { return statements.map(() => ({ meta: { changes: 1 } })); },
     prepare(sql) {
       return {
         bind() { return this; },
@@ -195,6 +196,34 @@ test("Telegram /start asks the user to send a plain code without a command", asy
     assert.match(sentPayload.text, /отправь сюда 9-значный код/i);
     assert.match(sentPayload.text, /никаких команд/i);
     assert.doesNotMatch(sentPayload.text, /\/link/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+
+test("Telegram plain code creates a new account when registration is valid", async () => {
+  const originalFetch = globalThis.fetch;
+  let sentPayload;
+  globalThis.fetch = async (input, init) => {
+    if (String(input).includes("api.telegram.org/botTEST_TOKEN/sendMessage")) {
+      sentPayload = JSON.parse(init.body);
+      return Response.json({ ok: true, result: { message_id: 1 } });
+    }
+    return originalFetch(input, init);
+  };
+  try {
+    const response = await worker.fetch(new Request("https://api.example/telegram/webhook", {
+      method: "POST",
+      headers: { "X-Telegram-Bot-Api-Secret-Token": "webhook-secret", "Content-Type": "application/json" },
+      body: JSON.stringify({ message: { chat: { id: 123, type: "private" }, from: { id: 123 }, text: "123456789" } })
+    }), {
+      DB: fakeDb({ telegramCode: { code_hash: "code-hash", auth_mode: "register" } }),
+      TELEGRAM_BOT_TOKEN: "TEST_TOKEN",
+      TELEGRAM_WEBHOOK_SECRET: "webhook-secret"
+    });
+    assert.equal(response.status, 200);
+    assert.match(sentPayload.text, /аккаунт создан/i);
   } finally {
     globalThis.fetch = originalFetch;
   }
