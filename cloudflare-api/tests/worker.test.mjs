@@ -20,6 +20,9 @@ function fakeDb({ scan = false, skills = ["python", "telegram"], telegramAuth = 
           return null;
         },
         async all() {
+          if (sql.includes("sqlite_master") && sql.includes("auth_rate_limits")) {
+            return { results: ["users", "sessions", "telegram_auth_codes", "auth_rate_limits"].map(name => ({ name })) };
+          }
           if (scan && sql.includes("SELECT * FROM sources WHERE user_id=? AND is_enabled=1 AND source='telegram'")) {
             return { results: [{ id: 7, user_id: "user-1", source: "telegram", identifier: "@python_jobs", is_enabled: 1 }] };
           }
