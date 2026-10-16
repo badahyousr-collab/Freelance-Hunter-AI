@@ -178,10 +178,11 @@ function parseTelegramPreview(html: string, channel: string): TelegramPost[] {
 }
 
 export function detectedBudget(text: string): { amount: number; currency: string } | null {
-  const amountPattern = String.raw`(?:\d{1,3}(?:[\s\u00a0]\d{3})+(?:[.,]\d+)?|\d+(?:[.,]\d+)?)(?:\s*(тыс\.?|тысяч|k|к))?`;
+  const numberPattern = String.raw`\d{1,3}(?:[\s\u00a0]\d{3})+(?:[.,]\d+)?|\d+(?:[.,]\d+)?`;
+  const unitPattern = String.raw`(?:\s*(тыс\.?|тысяч|k|к))?`;
   const currencies = String.raw`₽|руб(?:\.|лей|ля|ль)?|RUB|USD|EUR|US\$|CA\$|AU\$|\$|€`;
-  const after = new RegExp(String.raw`(?:\b(?:бюджет|оплата|стоимость|до|от)\b\s*)?(${amountPattern})\s*(${currencies})`, "i").exec(text);
-  const before = new RegExp(String.raw`(US\$|CA\$|AU\$|\$|€)\s*${amountPattern}`, "i").exec(text);
+  const after = new RegExp(String.raw`(?:\b(?:бюджет|оплата|стоимость|до|от)\b\s*)?(${numberPattern})${unitPattern}\s*(${currencies})`, "i").exec(text);
+  const before = new RegExp(String.raw`(US\$|CA\$|AU\$|\$|€)\s*(${numberPattern})${unitPattern}`, "i").exec(text);
   if (!after && !before) return null;
   const rawAmount = after ? after[1] : before?.[2];
   const rawUnit = after ? after[2] : before?.[3];
