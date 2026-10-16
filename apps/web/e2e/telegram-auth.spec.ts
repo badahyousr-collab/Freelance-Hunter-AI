@@ -154,7 +154,7 @@ test("settings save action sits below the payment fields and persists preference
   await page.goto("/settings");
   await page.getByRole("button", { name: "Открыть аккаунт" }).click();
   await expect(page.getByText("Email", { exact: true })).toHaveCount(0);
-  await expect(page.getByText("Telegram", { exact: true })).toBeVisible();
+  await expect(page.locator(".account-detail").filter({ hasText: "Способ входа" }).locator("strong")).toHaveText("Telegram");
   await page.getByRole("button", { name: "Открыть аккаунт" }).click();
   const paymentInput = page.getByLabel("Способы выплат");
   const saveButton = page.getByRole("button", { name: "Сохранить настройки" });
