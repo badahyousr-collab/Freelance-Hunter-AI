@@ -199,7 +199,7 @@ async function scanTelegramSource(env: Env, userId: string, source: any): Promis
       const text = post.description.toLowerCase();
       if (excluded.some((word: string) => word && text.includes(word))) continue;
       const budget = detectedBudget(post.description);
-      if (profile?.min_budget != null && budget && budget.currency === String(profile.currency ?? "USD").toUpperCase() && budget.amount < Number(profile.min_budget)) continue;
+      if (profile?.min_budget != null && budget && String(profile.currency ?? "USD").toUpperCase() !== "ALL" && budget.currency === String(profile.currency ?? "USD").toUpperCase() && budget.amount < Number(profile.min_budget)) continue;
       const matchedSkills = skills.filter((skill: string) => skill.length > 1 && text.includes(skill));
       const score = Math.max(0, Math.min(100, 35 + Math.min(45, matchedSkills.length * 15)));
       if (score < Number(settings?.min_match_score ?? 60)) continue;
