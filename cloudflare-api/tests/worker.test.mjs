@@ -193,7 +193,7 @@ test("Telegram /start asks the user to send a plain code without a command", asy
     }), { DB: fakeDb(), TELEGRAM_BOT_TOKEN: "TEST_TOKEN", TELEGRAM_WEBHOOK_SECRET: "webhook-secret" });
     assert.equal(response.status, 200);
     assert.match(sentPayload.text, /отправь сюда 9-значный код/i);
-    assert.match(sentPayload.text, /без команд/i);
+    assert.match(sentPayload.text, /никаких команд/i);
     assert.doesNotMatch(sentPayload.text, /\/link/);
   } finally {
     globalThis.fetch = originalFetch;
