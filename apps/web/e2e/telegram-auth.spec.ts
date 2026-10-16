@@ -34,7 +34,7 @@ test("Telegram auth displays a short-lived code and a link to the bot", async ({
   await page.getByRole("button", { name: /Продолжить через Telegram/ }).click();
   await expect(page.locator(".telegram-code")).toHaveText("123456789");
   await expect(page.getByRole("link", { name: /Открыть Telegram-бота/ })).toHaveAttribute("href", "https://t.me/freelance_hunter_test_bot");
-  await expect(page.getByText(/Код действует 10 минут/i)).toBeVisible();
+  await expect(page.locator(".auth-message")).toContainText("Код действует 10 минут");
 });
 
 
