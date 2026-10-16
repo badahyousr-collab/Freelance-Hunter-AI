@@ -2,6 +2,7 @@
 
 import { FormEvent, useEffect, useState } from "react";
 import { Plus, RefreshCw, Trash2, Workflow } from "lucide-react";
+import Link from "next/link";
 import WorkspacePage from "@/components/WorkspacePage";
 
 const API = "/api/backend";
@@ -52,6 +53,7 @@ export default function SourcesPage() {
   const selected=catalog.find(c=>c.source===source);
   return <WorkspacePage title="Sources" subtitle="Choose discovery sources and configure public Telegram channels.">
     {error&&<div className="sub-alert error">{error}</div>}{message&&<div className="sub-alert">{message}</div>}
+    <section className="content-card"><div className="panel-heading"><div><h2>Marketplace accounts</h2><p>Manage API credentials separately from discovery sources. A saved credential is not treated as a working connector until verified.</p></div><Link className="sub-button" href="/integrations">Manage credentials ↗</Link></div></section>
     <section className="content-card"><h2>Add a source</h2><p>Source setup saves your preferences. A marketplace is not shown as operational until its adapter is implemented and verified.</p><form className="sub-form" onSubmit={add}><div className="sub-form-grid">
       <div className="sub-form-field"><label htmlFor="source-kind">Source type</label><select id="source-kind" className="sub-select" value={source} onChange={e=>setSource(e.target.value)}>{catalog.map(c=><option key={c.source} value={c.source}>{c.label}</option>)}</select></div>
       <div className="sub-form-field"><label htmlFor="source-id">{source==="telegram"?"Public channel username":"Optional identifier"}</label><input id="source-id" className="sub-input" value={identifier} onChange={e=>setIdentifier(e.target.value)} placeholder={source==="telegram"?"@python_jobs":"Leave blank for default"} required={source==="telegram"}/></div>
