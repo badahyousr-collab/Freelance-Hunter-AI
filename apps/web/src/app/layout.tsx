@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Pipisso - Freelance Hunter",
-  description: "Freelance Hunter is a project-discovery and proposal-management system within the Pipisso ecosystem.",
+  title: "Freelance Hunter | Pipisso",
+  description: "Поиск фриланс-заказов, подбор проектов по навыкам и управление откликами.",
   icons: {
     icon: "/icon.svg",
     shortcut: "/icon.svg",
@@ -13,7 +13,7 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en">
+    <html lang="ru">
       <body>{children}</body>
     </html>
   );
