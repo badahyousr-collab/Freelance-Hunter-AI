@@ -248,7 +248,8 @@ test("Telegram help command sends readable multiline text and keyboard", async (
       body: JSON.stringify({ message: { chat: { id: 123 }, from: { id: 123 }, text: "/help" } })
     }), { DB: fakeDb(), TELEGRAM_BOT_TOKEN: "TEST_TOKEN", TELEGRAM_WEBHOOK_SECRET: "webhook-secret" });
     assert.equal(response.status, 200);
-    assert.match(sentPayload.text, /Команды:\n\/link КОД/);
+    assert.match(sentPayload.text, /Как войти/);
+    assert.match(sentPayload.text, /обычным сообщением/);
     assert.doesNotMatch(sentPayload.text, /Команды:\\n/);
     assert.equal(sentPayload.reply_markup.keyboard.length, 3);
   } finally {
