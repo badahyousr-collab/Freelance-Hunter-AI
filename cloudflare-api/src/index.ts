@@ -173,19 +173,14 @@ async function scanTelegramSource(env: Env, userId: string, source: any): Promis
     });
     if (!upstream.ok) throw new Error(`Telegram preview returned HTTP ${upstream.status}`);
     const posts = parseTelegramPreview(await upstream.text(), channel);
-    const profile = await env.DB.prepare("SELECT skills, min_budget, currency, excluded_keywords FROM profiles WHERE user_id=?").bind(userId).first<any>();
-    const settings = await env.DB.prepare("SELECT min_match_score FROM agent_settings WHERE user_id=?").bind(userId).first<any>();
+    const profile = await env.DB.prepare("SELECT skills FROM profiles WHERE user_id=?").bind(userId).first<any>();
     const skills = safeJson(profile?.skills, []).map((x: unknown) => String(x).toLowerCase()).filter(Boolean);
-    const excluded = safeJson(profile?.excluded_keywords, []).map((x: unknown) => String(x).toLowerCase()).filter(Boolean);
     let added = 0;
     for (const post of posts) {
       const text = post.description.toLowerCase();
-      if (excluded.some((word: string) => word && text.includes(word))) continue;
       const budget = detectedBudget(post.description);
-      if (profile?.min_budget != null && budget && String(profile.currency ?? "USD").toUpperCase() !== "ALL" && budget.currency === String(profile.currency ?? "USD").toUpperCase() && budget.amount < Number(profile.min_budget)) continue;
       const matchedSkills = skills.filter((skill: string) => skill.length > 1 && text.includes(skill));
       const score = Math.max(0, Math.min(100, 35 + Math.min(45, matchedSkills.length * 15)));
-      if (score < Number(settings?.min_match_score ?? 60)) continue;
       const reasons = matchedSkills.map((skill: string) => `Упоминание навыка: ${skill}`);
       const result = await env.DB.prepare(`INSERT INTO projects
         (user_id,source,source_project_id,url,title,description,language,budget_min,budget_max,currency,published_at,match_score,match_reasons)
