@@ -42,9 +42,9 @@ def create_telegram_user(client: TestClient, telegram_user_id: int = 12345) -> N
     db = next(db_generator)
     try:
         user = User(
-            email=f"telegram-{telegram_user_id}@telegram.local",
-            password_hash="test-only-internal-marker",
-            is_verified=True,
+            identity_provider="telegram",
+            telegram_verified=True,
+            is_active=True,
             telegram_user_id=telegram_user_id,
         )
         db.add(user)
