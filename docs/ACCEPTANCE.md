@@ -25,7 +25,7 @@
 - [x] Scan failures and last-scan metadata are persisted; scheduled scans retry on the next Cron interval.
 - [x] Excluded-keyword filtering and basic detected-budget filtering are implemented in the Cloudflare scanner.
 - [x] Authenticated manual scan runs against the current user's enabled public Telegram sources.
-- [ ] Curated public Telegram job-channel catalog is populated with verified URLs and category/language labels.
+- [x] Curated public Telegram job-channel catalog is populated with public URLs and category/language labels.
 - [ ] Verify a real public channel scan and scheduled Cron execution against the deployed Worker.
 - [ ] Marketplace adapters are implemented and verified; catalog entries marked pending are not live integrations.
 
@@ -43,7 +43,8 @@
 - [x] Telegram account linking is expiring, single-use, and verified server-side.
 - [x] Bot setup and server-to-server endpoints require a shared secret.
 - [ ] Configure a newly issued BotFather token and webhook secret, then test real Telegram messages.
-- [ ] Browser end-to-end flows are tested on the deployed site.
+- [x] CI Playwright smoke tests cover Telegram auth, project search, source setup/manual scan, and settings save/layout.
+- [ ] Full browser end-to-end flows are tested on the deployed site, including logout and session expiry.
 - [ ] Every visible button and form has a verified action or is explicitly marked unavailable.
 
 ## Verification record
