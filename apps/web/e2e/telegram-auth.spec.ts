@@ -170,3 +170,37 @@ test("settings save action sits below the payment fields and persists preference
   await expect(page.getByText(/Настройки сохранены/i)).toBeVisible();
   expect(savedProfile.skills).toEqual(["Python", "FastAPI"]);
 });
+
+
+test("dashboard shows the Telegram profile name without an email fallback", async ({ page, context }) => {
+  await context.addCookies([{
+    name: "fh_session",
+    value: "playwright-session",
+    url: "http://127.0.0.1:3000",
+    httpOnly: true,
+    sameSite: "Lax"
+  }]);
+  await mockAuthenticatedAccount(page);
+  await page.route("**/api/backend/profile", async route => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ display_name: "Dev", skills: ["Python"], languages: ["ru", "en"], payment_preferences: [], excluded_keywords: [], currency: "ALL" })
+    });
+  });
+  await page.route("**/api/backend/dashboard/summary", async route => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ projects_found: 0, matched_projects: 0, proposals_sent: 0, client_replies: 0 }) });
+  });
+  await page.route("**/api/backend/projects**", async route => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([]) });
+  });
+  await page.route("**/api/backend/sources", async route => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([]) });
+  });
+
+  await page.goto("/dashboard");
+  await expect(page.getByRole("heading", { name: /Welcome back/i })).toBeVisible();
+  await expect(page.locator(".profile-text strong")).toHaveText("Dev");
+  await expect(page.getByText("Email", { exact: true })).toHaveCount(0);
+  await expect(page.locator(".profile-text")).toContainText("Telegram подключён");
+});
