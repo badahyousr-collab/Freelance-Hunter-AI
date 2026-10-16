@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import worker from "../.test-dist/src/index.js";
+import worker, { detectedBudget } from "../.test-dist/src/index.js";
 
 function fakeDb({ scan = false, skills = ["python", "telegram"], telegramAuth = null, telegramCode = null, linkedAccount = null } = {}) {
   return {
@@ -321,4 +321,25 @@ test("Telegram help command sends readable multiline text and keyboard", async (
   } finally {
     globalThis.fetch = originalFetch;
   }
+});
+
+test("budget parser handles Russian and international currency formats", () => {
+  const cases = [
+    ["Бюджет: 15 000 ₽", { amount: 15000, currency: "RUB" }],
+    ["оплата 12,5 тыс. руб.", { amount: 12500, currency: "RUB" }],
+    ["до 1.500 USD", { amount: 1500, currency: "USD" }],
+    ["$2,500", { amount: 2500, currency: "USD" }],
+    ["€1 200,50", { amount: 1200.5, currency: "EUR" }],
+    ["Budget 2.5k USD", { amount: 2500, currency: "USD" }],
+    ["Оплата: 5000 RUB", { amount: 5000, currency: "RUB" }]
+  ];
+  for (const [input, expected] of cases) {
+    assert.deepEqual(detectedBudget(input), expected, input);
+  }
+});
+
+test("budget parser ignores missing currency, zero, and unreasonable values", () => {
+  assert.equal(detectedBudget("Опыт от 2020 года"), null);
+  assert.equal(detectedBudget("Бюджет: 0 ₽"), null);
+  assert.equal(detectedBudget("Оплата 9999999999 RUB"), null);
 });
