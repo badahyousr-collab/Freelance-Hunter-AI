@@ -5,7 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "wrangler dev",
-    "deploy": "wrangler d1 migrations apply freelance-hunter-db --remote && wrangler deploy",
+    "migrate:local": "wrangler d1 migrations apply freelance-hunter-db --local",
+    "migrate:remote": "wrangler d1 migrations apply freelance-hunter-db --remote",
+    "deploy": "wrangler deploy && npm run migrate:remote",
     "typecheck": "tsc --noEmit",
     "test": "npm run build:test && node --test tests/*.test.mjs",
     "build:test": "tsc -p tsconfig.test.json"
