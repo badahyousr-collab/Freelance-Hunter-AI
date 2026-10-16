@@ -6,7 +6,7 @@ for (const path of ["/login", "/register"]) {
     await expect(page.getByRole("heading", { name: path === "/login" ? "Войди в аккаунт" : "Создай аккаунт" })).toBeVisible();
     await expect(page.getByRole("button", { name: /Продолжить через Telegram/ })).toBeVisible();
     await expect(page.locator('input[type="email"], input[type="password"]')).toHaveCount(0);
-    await expect(page.getByText(/email и пароль не нужны|Почта и пароль не нужны/i)).toBeVisible();
+    await expect(page.getByText(path === "/register" ? /Почта и пароль не нужны/i : /Вход через Telegram/i)).toBeVisible();
   });
 }
 
