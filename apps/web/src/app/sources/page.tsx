@@ -16,9 +16,7 @@ const recommendedChannels: RecommendedChannel[] = [
   { handle: "zerocode_jobs", label: "Запили мне, зерокодер", focus: "Заказы на no-code, автоматизацию и ботов", language: "RU" },
   { handle: "FreelancehuntProjects", label: "Проєкти Freelancehunt", focus: "Свежие фриланс-проекты, включая разработку", language: "UA/RU" },
   { handle: "itfreelancers", label: "IT freelance and remote", focus: "IT-проекты, лиды и сотрудничество", language: "EN/RU" },
-  { handle: "frwork3", label: "Фриланс, удалённая работа", focus: "Разовые задачи и удалённые проекты разных направлений", language: "RU" },
-  { handle: "python_jobs", label: "Python - вакансии и аналитика", focus: "Python, Flask и запросы на разовую работу", language: "RU/EN" },
-  { handle: "Freelanceroff", label: "Freelancer project feed", focus: "Публичная лента проектов с Freelancer.com", language: "EN" }
+  { handle: "frwork3", label: "Фриланс, удалённая работа", focus: "Разовые задачи и удалённые проекты разных направлений", language: "RU" }
 ];
 
 export default function SourcesPage() {
