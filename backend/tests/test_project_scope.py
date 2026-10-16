@@ -11,8 +11,8 @@ def test_project_scope_includes_only_enabled_channels_for_user() -> None:
     engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
     Base.metadata.create_all(bind=engine)
     with Session(engine) as db:
-        first = User(email="first@example.com", password_hash="hash", is_verified=True)
-        second = User(email="second@example.com", password_hash="hash", is_verified=True)
+        first = User(identity_provider="telegram", telegram_verified=True, telegram_user_id=1001)
+        second = User(identity_provider="telegram", telegram_verified=True, telegram_user_id=1002)
         db.add_all([first, second])
         db.flush()
         db.add_all([
