@@ -460,3 +460,6 @@ h1, .page-heading h1, .sub-page-heading h1, .auth-card h1 {
 @media (max-width: 680px) {
   .settings-save-row { margin-top: 14px; }
 }
+
+.molecule-atom-core { fill: url(#atomCore); }
+.molecule-atom-dark { fill: url(#atomFill); }
