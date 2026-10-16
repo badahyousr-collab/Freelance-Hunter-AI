@@ -335,7 +335,7 @@ async function handleTelegramWebhook(request: Request, env: Env): Promise<Respon
     return response(request, { ok: true });
   }
   const isLinkCommand = command === "/link";
-  const plainAuthCode = /^\\d{9}$/.test(rawText);
+  const plainAuthCode = /^\d{9}$/.test(rawText);
   if (isLinkCommand || plainAuthCode) {
     if (message?.chat?.type !== "private") {
       await telegramReply(env, chatId, "Для безопасности отправь код в личном чате с ботом, не в группе.");
