@@ -67,6 +67,23 @@ test("email registration is disabled in favor of Telegram authentication", async
   assert.match((await response.json()).detail, /through Telegram|Telegram/i);
 });
 
+test("email login, verification, and password recovery endpoints are disabled", async () => {
+  const paths = [
+    "/auth/login",
+    "/auth/verify-email",
+    "/auth/password-reset/request",
+    "/auth/password-reset/confirm"
+  ];
+  for (const path of paths) {
+    const response = await worker.fetch(new Request("https://api.example" + path, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "CF-Connecting-IP": "198.51.100.25" },
+      body: JSON.stringify({ email: "test@example.com", password: "long-enough-password", token: "old-token" })
+    }), { DB: fakeDb(), APP_ENV: "production" });
+    assert.equal(response.status, 410, path + " should be disabled");
+  }
+});
+
 test("Telegram auth start returns a nine-digit code valid for ten minutes", async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (input) => {
@@ -98,7 +115,7 @@ test("Telegram auth status creates a session after the bot confirms the code", a
     body: JSON.stringify({ code: "123456789" })
   }), { DB: fakeDb({ telegramAuth: { user_id: "user-1", authenticated_at: "2026-10-15 10:00:00", session_issued_at: null } }) });
   assert.equal(response.status, 200);
-  assert.deepEqual(await response.json(), { authenticated: true, email: null });
+  assert.deepEqual(await response.json(), { authenticated: true, auth_method: "telegram" });
   assert.match(response.headers.get("set-cookie") ?? "", /fh_session=.*HttpOnly/);
 });
 
