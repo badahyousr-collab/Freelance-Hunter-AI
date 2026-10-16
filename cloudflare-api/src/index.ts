@@ -520,6 +520,17 @@ async function handle(request: Request, env: Env): Promise<Response> {
     return response(request, { detail: "Регистрация по email отключена. Используй вход через Telegram." }, 410);
   }
 
+  // Email/password identity is disabled. All account creation and access must use Telegram.
+  const disabledEmailAuthPaths = new Set([
+    "/auth/login",
+    "/auth/password-reset/request",
+    "/auth/password-reset/confirm",
+    "/auth/verify-email"
+  ]);
+  if (method === "POST" && disabledEmailAuthPaths.has(path)) {
+    return response(request, { detail: "Вход, регистрация и восстановление доступа доступны только через Telegram." }, 410);
+  }
+
   if (path === "/auth/telegram/start" && method === "POST") {
     if (await isRateLimited(request, env, "telegram-start", 5)) {
       return response(request, { detail: "Слишком много запросов. Подожди 15 минут." }, 429, { "Retry-After": "900" });
@@ -582,7 +593,7 @@ async function handle(request: Request, env: Env): Promise<Response> {
     const user = await env.DB.prepare("SELECT email,is_verified,auth_method FROM users WHERE id=?").bind(auth.user_id).first<any>();
     const email = String(user?.email ?? "");
     const authMethod = String(user?.auth_method ?? (email.endsWith("@telegram.local") ? "telegram" : "email"));
-    return response(request, { authenticated: true, email: authMethod === "telegram" ? null : email }, 200, { "Set-Cookie": cookie(token, SESSION_DAYS * 86400) });
+    return response(request, { authenticated: true, auth_method: "telegram" }, 200, { "Set-Cookie": cookie(token, SESSION_DAYS * 86400) });
   }
 
   if (path === "/auth/password-reset/request" && method === "POST") {
@@ -745,13 +756,9 @@ async function handle(request: Request, env: Env): Promise<Response> {
   const user = await requireUser(request, env);
   if (path === "/auth/me" && method === "GET") {
     if (!user) return response(request, { detail: "Authentication required." }, 401);
-    const email = String(user.email ?? "");
-    const authMethod = String(user.auth_method ?? (email.endsWith("@telegram.local") ? "telegram" : "email"));
     const telegramLink = await env.DB.prepare("SELECT telegram_user_id, linked_at FROM telegram_links WHERE user_id=?").bind(user.id).first<any>();
     return response(request, {
-      email: authMethod === "telegram" ? null : email,
-      is_verified: Boolean(user.is_verified),
-      auth_method: authMethod,
+      auth_method: "telegram",
       created_at: user.created_at ?? null,
       telegram_user_id: telegramLink?.telegram_user_id ? String(telegramLink.telegram_user_id) : null,
       telegram_linked_at: telegramLink?.linked_at ?? null
