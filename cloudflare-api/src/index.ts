@@ -1400,6 +1400,10 @@ async function handle(request: Request, env: Env): Promise<Response> {
           reauthRequired = true;
           break;
         }
+        if (result.response.status === 429) {
+          errors += 1;
+          break;
+        }
         if (!result.response.ok || !Array.isArray(result.data?.data)) { errors += 1; continue; }
         checked += 1;
         const bid = result.data.data.find((item: any) => String(item?.id ?? "") === bidId);
