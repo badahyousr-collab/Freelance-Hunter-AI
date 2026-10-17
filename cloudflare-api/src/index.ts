@@ -1475,7 +1475,7 @@ async function handle(request: Request, env: Env): Promise<Response> {
 
         const rawThreadLink = bid?.links?.thread?.api ?? bid?.links?.thread;
         const threadMatch = typeof rawThreadLink === "string"
-          ? rawThreadLink.match(/^https:\/\/api\.freelancehunt\.com\/v2\/threads\/(\d+)(?:[/?#].*)?$/)
+          ? rawThreadLink.match(/^https?:\/\/api\.freelancehunt\.com\/v2\/threads\/(\d+)(?:[/?#].*)?$/)
           : null;
         const threadId = threadMatch?.[1] ?? "";
         if (threadId && String(application.provider_thread_id ?? "") !== threadId) {
@@ -1520,26 +1520,28 @@ async function handle(request: Request, env: Env): Promise<Response> {
               const insert = await env.DB.prepare("INSERT OR IGNORE INTO application_messages (user_id,application_id,provider_message_id,thread_id,sender_type,message_text,posted_at) VALUES (?,?,?,?,?,?,?)")
                 .bind(uid, application.id, messageId, threadId, senderType, messageText, String(attributes?.posted_at ?? ""))
                 .run();
-              if (insert.meta.changes && senderType === "client" && !statusNotificationSent) {
+              if (insert.meta.changes && senderType === "client") {
                 newMessages += 1;
-                try {
-                  const target = await env.DB.prepare("SELECT tl.telegram_user_id,COALESCE(a.notify_application_updates,1) AS notify_application_updates FROM telegram_links tl LEFT JOIN agent_settings a ON a.user_id=tl.user_id WHERE tl.user_id=? AND tl.telegram_user_id IS NOT NULL").bind(uid).first<any>();
-                  if (target?.telegram_user_id && Boolean(target.notify_application_updates ?? 1)) {
-                    const title = String(application.title ?? "Заказ Freelancehunt").slice(0, 300);
-                    const url = String(application.url ?? "");
-                    await telegramApi(env, "sendMessage", {
-                      chat_id: String(target.telegram_user_id),
-                      text: "Freelancehunt: новое сообщение от заказчика.\n" + title + "\n" + messageText.slice(0, 900) + (url ? "\n" + url : ""),
-                      disable_web_page_preview: true
+                if (!statusNotificationSent) {
+                  try {
+                    const target = await env.DB.prepare("SELECT tl.telegram_user_id,COALESCE(a.notify_application_updates,1) AS notify_application_updates FROM telegram_links tl LEFT JOIN agent_settings a ON a.user_id=tl.user_id WHERE tl.user_id=? AND tl.telegram_user_id IS NOT NULL").bind(uid).first<any>();
+                    if (target?.telegram_user_id && Boolean(target.notify_application_updates ?? 1)) {
+                      const title = String(application.title ?? "Заказ Freelancehunt").slice(0, 300);
+                      const url = String(application.url ?? "");
+                      await telegramApi(env, "sendMessage", {
+                        chat_id: String(target.telegram_user_id),
+                        text: "Freelancehunt: новое сообщение от заказчика.\n" + title + "\n" + messageText.slice(0, 900) + (url ? "\n" + url : ""),
+                        disable_web_page_preview: true
+                      });
+                    }
+                  } catch (notificationError) {
+                    console.warn("application_message_notification_failed", {
+                      userId: uid,
+                      applicationId: application.id,
+                      messageId,
+                      error: notificationError instanceof Error ? notificationError.message : "Unknown notification error"
                     });
                   }
-                } catch (notificationError) {
-                  console.warn("application_message_notification_failed", {
-                    userId: uid,
-                    applicationId: application.id,
-                    messageId,
-                    error: notificationError instanceof Error ? notificationError.message : "Unknown notification error"
-                  });
                 }
               }
             }
