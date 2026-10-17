@@ -26,7 +26,7 @@
 - [x] Dashboard statistics and project lists use persisted API data rather than fabricated counts.
 - [x] Profile preferences and source configuration forms call the API.
 - [x] Add Playwright smoke tests for Telegram auth, project search, source setup/manual scan, and settings save/layout.
-- [ ] Complete browser end-to-end tests for dashboard, session expiry, logout, and remaining critical forms.
+- [x] Complete CI browser end-to-end tests for dashboard, session expiry, logout, source setup/manual scan, settings, agent controls, and proposal review.
 - [ ] Fix and verify session-expiry handling, empty states, mobile layouts, and all visible controls.
 - [ ] Verify the deployed website against the latest API Worker.
 
@@ -76,14 +76,14 @@
 - [x] Add scheduled CodeQL analysis and weekly Dependabot checks for Python, Node, and GitHub Actions dependencies.
 - [x] Expand Worker health diagnostics to detect missing Telegram-only identity and notification migrations.
 - [x] Add user-scope regression tests for core dashboard reads and proposal mutations.
-- [ ] Verify a free-plan D1 backup/restore process and document recovery steps.
+- [x] Document free-plan-compatible D1 export, migration, and separate-test-database restore procedures.\n- [ ] Execute and verify a D1 backup/restore drill against a non-production database.
 - [ ] Add production alerting for Worker errors, scheduled scans, and notification failures.
 - [ ] Complete authorization/data-isolation coverage for every user-scoped endpoint.
 
 ## Phase 9 - Portfolio
-- [x] README, architecture, roadmap, acceptance checklist, and setup guides.
+- [x] README, architecture, roadmap, acceptance checklist, setup guides, operations runbook, and code-verified case study.\n- [x] Add mocked provider-contract tests for Russian and English proposal drafting, configuration absence, and upstream failures.
 - [ ] Capture real screenshots and a demo recording after the app is configured.
-- [ ] Publish an accurate case study with verified runtime measurements.
+- [x] Publish a code-verified case study with explicit deployment limitations.\n- [ ] Add verified runtime measurements after a live deployment test.
 
 ## Working rules
 
