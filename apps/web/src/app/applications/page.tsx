@@ -135,6 +135,7 @@ export default function ApplicationsPage() {
               </div>
             </>}
             {item.submission_error && <span role="status">Статус отправки: {item.submission_error}</span>}
+            {item.status === "submission_unknown" && <div className="sub-actions"><button className="sub-button danger" type="button" disabled={actionId===item.id} onClick={() => void update(item, { status: "closed" }, "Запись закрыта. Перед закрытием проверь статус на Freelancehunt.", setActionId)}>Закрыть после проверки на площадке</button></div>}
             {item.provider_submission_id && <span>ID отклика Freelancehunt: {item.provider_submission_id}</span>}
             {item.status === "awaiting_confirmation" && item.project?.source === "freelancehunt" && (
               <div className="sub-form">
