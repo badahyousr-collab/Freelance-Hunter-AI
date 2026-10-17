@@ -7,6 +7,7 @@ interface Env {
   AI_API_KEY?: string;
   AI_API_BASE_URL?: string;
   AI_MODEL?: string;
+  INTEGRATION_ENCRYPTION_KEY?: string;
 }
 
 const COOKIE = "fh_session";
@@ -55,6 +56,55 @@ function randomToken(bytes = 32): string {
 async function sha256(value: string): Promise<string> {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
   return Array.from(new Uint8Array(digest), b => b.toString(16).padStart(2, "0")).join("");
+}
+
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary);
+}
+
+function base64ToBytes(value: string): Uint8Array {
+  const binary = atob(value);
+  return Uint8Array.from(binary, char => char.charCodeAt(0));
+}
+
+async function integrationCryptoKey(masterSecret: string, usage: KeyUsage[]): Promise<CryptoKey> {
+  if (masterSecret.trim().length < 32) throw new Error("INTEGRATION_ENCRYPTION_KEY must be at least 32 characters.");
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(masterSecret));
+  return crypto.subtle.importKey("raw", digest, { name: "AES-GCM" }, false, usage);
+}
+
+async function encryptIntegrationSecret(secret: string, masterSecret: string): Promise<string> {
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const key = await integrationCryptoKey(masterSecret, ["encrypt"]);
+  const encrypted = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, new TextEncoder().encode(secret));
+  return JSON.stringify({ version: 1, iv: bytesToBase64(iv), ciphertext: bytesToBase64(new Uint8Array(encrypted)) });
+}
+
+async function decryptIntegrationSecret(serialized: string, masterSecret: string): Promise<string> {
+  const value = JSON.parse(serialized) as { version?: number; iv?: string; ciphertext?: string };
+  if (value.version !== 1 || !value.iv || !value.ciphertext) throw new Error("Stored integration credential format is invalid.");
+  const key = await integrationCryptoKey(masterSecret, ["decrypt"]);
+  const decrypted = await crypto.subtle.decrypt({ name: "AES-GCM", iv: base64ToBytes(value.iv) }, key, base64ToBytes(value.ciphertext));
+  return new TextDecoder().decode(decrypted);
+}
+
+async function freelancehuntApi(token: string, path: string, init: RequestInit = {}): Promise<{ response: Response; data: any }> {
+  if (!path.startsWith("/") || path.startsWith("//")) throw new Error("Invalid Freelancehunt API path.");
+  const upstream = await fetch("https://api.freelancehunt.com/v2" + path, {
+    ...init,
+    headers: {
+      "Authorization": `Bearer ${token}`,
+      "Accept": "application/json",
+      ...(init.body ? { "Content-Type": "application/json" } : {}),
+      ...(init.headers ?? {})
+    },
+    signal: init.signal ?? AbortSignal.timeout(12000)
+  });
+  let data: any = null;
+  try { data = upstream.status === 204 ? null : await upstream.json<any>(); } catch { data = null; }
+  return { response: upstream, data };
 }
 
 async function body(request: Request): Promise<Record<string, any>> {
