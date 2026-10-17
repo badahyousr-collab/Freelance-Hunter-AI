@@ -1468,7 +1468,7 @@ async function handle(request: Request, env: Env): Promise<Response> {
     for (const application of rows.results ?? []) {
       const projectId = String(application.source_project_id ?? "");
       const bidId = String(application.provider_submission_id ?? "");
-      if (!/^\\d+$/.test(projectId) || !/^\\d+$/.test(bidId)) { errors += 1; continue; }
+      if (!/^\d+$/.test(projectId) || !/^\d+$/.test(bidId)) { errors += 1; continue; }
       try {
         const result = await freelancehuntApi(token, "/my/bids?filter[project_id]=" + encodeURIComponent(projectId));
         if (result.response.status === 401 || result.response.status === 403) {
