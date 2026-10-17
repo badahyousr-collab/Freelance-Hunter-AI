@@ -37,7 +37,8 @@
 - [x] Authenticated user-scoped manual scan endpoint.
 - [x] Build a curated catalog of six public Telegram job channels, with URLs, languages, and focus areas.
 - [ ] Configure and test a real scan against several public channels and verify newly stored projects.
-- [ ] Implement and verify provider-specific marketplace discovery adapters where access is permitted.
+- [x] Implement the Freelancehunt official API discovery adapter with token validation, encrypted storage, project normalization, and deduplication.
+- [ ] Implement and verify additional provider-specific marketplace discovery adapters where access is permitted.
 - [ ] Add operational monitoring for source failures, scan duration, and new-project counts.
 
 ## Phase 5 - Matching and proposal drafting
