@@ -1209,7 +1209,7 @@ async function handle(request: Request, env: Env): Promise<Response> {
     return response(request, saved ?? { id, project_id: existing.project_id, status: nextStatus, draft_text: draftText });
   }
 
-  const submitApplicationMatch = path.match(/^\\/applications\\/(\\d+)\\/submit$/);
+  const submitApplicationMatch = path.match(/^\/applications\/(\d+)\/submit$/);
   if (submitApplicationMatch && method === "POST") {
     const id = Number(submitApplicationMatch[1]);
     const input = await body(request);
@@ -1233,7 +1233,7 @@ async function handle(request: Request, env: Env): Promise<Response> {
     }
     const comment = String(application.draft_text ?? "").trim();
     if (!comment || comment.length > 5000) return response(request, { detail: "The proposal must contain 1 to 5,000 characters." }, 400);
-    if (!/^\\d+$/.test(String(application.source_project_id ?? ""))) return response(request, { detail: "Freelancehunt project ID is invalid." }, 409);
+    if (!/^\d+$/.test(String(application.source_project_id ?? ""))) return response(request, { detail: "Freelancehunt project ID is invalid." }, 409);
     const integration = await env.DB.prepare("SELECT credentials_json FROM integrations WHERE user_id=? AND provider='freelancehunt' AND status='connected'").bind(uid).first<any>();
     if (!integration?.credentials_json) return response(request, { detail: "Connect a verified Freelancehunt API token in Integrations first." }, 503);
     let token: string;
@@ -1282,7 +1282,7 @@ async function handle(request: Request, env: Env): Promise<Response> {
     }
 
     const bidId = String(providerData?.data?.id ?? "");
-    if (!/^\\d+$/.test(bidId)) {
+    if (!/^\d+$/.test(bidId)) {
       const detail = "Freelancehunt returned an unexpected success response without a bid ID. Check the listing manually before retrying.";
       await env.DB.prepare("UPDATE applications SET status='submission_unknown',submission_error=? WHERE id=? AND user_id=? AND status='submitting'").bind(detail, id, uid).run();
       const saved = await env.DB.prepare("SELECT id,project_id,status,draft_text,created_at,submitted_at,replied_at,provider_submission_id,submission_error FROM applications WHERE id=? AND user_id=?").bind(id, uid).first<any>();
