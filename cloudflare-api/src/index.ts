@@ -890,6 +890,12 @@ async function handle(request: Request, env: Env): Promise<Response> {
     } catch {
       missingMigrations.push("0011_application_update_notifications.sql");
     }
+    try {
+      await env.DB.prepare("SELECT provider_thread_id FROM applications LIMIT 0").all();
+      await env.DB.prepare("SELECT provider_message_id FROM application_messages LIMIT 0").all();
+    } catch {
+      missingMigrations.push("0012_application_message_sync.sql");
+    }
     const schemaReady = missingTables.length === 0 && missingMigrations.length === 0;
     return response(request, {
       status: check?.ok === 1 && schemaReady ? "ok" : "degraded",
@@ -1253,6 +1259,20 @@ async function handle(request: Request, env: Env): Promise<Response> {
 
   // This workflow prepares and reviews proposals, but deliberately does not fake
   // marketplace submission. Only a verified provider adapter may set sent/replied.
+  const applicationMessagesMatch = path.match(/^\/applications\/(\d+)\/messages$/);
+  if (applicationMessagesMatch && method === "GET") {
+    const applicationId = Number(applicationMessagesMatch[1]);
+    const application = await env.DB.prepare("SELECT id FROM applications WHERE id=? AND user_id=?").bind(applicationId, uid).first<any>();
+    if (!application) return response(request, { detail: "Application not found." }, 404);
+    const rows = await env.DB.prepare("SELECT provider_message_id,sender_type,message_text,posted_at FROM application_messages WHERE application_id=? AND user_id=? ORDER BY COALESCE(posted_at,created_at) ASC,id ASC").bind(applicationId, uid).all<any>();
+    return response(request, (rows.results ?? []).map((message:any) => ({
+      id: String(message.provider_message_id),
+      sender_type: String(message.sender_type),
+      message: String(message.message_text),
+      posted_at: message.posted_at ?? null
+    })));
+  }
+
   const applicationMatch = path.match(/^\/applications\/(\d+)$/);
   if (applicationMatch && method === "PATCH") {
     const id = Number(applicationMatch[1]);
@@ -1396,10 +1416,11 @@ async function handle(request: Request, env: Env): Promise<Response> {
       return response(request, { detail: "Could not decrypt the saved Freelancehunt token. Reconnect the integration." }, 503);
     }
 
-    const rows = await env.DB.prepare("SELECT a.id,a.provider_submission_id,a.provider_status,p.source_project_id,p.title,p.url FROM applications a JOIN projects p ON p.id=a.project_id AND p.user_id=a.user_id WHERE a.user_id=? AND a.status='sent' AND a.replied_at IS NULL AND a.provider_submission_id IS NOT NULL AND p.source='freelancehunt' ORDER BY a.submitted_at DESC LIMIT 20").bind(uid).all<any>();
+    const rows = await env.DB.prepare("SELECT a.id,a.provider_submission_id,a.provider_status,a.provider_thread_id,p.source_project_id,p.title,p.url FROM applications a JOIN projects p ON p.id=a.project_id AND p.user_id=a.user_id WHERE a.user_id=? AND a.status IN ('sent','replied') AND a.provider_submission_id IS NOT NULL AND p.source='freelancehunt' ORDER BY a.submitted_at DESC LIMIT 20").bind(uid).all<any>();
     let checked = 0;
     let updated = 0;
     let errors = 0;
+    let newMessages = 0;
     let reauthRequired = false;
     for (const application of rows.results ?? []) {
       const projectId = String(application.source_project_id ?? "");
@@ -1424,6 +1445,7 @@ async function handle(request: Request, env: Env): Promise<Response> {
         if (String(application.provider_status ?? "") !== providerStatus) {
           await env.DB.prepare("UPDATE applications SET provider_status=? WHERE id=? AND user_id=?").bind(providerStatus, application.id, uid).run();
         }
+        let statusNotificationSent = false;
         const hasClientResponse = providerStatus === "rejected" || bid?.attributes?.is_winner === true;
         if (hasClientResponse) {
           const write = await env.DB.prepare("UPDATE applications SET status='replied',replied_at=COALESCE(replied_at,datetime('now')) WHERE id=? AND user_id=? AND status='sent' AND replied_at IS NULL").bind(application.id, uid).run();
@@ -1439,6 +1461,7 @@ async function handle(request: Request, env: Env): Promise<Response> {
                   text: "Freelancehunt: по вашему отклику появился ответ.\n" + title + (url ? "\n" + url : ""),
                   disable_web_page_preview: true
                 });
+                statusNotificationSent = true;
               }
             } catch (notificationError) {
               console.warn("application_reply_notification_failed", {
@@ -1449,6 +1472,82 @@ async function handle(request: Request, env: Env): Promise<Response> {
             }
           }
         }
+
+        const rawThreadLink = bid?.links?.thread?.api ?? bid?.links?.thread;
+        const threadMatch = typeof rawThreadLink === "string"
+          ? rawThreadLink.match(/^https:\/\/api\.freelancehunt\.com\/v2\/threads\/(\d+)(?:[/?#].*)?$/)
+          : null;
+        const threadId = threadMatch?.[1] ?? "";
+        if (threadId && String(application.provider_thread_id ?? "") !== threadId) {
+          await env.DB.prepare("UPDATE applications SET provider_thread_id=? WHERE id=? AND user_id=?").bind(threadId, application.id, uid).run();
+        }
+        if (threadId) {
+          for (let page = 1; page <= 3; page++) {
+            let threadResult: { response: Response; data: any };
+            try {
+              threadResult = await freelancehuntApi(token, "/threads/" + threadId + "?page[number]=" + page);
+            } catch {
+              errors += 1;
+              break;
+            }
+            if (threadResult.response.status === 401 || threadResult.response.status === 403) {
+              reauthRequired = true;
+              break;
+            }
+            if (threadResult.response.status === 429) {
+              errors += 1;
+              break;
+            }
+            if (!threadResult.response.ok || !Array.isArray(threadResult.data?.data)) {
+              errors += 1;
+              break;
+            }
+            for (const message of threadResult.data.data) {
+              const messageId = String(message?.id ?? "");
+              const attributes = message?.attributes ?? {};
+              const fromType = String(attributes?.participants?.from?.type ?? "").toLowerCase();
+              const senderType = fromType === "employer" ? "client" : fromType === "freelancer" ? "freelancer" : "unknown";
+              const messageText = String(attributes?.message ?? attributes?.message_html ?? "")
+                .replace(/<[^>]*>/g, " ")
+                .replace(/&nbsp;/gi, " ")
+                .replace(/&amp;/gi, "&")
+                .replace(/&lt;/gi, "<")
+                .replace(/&gt;/gi, ">")
+                .replace(/\s+/g, " ")
+                .trim()
+                .slice(0, 8000);
+              if (!messageId || !messageText) continue;
+              const insert = await env.DB.prepare("INSERT OR IGNORE INTO application_messages (user_id,application_id,provider_message_id,thread_id,sender_type,message_text,posted_at) VALUES (?,?,?,?,?,?,?)")
+                .bind(uid, application.id, messageId, threadId, senderType, messageText, String(attributes?.posted_at ?? ""))
+                .run();
+              if (insert.meta.changes && senderType === "client" && !statusNotificationSent) {
+                newMessages += 1;
+                try {
+                  const target = await env.DB.prepare("SELECT tl.telegram_user_id,COALESCE(a.notify_application_updates,1) AS notify_application_updates FROM telegram_links tl LEFT JOIN agent_settings a ON a.user_id=tl.user_id WHERE tl.user_id=? AND tl.telegram_user_id IS NOT NULL").bind(uid).first<any>();
+                  if (target?.telegram_user_id && Boolean(target.notify_application_updates ?? 1)) {
+                    const title = String(application.title ?? "Заказ Freelancehunt").slice(0, 300);
+                    const url = String(application.url ?? "");
+                    await telegramApi(env, "sendMessage", {
+                      chat_id: String(target.telegram_user_id),
+                      text: "Freelancehunt: новое сообщение от заказчика.\n" + title + "\n" + messageText.slice(0, 900) + (url ? "\n" + url : ""),
+                      disable_web_page_preview: true
+                    });
+                  }
+                } catch (notificationError) {
+                  console.warn("application_message_notification_failed", {
+                    userId: uid,
+                    applicationId: application.id,
+                    messageId,
+                    error: notificationError instanceof Error ? notificationError.message : "Unknown notification error"
+                  });
+                }
+              }
+            }
+            if (!threadResult.data?.links?.next) break;
+            if (page === 3) errors += 1;
+          }
+          if (reauthRequired) break;
+        }
       } catch {
         errors += 1;
       }
@@ -1457,7 +1556,7 @@ async function handle(request: Request, env: Env): Promise<Response> {
       await env.DB.prepare("UPDATE integrations SET status='reauth_required' WHERE user_id=? AND provider='freelancehunt'").bind(uid).run();
       return response(request, { detail: "Freelancehunt rejected the token. Reconnect the integration.", checked, updated, errors, integration_status: "reauth_required" }, 401);
     }
-    return response(request, { checked, updated, errors, message: updated ? "Status sync completed; provider-confirmed replies were recorded." : "Status sync completed; no new provider-confirmed replies were found." });
+    return response(request, { checked, updated, new_messages: newMessages, errors, message: updated || newMessages ? "Status and message sync completed; new provider updates were recorded." : "Sync completed; no new provider updates were found." });
   }
 
   if (path === "/integrations/catalog" && method === "GET") return response(request, integrationCatalog);
