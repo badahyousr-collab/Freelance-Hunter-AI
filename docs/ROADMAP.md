@@ -27,7 +27,8 @@
 - [x] Profile preferences and source configuration forms call the API.
 - [x] Add Playwright smoke tests for Telegram auth, project search, source setup/manual scan, and settings save/layout.
 - [x] Complete CI browser end-to-end tests for dashboard, session expiry, logout, source setup/manual scan, settings, agent controls, and proposal review.
-- [ ] Fix and verify session-expiry handling, empty states, mobile layouts, and all visible controls.
+- [x] Add E2E coverage for empty states on projects, applications, sources, and analytics, plus horizontal overflow checks on core mobile pages.
+- [ ] Complete the control-by-control UI audit and verify session expiry, empty states, and mobile behavior against the deployed site.
 - [ ] Verify the deployed website against the latest API Worker.
 
 ## Phase 4 - Source ingestion
