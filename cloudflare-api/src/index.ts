@@ -568,7 +568,15 @@ async function scanUserSources(env: Env, userId: string): Promise<{ scannedSourc
 
 async function runScheduledScan(env: Env): Promise<void> {
   const startedAt = Date.now();
-  const rows = await env.DB.prepare("SELECT DISTINCT s.user_id FROM sources s JOIN agent_settings a ON a.user_id=s.user_id WHERE s.is_enabled=1 AND s.source='telegram' AND a.is_enabled=1").all<any>();
+  const rows = await env.DB.prepare(`SELECT DISTINCT user_id FROM (
+    SELECT s.user_id AS user_id FROM sources s JOIN agent_settings a ON a.user_id=s.user_id
+    WHERE s.is_enabled=1 AND s.source='telegram' AND a.is_enabled=1
+    UNION
+    SELECT s.user_id AS user_id FROM sources s
+    JOIN integrations i ON i.user_id=s.user_id AND i.provider='freelancehunt' AND i.status='connected'
+    JOIN agent_settings a ON a.user_id=s.user_id
+    WHERE s.is_enabled=1 AND s.source='freelancehunt' AND s.identifier='official-api' AND a.is_enabled=1
+  )`).all<any>();
   let scannedSources = 0;
   let newProjects = 0;
   let failedUsers = 0;
@@ -1056,7 +1064,7 @@ async function handle(request: Request, env: Env): Promise<Response> {
       cron_configured: true,
       telegram_bot_configured: Boolean(env.TELEGRAM_BOT_TOKEN && env.TELEGRAM_WEBHOOK_SECRET && env.BOT_API_SECRET),
       ai_provider_configured: Boolean(env.AI_API_KEY && env.AI_MODEL),
-      marketplace_adapters: []
+      marketplace_adapters: ["freelancehunt"]
     });
   }
 
@@ -1291,8 +1299,11 @@ async function handle(request: Request, env: Env): Promise<Response> {
   }
   const integrationMatch = path.match(/^\/integrations\/(\d+)$/);
   if (integrationMatch && method === "DELETE") {
+    const existing = await env.DB.prepare("SELECT provider FROM integrations WHERE id=? AND user_id=?").bind(Number(integrationMatch[1]),uid).first<any>();
+    if (!existing) return response(request, { detail: "Integration not found." }, 404);
     const result = await env.DB.prepare("DELETE FROM integrations WHERE id=? AND user_id=?").bind(Number(integrationMatch[1]),uid).run();
     if (!result.meta.changes) return response(request, { detail: "Integration not found." }, 404);
+    if (existing.provider === "freelancehunt") await env.DB.prepare("DELETE FROM sources WHERE user_id=? AND source='freelancehunt' AND identifier='official-api'").bind(uid).run();
     return response(request, { ok: true });
   }
 
