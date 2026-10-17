@@ -152,7 +152,7 @@ async function linkedTelegramAccount(env: Env, telegramUserId: string): Promise<
 const sourceCatalog = [
   { source: "telegram", label: "Public Telegram channels", kind: "telegram", capabilities: ["read_public_posts"], setup_note: "Public channel previews are scanned on demand and every 15 minutes while the AI agent is enabled. Private channels are not supported." },
   { source: "kwork", label: "Kwork", kind: "marketplace", capabilities: ["discover_projects"], setup_note: "Configuration only; a tested marketplace adapter is not yet available." },
-  { source: "freelancehunt", label: "Freelancehunt", kind: "marketplace", capabilities: ["discover_projects"], setup_note: "Configuration only; a tested marketplace adapter is not yet available." },
+  { source: "freelancehunt", label: "Freelancehunt", kind: "marketplace", capabilities: ["discover_projects", "submit_bid"], setup_note: "Uses the official API. Connect a Freelancehunt API token in Integrations; discovery and bid submission require a verified token." },
   { source: "upwork", label: "Upwork", kind: "marketplace", capabilities: ["discover_projects"], setup_note: "Configuration only; a tested marketplace adapter is not yet available." },
   { source: "fl_ru", label: "FL.ru", kind: "marketplace", capabilities: ["discover_projects"], setup_note: "Configuration only; a tested marketplace adapter is not yet available." }
 ];
@@ -160,7 +160,7 @@ const sourceCatalog = [
 const integrationCatalog = [
   { provider: "upwork", label: "Upwork", description: "Marketplace account integration is not implemented yet.", setup_note: "Credential storage and account adapter are not enabled yet." },
   { provider: "kwork", label: "Kwork", description: "Marketplace account integration is not implemented yet.", setup_note: "Credential storage and account adapter are not enabled yet." },
-  { provider: "freelancehunt", label: "Freelancehunt", description: "Marketplace account integration is not implemented yet.", setup_note: "Credential storage and account adapter are not enabled yet." },
+  { provider: "freelancehunt", label: "Freelancehunt", description: "Official API integration for project discovery and explicitly confirmed bids.", setup_note: "Create an API token in your Freelancehunt account. The token is validated and encrypted before storage." },
   { provider: "fl_ru", label: "FL.ru", description: "Marketplace account integration is not implemented yet.", setup_note: "Credential storage and account adapter are not enabled yet." },
   { provider: "telegram", label: "Telegram bot", description: "Link the Telegram bot to control the agent and view projects.", setup_note: "Cloudflare Worker webhook mode needs TELEGRAM_BOT_TOKEN, TELEGRAM_WEBHOOK_SECRET, and BOT_API_SECRET Worker secrets." },
   { provider: "llm", label: "AI provider", description: "AI drafting integration is not connected yet.", setup_note: "Configure AI_API_KEY, AI_MODEL, and optionally AI_API_BASE_URL as Worker secrets/variables to generate profile-grounded proposal drafts." }
@@ -380,6 +380,38 @@ export function evaluateProjectMatch(input: {
   return { score, reasons, excluded, complexity };
 }
 
+async function notifyNewProjects(env: Env, userId: string, added: number, posts: Array<{ title: string; url: string }>): Promise<void> {
+  if (added <= 0 || posts.length === 0 || !env.TELEGRAM_BOT_TOKEN) return;
+  try {
+    const target = await env.DB.prepare("SELECT tl.telegram_user_id,a.notify_new_projects FROM telegram_links tl JOIN agent_settings a ON a.user_id=tl.user_id WHERE tl.user_id=? AND tl.telegram_user_id IS NOT NULL")
+      .bind(userId).first<any>();
+    if (!target?.telegram_user_id || Number(target.notify_new_projects ?? 1) !== 1) return;
+    const items = posts.slice(0, 3).map(post => {
+      const href = safeTelegramUrl(post.url);
+      const title = escapeTelegramHtml(post.title.slice(0, 180));
+      return href ? `• <a href="${escapeTelegramHtml(href)}">${title}</a>` : `• ${title}`;
+    }).join("\n");
+    const remainder = added > 3 ? `\n\nЕщё новых заказов: ${added - 3}` : "";
+    await telegramReply(env, Number(target.telegram_user_id), `<b>Новые проекты: ${added}</b>\n\n${items}${remainder}`);
+  } catch (notificationError) {
+    console.warn("new_project_notification_failed", {
+      userId,
+      error: notificationError instanceof Error ? notificationError.message : "Unknown notification error"
+    });
+  }
+}
+
+function safeFreelancehuntProjectUrl(value: unknown): string | null {
+  try {
+    const parsed = new URL(String(value ?? ""));
+    if (parsed.hostname !== "freelancehunt.com" && !parsed.hostname.endsWith(".freelancehunt.com")) return null;
+    parsed.protocol = "https:";
+    return parsed.toString();
+  } catch {
+    return null;
+  }
+}
+
 async function scanTelegramSource(env: Env, userId: string, source: any): Promise<{ added: number; error?: string }> {
   const channel = String(source.identifier ?? "").replace(/^@/, "").trim();
   if (!/^[a-zA-Z0-9_]{5,}$/.test(channel)) return { added: 0, error: "Invalid public Telegram channel username." };
@@ -418,28 +450,7 @@ async function scanTelegramSource(env: Env, userId: string, source: any): Promis
     await env.DB.prepare("UPDATE sources SET status='active',last_scan_at=datetime('now'),last_error=NULL,last_discovered_count=? WHERE id=? AND user_id=?")
       .bind(added, source.id, userId).run();
 
-    // Notify once per scan and only for genuinely new rows, never for duplicates.
-    // Notification failures do not turn a successful ingestion into a source failure.
-    if (added > 0 && newlyAddedPosts.length > 0 && env.TELEGRAM_BOT_TOKEN) {
-      try {
-        const target = await env.DB.prepare("SELECT tl.telegram_user_id,a.notify_new_projects FROM telegram_links tl JOIN agent_settings a ON a.user_id=tl.user_id WHERE tl.user_id=? AND tl.telegram_user_id IS NOT NULL")
-          .bind(userId).first<any>();
-        if (target?.telegram_user_id && Number(target.notify_new_projects ?? 1) === 1) {
-          const items = newlyAddedPosts.slice(0, 3).map(post => {
-            const href = safeTelegramUrl(post.url);
-            const title = escapeTelegramHtml(post.title.slice(0, 180));
-            return href ? `• <a href="${escapeTelegramHtml(href)}">${title}</a>` : `• ${title}`;
-          }).join("\n");
-          const remainder = added > 3 ? `\n\nЕщё новых заказов: ${added - 3}` : "";
-          await telegramReply(env, Number(target.telegram_user_id), `<b>Новые проекты: ${added}</b>\n\n${items}${remainder}`);
-        }
-      } catch (notificationError) {
-        console.warn("new_project_notification_failed", {
-          userId,
-          error: notificationError instanceof Error ? notificationError.message : "Unknown notification error"
-        });
-      }
-    }
+    await notifyNewProjects(env, userId, added, newlyAddedPosts);
     return { added };
   } catch (error) {
     const message = error instanceof Error ? error.message.slice(0, 500) : "Source scan failed";
@@ -449,20 +460,77 @@ async function scanTelegramSource(env: Env, userId: string, source: any): Promis
   }
 }
 
+async function scanFreelancehuntSource(env: Env, userId: string, source: any): Promise<{ added: number; error?: string }> {
+  try {
+    if (!env.INTEGRATION_ENCRYPTION_KEY) throw new Error("Integration encryption is not configured.");
+    const integration = await env.DB.prepare("SELECT credentials_json FROM integrations WHERE user_id=? AND provider='freelancehunt' AND status='connected'")
+      .bind(userId).first<any>();
+    if (!integration?.credentials_json) throw new Error("Connect a verified Freelancehunt API token in Integrations first.");
+    const token = await decryptIntegrationSecret(String(integration.credentials_json), env.INTEGRATION_ENCRYPTION_KEY);
+    const { response: upstream, data } = await freelancehuntApi(token, "/projects");
+    if (!upstream.ok) throw new Error(`Freelancehunt API returned HTTP ${upstream.status}.`);
+    const projects = Array.isArray(data?.data) ? data.data : [];
+    const profileRow = await env.DB.prepare("SELECT skills,languages,payment_preferences,min_budget,currency,excluded_keywords FROM profiles WHERE user_id=?").bind(userId).first<any>() ?? {};
+    const profile: MatchProfile = {
+      skills: safeJson(profileRow.skills, []),
+      languages: safeJson(profileRow.languages, ["ru", "en"]),
+      payment_preferences: safeJson(profileRow.payment_preferences, []),
+      min_budget: profileRow.min_budget,
+      currency: profileRow.currency ?? "USD",
+      excluded_keywords: safeJson(profileRow.excluded_keywords, [])
+    };
+    let added = 0;
+    const newlyAdded: Array<{ title: string; url: string }> = [];
+    for (const item of projects.slice(0, 50)) {
+      const attributes = item?.attributes ?? {};
+      const id = String(item?.id ?? "").trim();
+      const title = String(attributes.name ?? "").trim().slice(0, 180);
+      const description = decodeHtml(String(attributes.description_html ?? attributes.description ?? "")).slice(0, 12000);
+      const url = safeFreelancehuntProjectUrl(attributes.self?.web ?? attributes.url ?? item?.links?.self?.web);
+      if (!id || !title || !description || !url) continue;
+      const amount = Number(attributes.budget?.amount);
+      const currency = String(attributes.budget?.currency ?? "").toUpperCase();
+      const budget = Number.isFinite(amount) && amount > 0 && ["UAH", "RUB"].includes(currency) ? { amount, currency } : null;
+      const language = /[а-яёіїєґ]/i.test(description) ? "ru" : "en";
+      const evaluation = evaluateProjectMatch({ title, description, language, budget, profile });
+      const result = await env.DB.prepare(`INSERT INTO projects
+        (user_id,source,source_project_id,url,title,description,language,budget_min,budget_max,currency,payment_method,published_at,match_score,match_reasons)
+        VALUES (?, 'freelancehunt', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(user_id,source,source_project_id) DO NOTHING`)
+        .bind(userId, id, url, title, description, language, budget?.amount ?? null, budget?.amount ?? null, budget?.currency ?? null,
+          String(attributes.safe_type ?? ""), attributes.published_at ?? null, evaluation.score, JSON.stringify(evaluation.reasons)).run();
+      const inserted = Number(result.meta.changes ?? 0);
+      added += inserted;
+      if (inserted > 0) newlyAdded.push({ title, url });
+    }
+    await env.DB.prepare("UPDATE sources SET status='active',last_scan_at=datetime('now'),last_error=NULL,last_discovered_count=? WHERE id=? AND user_id=?")
+      .bind(added, source.id, userId).run();
+    await notifyNewProjects(env, userId, added, newlyAdded);
+    return { added };
+  } catch (error) {
+    const message = error instanceof Error ? error.message.slice(0, 500) : "Freelancehunt scan failed";
+    await env.DB.prepare("UPDATE sources SET status='error',last_scan_at=datetime('now'),last_error=? WHERE id=? AND user_id=?")
+      .bind(message, source.id, userId).run();
+    return { added: 0, error: message };
+  }
+}
+
 async function scanUserSources(env: Env, userId: string): Promise<{ scannedSources: number; newProjects: number; errors: string[] }> {
-  const rows = await env.DB.prepare("SELECT * FROM sources WHERE user_id=? AND is_enabled=1 AND source='telegram' ORDER BY created_at ASC").bind(userId).all<any>();
+  const rows = await env.DB.prepare("SELECT * FROM sources WHERE user_id=? AND is_enabled=1 AND source IN ('telegram','freelancehunt') ORDER BY created_at ASC").bind(userId).all<any>();
   let newProjects = 0;
   const errors: string[] = [];
   for (const source of rows.results ?? []) {
-    const result = await scanTelegramSource(env, userId, source);
+    const result = source.source === "telegram"
+      ? await scanTelegramSource(env, userId, source)
+      : await scanFreelancehuntSource(env, userId, source);
     newProjects += result.added;
-    if (result.error) errors.push(`${source.identifier}: ${result.error}`);
+    if (result.error) errors.push(`${source.identifier || source.source}: ${result.error}`);
   }
   return { scannedSources: (rows.results ?? []).length, newProjects, errors };
 }
 
 async function runScheduledScan(env: Env): Promise<void> {
-  const rows = await env.DB.prepare("SELECT DISTINCT s.user_id FROM sources s JOIN agent_settings a ON a.user_id=s.user_id WHERE s.is_enabled=1 AND s.source='telegram' AND a.is_enabled=1").all<any>();
+  const rows = await env.DB.prepare("SELECT DISTINCT s.user_id FROM sources s JOIN agent_settings a ON a.user_id=s.user_id WHERE s.is_enabled=1 AND s.source IN ('telegram','freelancehunt') AND a.is_enabled=1").all<any>();
   for (const row of rows.results ?? []) await scanUserSources(env, String(row.user_id));
 }
 
