@@ -671,7 +671,7 @@ test("Freelancehunt API token is verified, encrypted at rest, and never returned
         async first() {
           if (sql.includes("FROM sessions s JOIN users")) return { id: "user-1", created_at: "2026-10-16 10:00:00" };
           if (sql.includes("SELECT attempts FROM auth_rate_limits")) return { attempts: 1 };
-          if (sql.includes("SELECT id,provider,label,status,created_at FROM integrations WHERE user_id=? AND provider=?")) return integration;
+          if (sql.includes("SELECT id,provider,label,status,created_at FROM integrations WHERE user_id=? AND provider=?")) return integration ? { id: integration.id, provider: integration.provider, label: integration.label, status: integration.status, created_at: integration.created_at } : null;
           return null;
         },
         async run() {
@@ -702,6 +702,7 @@ test("Freelancehunt API token is verified, encrypted at rest, and never returned
     assert.equal(body.provider, "freelancehunt");
     assert.equal(body.status, "connected");
     assert.equal(JSON.stringify(body).includes(token), false);
+    assert.equal(Object.hasOwn(body, "credentials_json"), false);
     assert.equal(verifiedUrl, "https://api.freelancehunt.com/v2/my/profile");
     const saved = statements.find(item => item.sql.includes("INSERT INTO integrations (user_id,provider,label,status,credentials_json)"));
     assert.ok(saved);
