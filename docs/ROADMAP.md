@@ -15,10 +15,9 @@
 - [x] Remove email login and recovery screens from the website.
 - [x] Remove email delivery settings/helpers and disable email auth routes in active API code.
 - [x] Add a D1 migration to replace email/password identity fields with Telegram identity keys and anonymize legacy email-only identities.
-- [ ] Apply the D1 migration in Cloudflare and verify existing Telegram accounts can still sign in.
 - [x] Remove email/password fields from the parallel FastAPI user model and add an Alembic migration.
 - [x] Verify the PostgreSQL identity migration through the Docker Compose startup smoke test in CI.
-- [ ] Apply and verify the D1 identity migration against the deployed Cloudflare database.
+- [ ] Apply pending D1 migrations in Cloudflare after a verified backup, then verify existing Telegram accounts can still sign in and `/health` reports a ready schema.
 - [ ] Verify session expiry, account isolation, and Telegram sign-in against the deployed environment.
 
 ## Phase 3 - Web control panel
@@ -43,7 +42,6 @@
 - [x] Add structured logs for per-source scan outcomes, durations, new-project counts, and scheduled scan failures.
 - [x] Add a free hourly GitHub Actions health monitor that opens/resolves one issue when the deployed Worker, D1 connection, or schema is unhealthy.
 - [x] Add optional Telegram alert delivery for individual source failures, scheduled scan errors, and new-project notification failures.
-- [ ] Configure `WORKER_ALERT_CHAT_ID` and verify real alert delivery in the deployed Worker.
 
 ## Phase 5 - Matching and proposal drafting
 - [x] Deterministic hard filters for unsupported languages, minimum budget when currencies match, excluded keywords, and explicit unpaid-work signals; currency mismatches are not compared without an exchange rate.
