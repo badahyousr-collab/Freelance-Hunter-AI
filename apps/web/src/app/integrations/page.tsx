@@ -81,7 +81,14 @@ export default function IntegrationsPage() {
         credentials: "include",
       });
       const data = await response.json();
-      if (!response.ok) throw new Error(data.detail ?? "Не удалось синхронизировать статусы Freelancehunt.");
+      if (response.status === 401 && data.integration_status !== "reauth_required") {
+        window.location.assign("/login");
+        return;
+      }
+      if (!response.ok) {
+        if (data.integration_status === "reauth_required") await load();
+        throw new Error(data.detail ?? "Не удалось синхронизировать статусы Freelancehunt.");
+      }
       setMessage(`Проверено откликов: ${data.checked}. Обновлено ответов заказчиков: ${data.updated}. Ошибок: ${data.errors}.`);
       await load();
     } catch (caught) {
