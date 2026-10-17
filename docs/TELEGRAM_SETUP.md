@@ -22,6 +22,8 @@ The Cloudflare Worker reads public Telegram web previews at `https://t.me/s/CHAN
 4. Check the scan result and the source's last-scan status. A source is only verified after the Worker successfully reads it and stores relevant, non-duplicate projects.
 5. The Worker has a 15-minute Cron Trigger configured for enabled users. Verify an actual scheduled run in production; configuration alone does not prove the trigger has executed.
 
+When a user has linked Telegram and `notify_application_updates` is enabled, a manual Freelancehunt status sync can send a message after the official API confirms a rejected bid or winner selection. Message-thread contents are not synchronized.
+
 ## Deploying the API Worker
 
 From `cloudflare-api`, run:

@@ -885,6 +885,11 @@ async function handle(request: Request, env: Env): Promise<Response> {
     } catch {
       missingMigrations.push("0010_freelancehunt_status_sync.sql");
     }
+    try {
+      await env.DB.prepare("SELECT notify_application_updates FROM agent_settings LIMIT 0").all();
+    } catch {
+      missingMigrations.push("0011_application_update_notifications.sql");
+    }
     const schemaReady = missingTables.length === 0 && missingMigrations.length === 0;
     return response(request, {
       status: check?.ok === 1 && schemaReady ? "ok" : "degraded",
@@ -1159,7 +1164,7 @@ async function handle(request: Request, env: Env): Promise<Response> {
   if (path === "/agent/settings" && method === "GET") {
     const row = await env.DB.prepare("SELECT * FROM agent_settings WHERE user_id=?").bind(uid).first<any>();
     const link = await env.DB.prepare("SELECT telegram_user_id FROM telegram_links WHERE user_id=?").bind(uid).first<any>();
-    return response(request, row ? { ...row, enabled: Boolean(row.is_enabled), is_enabled: Boolean(row.is_enabled), auto_draft: Boolean(row.auto_draft), notify_new_projects: Boolean(row.notify_new_projects ?? 1), telegram_linked: Boolean(link?.telegram_user_id) } : { enabled: false, auto_draft: true, notify_new_projects: true, telegram_linked: Boolean(link?.telegram_user_id) });
+    return response(request, row ? { ...row, enabled: Boolean(row.is_enabled), is_enabled: Boolean(row.is_enabled), auto_draft: Boolean(row.auto_draft), notify_new_projects: Boolean(row.notify_new_projects ?? 1), notify_application_updates: Boolean(row.notify_application_updates ?? 1), telegram_linked: Boolean(link?.telegram_user_id) } : { enabled: false, auto_draft: true, notify_new_projects: true, notify_application_updates: true, telegram_linked: Boolean(link?.telegram_user_id) });
   }
   if (path === "/agent/settings" && (method === "PATCH" || method === "PUT")) {
     const input = await body(request);
@@ -1167,9 +1172,10 @@ async function handle(request: Request, env: Env): Promise<Response> {
     const enabled = input.enabled === undefined && input.is_enabled === undefined ? Number(old.is_enabled ?? 0) : (input.enabled ?? input.is_enabled) ? 1 : 0;
     const autoDraft = input.auto_draft === undefined ? Number(old.auto_draft ?? 1) : input.auto_draft ? 1 : 0;
     const notifyNewProjects = input.notify_new_projects === undefined ? Number(old.notify_new_projects ?? 1) : input.notify_new_projects ? 1 : 0;
+    const notifyApplicationUpdates = input.notify_application_updates === undefined ? Number(old.notify_application_updates ?? 1) : input.notify_application_updates ? 1 : 0;
     const score = Math.max(0,Math.min(100,Math.round(Number(input.min_match_score ?? old.min_match_score ?? 60))));
-    await env.DB.prepare("UPDATE agent_settings SET is_enabled=?,auto_draft=?,min_match_score=?,notify_new_projects=?,updated_at=datetime('now') WHERE user_id=?").bind(enabled,autoDraft,score,notifyNewProjects,uid).run();
-    return response(request, { enabled: Boolean(enabled), is_enabled: Boolean(enabled), auto_draft: Boolean(autoDraft), notify_new_projects: Boolean(notifyNewProjects), min_match_score: score });
+    await env.DB.prepare("UPDATE agent_settings SET is_enabled=?,auto_draft=?,min_match_score=?,notify_new_projects=?,notify_application_updates=?,updated_at=datetime('now') WHERE user_id=?").bind(enabled,autoDraft,score,notifyNewProjects,notifyApplicationUpdates,uid).run();
+    return response(request, { enabled: Boolean(enabled), is_enabled: Boolean(enabled), auto_draft: Boolean(autoDraft), notify_new_projects: Boolean(notifyNewProjects), notify_application_updates: Boolean(notifyApplicationUpdates), min_match_score: score });
   }
   if (path === "/agent/scan" && method === "POST") {
     const recentScan = await env.DB.prepare("SELECT COUNT(*) AS total FROM sources WHERE user_id=? AND is_enabled=1 AND last_scan_at > datetime('now','-1 minute')").bind(uid).first<any>();
@@ -1390,7 +1396,7 @@ async function handle(request: Request, env: Env): Promise<Response> {
       return response(request, { detail: "Could not decrypt the saved Freelancehunt token. Reconnect the integration." }, 503);
     }
 
-    const rows = await env.DB.prepare("SELECT a.id,a.provider_submission_id,a.provider_status,p.source_project_id FROM applications a JOIN projects p ON p.id=a.project_id AND p.user_id=a.user_id WHERE a.user_id=? AND a.status='sent' AND a.replied_at IS NULL AND a.provider_submission_id IS NOT NULL AND p.source='freelancehunt' ORDER BY a.submitted_at DESC LIMIT 20").bind(uid).all<any>();
+    const rows = await env.DB.prepare("SELECT a.id,a.provider_submission_id,a.provider_status,p.source_project_id,p.title,p.url FROM applications a JOIN projects p ON p.id=a.project_id AND p.user_id=a.user_id WHERE a.user_id=? AND a.status='sent' AND a.replied_at IS NULL AND a.provider_submission_id IS NOT NULL AND p.source='freelancehunt' ORDER BY a.submitted_at DESC LIMIT 20").bind(uid).all<any>();
     let checked = 0;
     let updated = 0;
     let errors = 0;
@@ -1421,7 +1427,27 @@ async function handle(request: Request, env: Env): Promise<Response> {
         const hasClientResponse = providerStatus === "rejected" || bid?.attributes?.is_winner === true;
         if (hasClientResponse) {
           const write = await env.DB.prepare("UPDATE applications SET status='replied',replied_at=COALESCE(replied_at,datetime('now')) WHERE id=? AND user_id=? AND status='sent' AND replied_at IS NULL").bind(application.id, uid).run();
-          if (write.meta.changes) updated += 1;
+          if (write.meta.changes) {
+            updated += 1;
+            try {
+              const target = await env.DB.prepare("SELECT tl.telegram_user_id,COALESCE(a.notify_application_updates,1) AS notify_application_updates FROM telegram_links tl LEFT JOIN agent_settings a ON a.user_id=tl.user_id WHERE tl.user_id=? AND tl.telegram_user_id IS NOT NULL").bind(uid).first<any>();
+              if (target?.telegram_user_id && Boolean(target.notify_application_updates ?? 1)) {
+                const title = String(application.title ?? "Заказ Freelancehunt").slice(0, 500);
+                const url = String(application.url ?? "");
+                await telegramApi(env, "sendMessage", {
+                  chat_id: String(target.telegram_user_id),
+                  text: "Freelancehunt: по вашему отклику появился ответ.\n" + title + (url ? "\n" + url : ""),
+                  disable_web_page_preview: true
+                });
+              }
+            } catch (notificationError) {
+              console.warn("application_reply_notification_failed", {
+                userId: uid,
+                applicationId: application.id,
+                error: notificationError instanceof Error ? notificationError.message : "Unknown notification error"
+              });
+            }
+          }
         }
       } catch {
         errors += 1;

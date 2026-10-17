@@ -72,7 +72,7 @@
 - [x] Cloudflare Worker webhook mode and server-side secret checks.
 - [ ] Configure and verify the deployed bot token/webhook secrets and real Telegram messages.
 - [x] Add opt-out Telegram notifications for newly inserted projects, with deduplication and a three-listing message cap.
-- [ ] Add notifications for tracked client replies after provider reply synchronization is available.
+- [x] Send optional Telegram notifications when the Freelancehunt status sync confirms a rejection or winner selection; user can disable these in agent settings.
 - [ ] Verify that site and bot show the same persisted state.
 
 ## Phase 8 - Quality and deployment
