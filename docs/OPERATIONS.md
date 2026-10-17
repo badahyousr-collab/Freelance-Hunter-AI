@@ -56,7 +56,7 @@ After a verified backup, apply pending migrations:
 npx wrangler d1 migrations apply freelance-hunter-db --remote --config cloudflare-api/wrangler.toml
 ```
 
-Then re-check the migration list and `/health`. Migration `0007_telegram_only_identity.sql` changes the identity columns and removes legacy password fields. Do not apply it without a verified backup and a post-migration sign-in test.
+Then re-check the migration list and `/health`. Migration `0007_telegram_only_identity.sql` changes the identity columns and removes legacy password fields. Migration `0009_provider_submission_tracking.sql` adds the columns used to record a confirmed provider bid ID and ambiguous submission errors. Do not apply migrations without a verified backup and post-migration sign-in/schema tests.
 
 ## Restore to a separate test database
 
@@ -81,6 +81,7 @@ Cloudflare also documents D1 Time Travel and point-in-time restore: https://deve
 - [ ] Confirm a second scan does not create duplicates.
 - [ ] Confirm bot notifications are delivered only when configured and enabled.
 - [ ] Generate a proposal only after an AI provider has been intentionally configured; verify the result remains a draft.
+- [ ] If using Freelancehunt, test bid submission with a controlled test listing and verify provider bid ID persistence, definite rejection handling, and duplicate prevention.
 - [ ] Confirm marketplace submissions remain unavailable unless a provider adapter returns a confirmed result.
 
 ## Incident diagnostics
