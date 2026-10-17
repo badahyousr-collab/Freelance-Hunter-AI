@@ -27,7 +27,7 @@
 - [x] Authenticated manual scan runs against the current user's enabled public Telegram sources.
 - [x] Curated public Telegram job-channel catalog is populated with public URLs and category/language labels.
 - [ ] Verify a real public channel scan and scheduled Cron execution against the deployed Worker.
-- [x] Freelancehunt official API token validation, project ingestion, and explicit bid submission have mocked regression tests. Live account verification remains pending. Other marketplace adapters remain pending.
+- [x] Freelancehunt official API token validation, project ingestion, explicit bid submission, and provider-confirmed bid status sync have mocked regression tests. Live account verification remains pending. Other marketplace adapters remain pending; message-thread reply sync is not implemented.
 
 ## AI and proposals
 - [x] Draft endpoint requires authentication and verifies project ownership.
@@ -36,7 +36,7 @@
 - [x] Mocked provider-contract tests cover Russian and English drafts, profile/listing payloads, safety instructions, and provider failures.
 - [ ] A real model provider is configured and proposal quality is evaluated against real anonymized listings in Russian and English.
 - [x] Labeled RU/EN test set covers matching quality, budget thresholds, language, excluded keywords, unpaid work, risk, and complexity; deterministic hard filters cannot be overridden by AI.
-- [x] No user-facing endpoint can mark a proposal as sent/replied directly. Freelancehunt is marked sent only after a successful official API response with a bid ID; ambiguous failures are blocked from automatic retry.
+- [x] No user-facing endpoint can mark a proposal as sent/replied directly. Freelancehunt is marked sent only after a successful official API response with a bid ID; ambiguous failures are blocked from automatic retry. A manual sync endpoint marks a sent bid as replied only when the official API reports it rejected or selected as winner; message-thread replies remain pending.
 
 ## Web and Telegram
 - [x] Dashboard numbers come from persisted API records.
