@@ -16,6 +16,12 @@ Sources and account integrations are separate:
 
 Freelancehunt API docs: https://apidocs.freelancehunt.com/
 
+## Freelancehunt proposal status sync
+
+After a bid is confirmed by the official API, call the authenticated, rate-limited `POST /integrations/freelancehunt/sync` endpoint. It checks up to 20 recent sent applications through the provider's `/my/bids?filter[project_id]=...` endpoint, stores the returned bid status, and changes an application to `replied` only when the provider reports a rejected bid or winner selection. Provider errors are not interpreted as replies. A rejected token changes the integration status to `reauth_required`.
+
+This synchronizes bid outcomes, not message-thread contents or arbitrary client messages. Live verification still requires a real Freelancehunt token and the Cloudflare encryption secret.
+
 ## Other marketplaces
 
 - **Upwork:** the public API requires developer credentials and provider approval; access is not assumed. See https://www.upwork.com/developer/documentation/graphql/api/docs/index.html and the official access requirements.
