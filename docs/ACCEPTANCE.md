@@ -33,7 +33,8 @@
 - [x] Draft endpoint requires authentication and verifies project ownership.
 - [x] Proposal prompt treats listing content as untrusted and forbids fabricated experience.
 - [x] Provider absence is reported as a configuration error.
-- [ ] A real model provider is configured and proposal quality is evaluated in Russian and English.
+- [x] Mocked provider-contract tests cover Russian and English drafts, profile/listing payloads, safety instructions, and provider failures.
+- [ ] A real model provider is configured and proposal quality is evaluated against real anonymized listings in Russian and English.
 - [x] Labeled RU/EN test set covers matching quality, budget thresholds, language, excluded keywords, unpaid work, risk, and complexity; deterministic hard filters cannot be overridden by AI.
 - [x] No user-facing endpoint can mark a proposal as sent/replied without a provider-confirmed adapter; proposal editing and awaiting-confirmation workflow are available.
 
@@ -44,10 +45,12 @@
 - [x] Bot setup and server-to-server endpoints require a shared secret.
 - [ ] Configure a newly issued BotFather token and webhook secret, apply migrations, then test real Telegram messages and new-project notifications.
 - [x] CI Playwright smoke tests cover Telegram auth, project search, source setup/manual scan, and settings save/layout.
-- [ ] Full browser end-to-end flows are tested on the deployed site, including logout and session expiry.
+- [x] CI browser end-to-end tests cover dashboard, logout, and session expiry.
+- [ ] Full browser end-to-end flows are tested on the deployed site.
 - [ ] Every visible button and form has a verified action or is explicitly marked unavailable. Proposal drafts can be edited, prepared for confirmation, returned to draft, and closed; marketplace sending remains unavailable. Critical user-scoped Worker reads and proposal mutation isolation have regression tests.
 
 ## Verification record
-- CI must verify backend tests/migrations, frontend lint/build, and Cloudflare Worker typecheck. Scheduled CodeQL analysis and weekly Dependabot checks are configured.
+- CI verifies backend tests/migrations, frontend lint/build, Playwright smoke tests, and Cloudflare Worker typecheck/tests. CodeQL and weekly Dependabot checks are configured.
+- [x] Document D1 export, migration, and test-database restore commands in [Operations and recovery](OPERATIONS.md). The backup/restore drill itself remains unverified.
 - Live service verification is pending until Telegram secrets, AI provider configuration, and public channel scans are tested.
 - Known limitations: provider-specific marketplace discovery/authentication/submission and reply synchronization are not implemented. New-project notifications are implemented in code but need the D1 migration, bot secrets, and a live Telegram test. Telegram ingestion currently reads public channel previews only.

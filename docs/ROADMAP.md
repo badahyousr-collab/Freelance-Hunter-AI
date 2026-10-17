@@ -26,7 +26,7 @@
 - [x] Dashboard statistics and project lists use persisted API data rather than fabricated counts.
 - [x] Profile preferences and source configuration forms call the API.
 - [x] Add Playwright smoke tests for Telegram auth, project search, source setup/manual scan, and settings save/layout.
-- [ ] Complete browser end-to-end tests for dashboard, session expiry, logout, and remaining critical forms.
+- [x] Complete CI browser end-to-end tests for dashboard, session expiry, logout, source setup/manual scan, settings, agent controls, and proposal review.
 - [ ] Fix and verify session-expiry handling, empty states, mobile layouts, and all visible controls.
 - [ ] Verify the deployed website against the latest API Worker.
 
@@ -35,7 +35,7 @@
 - [x] Telegram post parser, public channel adapter, scheduled worker, retry behavior, deduplication, and per-source scan health.
 - [x] Per-user source subscriptions and enabled-agent filtering.
 - [x] Authenticated user-scoped manual scan endpoint.
-- [x] Build a curated catalog of six public Telegram job channels, with URLs, languages, and focus areas.
+- [x] Build a curated catalog of eight public Telegram job channels, with URLs, languages, and focus areas.
 - [ ] Configure and test a real scan against several public channels and verify newly stored projects.
 - [ ] Implement and verify provider-specific marketplace discovery adapters where access is permitted.
 - [ ] Add operational monitoring for source failures, scan duration, and new-project counts.
@@ -44,6 +44,7 @@
 - [x] Deterministic hard filters for unsupported languages, minimum budget when currencies match, excluded keywords, and explicit unpaid-work signals; currency mismatches are not compared without an exchange rate.
 - [x] Explainable baseline score and reasons.
 - [x] OpenAI-compatible proposal drafting endpoint with profile-grounded, prompt-injection-aware instructions.
+- [x] Mocked provider-contract tests for Russian and English drafts, payload facts, safety instructions, missing configuration, and upstream failures.
 - [ ] Configure and test an AI provider in the deployment environment.
 - [x] Improve multilingual budget and currency parsing with regression tests for RU/EN currency formats, thousands separators, and `k`/`тыс.` multipliers.
 - [x] Add a labeled RU/EN matching evaluation set covering relevant and unrelated listings, budget thresholds, excluded keywords, unpaid work, language filters, risk signals, and complexity scoring.
@@ -76,14 +77,16 @@
 - [x] Add scheduled CodeQL analysis and weekly Dependabot checks for Python, Node, and GitHub Actions dependencies.
 - [x] Expand Worker health diagnostics to detect missing Telegram-only identity and notification migrations.
 - [x] Add user-scope regression tests for core dashboard reads and proposal mutations.
-- [ ] Verify a free-plan D1 backup/restore process and document recovery steps.
+- [x] Document free-plan-compatible D1 export, migration, and separate-test-database restore procedures.
+- [ ] Execute and verify a D1 backup/restore drill against a non-production database.
 - [ ] Add production alerting for Worker errors, scheduled scans, and notification failures.
 - [ ] Complete authorization/data-isolation coverage for every user-scoped endpoint.
 
 ## Phase 9 - Portfolio
-- [x] README, architecture, roadmap, acceptance checklist, and setup guides.
+- [x] README, architecture, roadmap, acceptance checklist, setup guides, operations runbook, and code-verified case study.
 - [ ] Capture real screenshots and a demo recording after the app is configured.
-- [ ] Publish an accurate case study with verified runtime measurements.
+- [x] Publish a code-verified case study with explicit deployment limitations.
+- [ ] Add verified runtime measurements after a live deployment test.
 
 ## Working rules
 
