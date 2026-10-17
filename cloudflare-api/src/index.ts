@@ -1164,7 +1164,7 @@ async function handle(request: Request, env: Env): Promise<Response> {
     const recentScan = await env.DB.prepare("SELECT COUNT(*) AS total FROM sources WHERE user_id=? AND is_enabled=1 AND last_scan_at > datetime('now','-1 minute')").bind(uid).first<any>();
     if (Number(recentScan?.total ?? 0) > 0) return response(request, { detail: "A source was scanned recently. Wait one minute before scanning again." }, 429);
     const result = await scanUserSources(env, uid);
-    return response(request, { ...result, message: result.scannedSources ? "Scan completed." : "Add an enabled public Telegram channel to scan." });
+    return response(request, { ...result, message: result.scannedSources ? "Scan completed." : "Add an enabled Telegram source or connect Freelancehunt before scanning." });
   }
 
 
@@ -1385,7 +1385,7 @@ async function handle(request: Request, env: Env): Promise<Response> {
 
     if (provider === "freelancehunt") {
       if (!credential || credential.length > 2048) return response(request, { detail: "Enter a valid Freelancehunt API token." }, 400);
-      if (!env.INTEGRATION_ENCRYPTION_KEY) return response(request, { detail: "Encrypted credential storage is not configured. Set INTEGRATION_ENCRYPTION_KEY on the API Worker first." }, 503);
+      if (!env.INTEGRATION_ENCRYPTION_KEY || env.INTEGRATION_ENCRYPTION_KEY.trim().length < 32) return response(request, { detail: "Encrypted credential storage needs a high-entropy INTEGRATION_ENCRYPTION_KEY of at least 32 characters." }, 503);
       let verification: { upstream: Response; data: any };
       try {
         verification = await freelancehuntRequest(credential, "/v2/my/profile");
