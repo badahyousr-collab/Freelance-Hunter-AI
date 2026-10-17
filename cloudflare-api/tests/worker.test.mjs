@@ -1097,7 +1097,7 @@ test("Freelancehunt status sync records provider-confirmed client responses only
           return null;
         },
         async all() {
-          if (sql.includes("SELECT a.id,a.provider_submission_id,a.provider_status,p.source_project_id FROM applications")) {
+          if (sql.includes("SELECT a.id,a.provider_submission_id,a.provider_status,p.source_project_id,p.title,p.url FROM applications")) {
             return { results: [{ id: 12, provider_submission_id: "321", source_project_id: "123", title: "Test project", url: "https://freelancehunt.com/project/123" }] };
           }
           return { results: [] };
