@@ -419,8 +419,15 @@ function safeFreelancehuntProjectUrl(value: unknown): string | null {
 }
 
 async function scanTelegramSource(env: Env, userId: string, source: any): Promise<{ added: number; error?: string }> {
+  const startedAt = Date.now();
   const channel = String(source.identifier ?? "").replace(/^@/, "").trim();
-  if (!/^[a-zA-Z0-9_]{5,}$/.test(channel)) return { added: 0, error: "Invalid public Telegram channel username." };
+  if (!/^[a-zA-Z0-9_]{5,}$/.test(channel)) {
+    const message = "Invalid public Telegram channel username.";
+    await env.DB.prepare("UPDATE sources SET status='error',last_scan_at=datetime('now'),last_error=? WHERE id=? AND user_id=?")
+      .bind(message, source.id, userId).run();
+    console.warn("telegram_source_scan_failed", { userId, sourceId: source.id, durationMs: Date.now() - startedAt, error: message });
+    return { added: 0, error: message };
+  }
   try {
     const upstream = await fetch(`https://t.me/s/${encodeURIComponent(channel)}`, {
       headers: { "User-Agent": "Mozilla/5.0 (compatible; FreelanceHunterBot/1.0)", "Accept": "text/html" },
@@ -455,11 +462,13 @@ async function scanTelegramSource(env: Env, userId: string, source: any): Promis
     }
     await env.DB.prepare("UPDATE sources SET status='active',last_scan_at=datetime('now'),last_error=NULL,last_discovered_count=? WHERE id=? AND user_id=?")
       .bind(added, source.id, userId).run();
+    console.info("telegram_source_scan_completed", { userId, sourceId: source.id, channel, postsFetched: posts.length, newProjects: added, durationMs: Date.now() - startedAt });
 
     await notifyNewProjects(env, userId, added, newlyAddedPosts);
     return { added };
   } catch (error) {
     const message = error instanceof Error ? error.message.slice(0, 500) : "Source scan failed";
+    console.warn("telegram_source_scan_failed", { userId, sourceId: source.id, channel, durationMs: Date.now() - startedAt, error: message });
     await env.DB.prepare("UPDATE sources SET status='error',last_scan_at=datetime('now'),last_error=? WHERE id=? AND user_id=?")
       .bind(message, source.id, userId).run();
     return { added: 0, error: message };
@@ -541,8 +550,25 @@ async function scanUserSources(env: Env, userId: string): Promise<{ scannedSourc
 }
 
 async function runScheduledScan(env: Env): Promise<void> {
+  const startedAt = Date.now();
   const rows = await env.DB.prepare("SELECT DISTINCT s.user_id FROM sources s JOIN agent_settings a ON a.user_id=s.user_id WHERE s.is_enabled=1 AND s.source IN ('telegram','freelancehunt') AND a.is_enabled=1").all<any>();
-  for (const row of rows.results ?? []) await scanUserSources(env, String(row.user_id));
+  let scannedSources = 0;
+  let newProjects = 0;
+  let failedUsers = 0;
+  const users = rows.results ?? [];
+  for (const row of users) {
+    const userId = String(row.user_id);
+    try {
+      const result = await scanUserSources(env, userId);
+      scannedSources += result.scannedSources;
+      newProjects += result.newProjects;
+      if (result.errors.length) console.warn("scheduled_scan_user_sources_failed", { userId, errorCount: result.errors.length });
+    } catch (error) {
+      failedUsers += 1;
+      console.error("scheduled_scan_user_failed", { userId, error: error instanceof Error ? error.message : "Unknown error" });
+    }
+  }
+  console.info("scheduled_scan_completed", { users: users.length, scannedSources, newProjects, failedUsers, durationMs: Date.now() - startedAt });
 }
 
 
