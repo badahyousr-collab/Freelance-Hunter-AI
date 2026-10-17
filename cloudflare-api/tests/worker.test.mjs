@@ -27,6 +27,9 @@ function fakeDb({ scan = false, freelancehuntScan = false, skills = ["python", "
           if (sql.includes("UPDATE applications SET status='sent'")) {
             application = application ? { ...application, status: "sent", submitted_at: "2026-10-17 10:30:00", provider_submission_id: values[0], submission_error: null } : application;
           }
+          if (sql.includes("UPDATE applications SET provider_status=?,provider_is_winner=?,provider_status_synced_at")) {
+            application = application ? { ...application, provider_status: values[0], provider_is_winner: values[1], provider_status_synced_at: "2026-10-17 10:30:00" } : application;
+          }
           if (sql.includes("UPDATE applications SET status=?,submission_error=?")) {
             application = application ? { ...application, status: values[0], submission_error: values[1] } : application;
           }
@@ -43,7 +46,7 @@ function fakeDb({ scan = false, freelancehuntScan = false, skills = ["python", "
           return { meta: { changes: sql.includes("INSERT INTO projects") ? insertChanges : 1 } };
         },
         async first() {
-          if (sql.includes("SELECT tl.telegram_user_id,a.notify_new_projects")) return notificationTarget;
+          if (sql.includes("SELECT tl.telegram_user_id,a.notify_")) return notificationTarget;
           if (sql.includes("SELECT credentials_json FROM integrations WHERE user_id=? AND provider='freelancehunt'")) return integration?.status === "connected" ? integration : null;
           if (sql.includes("SELECT id,provider,label,status,created_at FROM integrations WHERE user_id=? AND provider=?")) return integration ? { id: integration.id, provider: integration.provider, label: integration.label, status: integration.status, created_at: integration.created_at } : null;
           if (sql.includes("SELECT a.id,a.project_id,a.status,a.draft_text,p.source,p.source_project_id,p.url FROM applications a JOIN projects")) return application;
@@ -72,6 +75,9 @@ function fakeDb({ scan = false, freelancehuntScan = false, skills = ["python", "
           if ((sql.includes("SELECT provider_status,provider_is_winner,provider_status_synced_at FROM applications LIMIT 0") || sql.includes("SELECT notify_application_updates FROM agent_settings LIMIT 0")) && !providerStatusSchema) throw new Error("no such column: provider_status");
           if (sql.includes("sqlite_master") && sql.includes("auth_rate_limits")) {
             return { results: ["users", "sessions", "telegram_auth_codes", "auth_rate_limits", "profiles", "agent_settings", "sources", "projects", "applications", "integrations", "telegram_links"].map(name => ({ name })) };
+          }
+          if (sql.includes("SELECT a.id,a.provider_submission_id,a.provider_status,a.provider_is_winner,p.title AS project_title,p.url AS project_url FROM applications a JOIN projects")) {
+            return { results: application ? [application] : [] };
           }
           if (sql.includes("SELECT * FROM sources WHERE user_id=? AND is_enabled=1")) {
             if (freelancehuntScan) return { results: [{ id: 8, user_id: "user-1", source: "freelancehunt", identifier: "", is_enabled: 1 }] };
