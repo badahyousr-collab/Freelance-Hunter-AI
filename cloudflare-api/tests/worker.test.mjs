@@ -59,7 +59,7 @@ function fakeDb({ scan = false, freelancehuntScan = false, skills = ["python", "
           if (sql.includes("SELECT user_id FROM telegram_links WHERE telegram_user_id=?")) return linkedAccount;
           if (sql.includes("FROM sessions s JOIN users")) return { id: "user-1", created_at: "2026-10-16 10:00:00" };
           if (sql.includes("SELECT COUNT(*) AS total FROM sources")) return { total: sourceCount };
-          if (sql.includes("SELECT is_enabled,auto_draft,min_match_score FROM agent_settings WHERE user_id=?")) return agentSettings;
+          if (sql.includes("SELECT is_enabled,auto_draft,auto_submit,daily_submission_limit,min_match_score FROM agent_settings WHERE user_id=?")) return agentSettings;
           if (sql.includes("SELECT skills,languages,payment_preferences,min_budget,currency,excluded_keywords")) return { skills: JSON.stringify(skills), languages: '["ru","en"]', payment_preferences: "[]", min_budget: null, currency: "RUB", excluded_keywords: "[]" };
           if (sql.includes("SELECT skills, min_budget, currency, excluded_keywords")) return { skills: JSON.stringify(skills), min_budget: null, currency: "USD", excluded_keywords: "[]" };
           if (sql.includes("SELECT min_match_score FROM agent_settings")) return { min_match_score: 60 };
