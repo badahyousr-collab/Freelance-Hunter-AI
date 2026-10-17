@@ -1004,7 +1004,7 @@ async function handle(request: Request, env: Env): Promise<Response> {
 
   // This workflow prepares and reviews proposals, but deliberately does not fake
   // marketplace submission. Only a verified provider adapter may set sent/replied.
-  const applicationMatch = path.match(/^\\/applications\\/(\\d+)$/);
+  const applicationMatch = path.match(/^\/applications\/(\d+)$/);
   if (applicationMatch && method === "PATCH") {
     const id = Number(applicationMatch[1]);
     const input = await body(request);
