@@ -1321,7 +1321,7 @@ async function handle(request: Request, env: Env): Promise<Response> {
     const recentScan = await env.DB.prepare("SELECT COUNT(*) AS total FROM sources WHERE user_id=? AND is_enabled=1 AND last_scan_at > datetime('now','-1 minute')").bind(uid).first<any>();
     if (Number(recentScan?.total ?? 0) > 0) return response(request, { detail: "A source was scanned recently. Wait one minute before scanning again." }, 429);
     const result = await scanUserSources(env, uid);
-    return response(request, { ...result, message: result.scannedSources ? "Scan completed." : "Add an enabled public Telegram channel to scan." });
+    return response(request, { ...result, message: result.scannedSources ? "Scan completed." : "Enable at least one supported source before scanning." });
   }
 
 
