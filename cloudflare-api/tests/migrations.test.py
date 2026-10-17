@@ -54,6 +54,11 @@ def main() -> None:
     assert {"provider_submission_id", "submission_error"} <= application_columns
     application_indexes = {row[1] for row in db.execute("PRAGMA index_list(applications)")}
     assert "idx_applications_provider_submission_id" in application_indexes
+    provider_columns = {row[1] for row in db.execute("PRAGMA table_info(applications)")}
+    assert {"provider_status", "provider_is_winner", "provider_status_synced_at"} <= provider_columns
+    notification_columns = {row[1] for row in db.execute("PRAGMA table_info(agent_settings)")}
+    assert "notify_application_updates" in notification_columns
+    assert db.execute("SELECT notify_application_updates FROM agent_settings WHERE user_id='u1'").fetchone()[0] == 1
     db.execute(
         "INSERT INTO users (id,telegram_identity,telegram_verified,identity_provider) VALUES (?,?,1,'telegram')",
         ("user-3", "tg:67890"),
