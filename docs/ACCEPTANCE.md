@@ -42,7 +42,7 @@
 - [x] Loading, empty, and error states are present on core pages.
 - [x] Telegram account linking is expiring, single-use, and verified server-side.
 - [x] Bot setup and server-to-server endpoints require a shared secret.
-- [ ] Configure a newly issued BotFather token and webhook secret, then test real Telegram messages.
+- [ ] Configure a newly issued BotFather token and webhook secret, apply migrations, then test real Telegram messages and new-project notifications.
 - [x] CI Playwright smoke tests cover Telegram auth, project search, source setup/manual scan, and settings save/layout.
 - [ ] Full browser end-to-end flows are tested on the deployed site, including logout and session expiry.
 - [ ] Every visible button and form has a verified action or is explicitly marked unavailable. Proposal drafts can be edited, prepared for confirmation, returned to draft, and closed; marketplace sending remains unavailable.
