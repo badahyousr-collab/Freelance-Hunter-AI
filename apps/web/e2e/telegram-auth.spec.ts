@@ -439,3 +439,39 @@ test("core workspace pages fit a phone viewport without horizontal overflow", as
     expect(dimensions.document, path + " should not overflow horizontally").toBeLessThanOrEqual(dimensions.viewport + 1);
   }
 });
+
+
+test("empty states explain what to do when no projects, applications, or sources exist", async ({ page }) => {
+  await page.route("**/api/backend/**", async route => {
+    const pathname = new URL(route.request().url()).pathname.replace("/api/backend", "");
+    let body: unknown = [];
+    if (pathname === "/auth/me") {
+      body = { identity_provider: "telegram", created_at: "2026-10-16T10:00:00Z", telegram_user_id: "12345", telegram_linked_at: "2026-10-16T10:00:00Z" };
+    } else if (pathname === "/profile") {
+      body = { display_name: "Test user", skills: [], languages: ["ru", "en"], payment_preferences: [], excluded_keywords: [], min_budget: null, currency: "RUB" };
+    } else if (pathname === "/dashboard/summary") {
+      body = { projects_found: 0, matched_projects: 0, proposals_sent: 0, client_replies: 0 };
+    } else if (pathname === "/agent/settings") {
+      body = { enabled: false, notify_new_projects: true, notify_application_updates: true, telegram_linked: true };
+    } else if (pathname === "/agent/readiness") {
+      body = { worker_runtime: true, cron_configured: true, telegram_bot_configured: true, ai_provider_configured: false, marketplace_adapters: ["freelancehunt"] };
+    }
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(body) });
+  });
+
+  await page.goto("/projects");
+  await expect(page.getByText("No projects found yet")).toBeVisible();
+  await expect(page.getByRole("link", { name: "Configure sources" })).toBeVisible();
+
+  await page.goto("/applications");
+  await expect(page.getByText("Откликов пока нет")).toBeVisible();
+  await expect(page.getByRole("link", { name: "Перейти к проектам" })).toBeVisible();
+
+  await page.goto("/sources");
+  await expect(page.getByText("Источники пока не добавлены")).toBeVisible();
+
+  await page.goto("/analytics");
+  await expect(page.getByText("Analytics will remain at zero until real source adapters begin collecting listings and application events are recorded.")).toBeVisible();
+  await expect(page.locator(".metric-value")).toHaveCount(4);
+  await expect(page.locator(".metric-value")).toHaveText(["0", "0", "0", "0"]);
+});
