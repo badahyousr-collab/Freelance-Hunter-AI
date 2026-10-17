@@ -525,7 +525,7 @@ async function autoSubmitFreelancehuntProposal(env: Env, userId: string, applica
   if (Number(settings?.auto_submit ?? 1) !== 1) return false;
   if (!env.INTEGRATION_ENCRYPTION_KEY || env.INTEGRATION_ENCRYPTION_KEY.trim().length < 32) return false;
   if (String(project.source) !== "freelancehunt" || !/^\d+$/.test(String(project.source_project_id ?? ""))) return false;
-  const amount = Number(project.budget_max ?? project.budget_min ?? profile.min_budget ?? 0);
+  const amount = Number(project.budget_min ?? project.budget_max ?? profile.min_budget ?? 0);
   const currency = String(project.currency ?? profile.currency ?? "").toUpperCase();
   if (!Number.isFinite(amount) || amount <= 0 || !["UAH", "RUB"].includes(currency)) return false;
   const limit = Math.max(1, Math.min(50, Number(settings?.daily_submission_limit ?? 10)));
