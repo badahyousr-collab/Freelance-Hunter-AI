@@ -26,8 +26,11 @@
 - [x] Excluded-keyword filtering and basic detected-budget filtering are implemented in the Cloudflare scanner.
 - [x] Authenticated manual scan runs against the current user's enabled public Telegram sources.
 - [x] Curated public Telegram job-channel catalog is populated with public URLs and category/language labels.
-- [ ] Verify a real public channel scan and scheduled Cron execution against the deployed Worker.
-- [ ] Marketplace adapters are implemented and verified; catalog entries marked pending are not live integrations.
+- [ ] Verify a real public Telegram channel scan and scheduled Cron execution against the deployed Worker.
+- [x] Mock-test Freelancehunt API token verification, encrypted storage, and open-project discovery.
+- [ ] Verify Freelancehunt token connection and live project ingestion against the deployed Worker.
+- [x] Freelancehunt token verification and discovery code are covered by mocked API tests.
+- [ ] Live Freelancehunt ingestion and other marketplace adapters are verified; catalog entries marked pending are not live integrations.
 
 ## AI and proposals
 - [x] Draft endpoint requires authentication and verifies project ownership.
