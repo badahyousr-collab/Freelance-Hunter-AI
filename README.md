@@ -28,7 +28,8 @@ Freelance Hunter is part of the Pipisso ecosystem. It discovers freelance opport
 - Public Telegram channel ingestion: manual scan and a 15-minute Cron Trigger while the agent is enabled.
 - AI proposal drafts: require an OpenAI-compatible provider configuration and are saved as drafts, never marked as sent.
 - Freelancehunt discovery: official API token verification, encrypted token storage, and open-project ingestion are implemented in code and covered by mocked tests; live account verification remains pending.
-- Other marketplace discovery, proposal submission, and client-reply synchronization are not implemented.
+- Freelancehunt bid submission code requires explicit confirmation, a connected token, and bid details; provider-confirmed bid IDs are stored and ambiguous outcomes block retries. Live submission and recovery remain unverified.
+- Other marketplace discovery and client-reply synchronization are not implemented.
 - Live deployment verification and browser end-to-end checks remain required.
 
 Email/password authentication is not a supported feature. D1 migration `0007_telegram_only_identity.sql` removes the legacy identity columns; migration `0008_new_project_notifications.sql` adds the per-user notification preference. The migrations must be applied and verified against the deployed D1 database before claiming the production environment is up to date.
