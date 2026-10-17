@@ -255,7 +255,7 @@ test("AI agent toggle and manual scan call the API and show results", async ({ p
   await page.getByRole("button", { name: "Включить агента" }).click();
   await expect(page.getByText(/AI-агент включён/i)).toBeVisible();
   await expect(page.getByRole("button", { name: "Приостановить агента" })).toBeVisible();
-  await page.getByRole("button", { name: "Сканировать Telegram-каналы" }).click();
+  await page.getByRole("button", { name: "Сканировать источники" }).click();
   await expect(page.getByText(/новых проектов 2, источников 1/i)).toBeVisible();
 });
 
