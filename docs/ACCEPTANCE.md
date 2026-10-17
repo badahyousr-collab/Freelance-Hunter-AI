@@ -49,6 +49,9 @@
 - [ ] Full browser end-to-end flows are tested on the deployed site.
 - [ ] Every visible button and form has a verified action or is explicitly marked unavailable. Freelancehunt proposals can be edited, prepared for confirmation, and submitted after explicit confirmation; other marketplace providers remain unavailable. Critical user-scoped Worker reads and proposal mutation isolation have regression tests.
 
+- [x] Playwright E2E tests cover explicit empty states for projects, applications, sources, and analytics, and check horizontal overflow on core mobile pages.
+- [ ] Complete the deployed control-by-control UI audit; local E2E coverage does not verify the live Worker, D1 schema, or real Telegram account behavior.
+
 ## Operations and recovery
 - [x] Structured scan logs include duration, scanned sources, new-project counts, and failure counts.
 - [x] Optional Telegram operations alerts are implemented and covered by a mocked scheduled-scan failure test.
