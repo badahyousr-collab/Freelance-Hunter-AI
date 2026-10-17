@@ -46,7 +46,21 @@ After a verified backup, apply pending migrations:
 npx wrangler d1 migrations apply freelance-hunter-db --remote --config cloudflare-api/wrangler.toml
 ```
 
-Then re-check the migration list and `/health`. Migration `0007_telegram_only_identity.sql` changes the identity columns and removes legacy password fields. Do not apply it without a verified backup and a post-migration sign-in test.
+Then re-check the migration list and `/health`. Migration `0007_telegram_only_identity.sql` changes the identity columns and removes legacy password fields. Migration `0008_new_project_notifications.sql` adds the opt-out Telegram notification preference. Migration `0009_provider_submission_tracking.sql` adds provider bid IDs and safe submission error fields. Apply all pending migrations only after a verified backup, then test Telegram sign-in and check `/health`.
+
+## Configure marketplace token encryption
+
+Before connecting Freelancehunt, set the Worker secret:
+
+```bash
+npx wrangler secret put INTEGRATION_ENCRYPTION_KEY --config cloudflare-api/wrangler.toml
+```
+
+Generate a strong random value with `python -c "import secrets; print(secrets.token_urlsafe(48))"`. Do not commit it or expose it as a frontend environment variable. Losing this key makes stored Freelancehunt tokens unrecoverable; users must reconnect. After setting it, connect a user-owned API token through the website and verify the integration status without exposing the token in API responses.
+
+## Scheduled health alert
+
+The `Worker health monitor` GitHub Actions workflow checks the deployed Worker health endpoint hourly. It opens one repository issue if the Worker, D1 connection, or required schema is unhealthy, and closes that issue after a later healthy check. It does not inspect private Worker logs or confirm source-scan success; those still require Cloudflare log review. The monitor is free within GitHub Actions usage and does not require an external uptime service.
 
 ## Restore to a separate test database
 
@@ -71,7 +85,8 @@ Cloudflare also documents D1 Time Travel and point-in-time restore: https://deve
 - [ ] Confirm a second scan does not create duplicates.
 - [ ] Confirm bot notifications are delivered only when configured and enabled.
 - [ ] Generate a proposal only after an AI provider has been intentionally configured; verify the result remains a draft.
-- [ ] Confirm marketplace submissions remain unavailable unless a provider adapter returns a confirmed result.
+- [ ] Connect a test Freelancehunt API token, scan a public project list, and verify duplicate suppression.
+- [ ] Prepare a bid, confirm it in the browser, and verify the returned provider bid ID on the application record. Do not test against a live project unless you intend to submit a real bid.
 
 ## Incident diagnostics
 

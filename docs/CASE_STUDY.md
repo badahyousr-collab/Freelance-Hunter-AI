@@ -13,7 +13,7 @@ Freelance requests are scattered across channels and platforms. Manually reviewi
 - Telegram-only sign-in with a short-lived one-time code and HTTP-only session cookie.
 - User-scoped workspace data for projects, source subscriptions, profiles, agent settings, integrations, and applications.
 - Public Telegram preview ingestion with normalized listing records, duplicate prevention, source health fields, and a scheduled scan trigger.
-- A curated list of eight public Telegram channels for developer work, no-code, IT freelance, and broader freelance listings. A listed channel is not considered verified until a real scan succeeds.
+- A curated list of nine public Telegram channels for developer work, no-code, IT freelance, and broader freelance listings. A listed channel is not considered verified until a real scan succeeds.
 - Explainable matching scores with language, budget, excluded-keyword, unpaid-work, risk, and complexity signals.
 - RU/EN proposal drafting through an OpenAI-compatible endpoint. Prompts treat listing text as untrusted and instruct the model not to invent experience or credentials.
 - Editable proposal drafts and an awaiting-confirmation workflow. The application is never marked as sent without a verified provider result.
@@ -29,10 +29,10 @@ Freelance requests are scattered across channels and platforms. Manually reviewi
 
 ## Constraints and honest status
 
-- Production D1 migrations and Telegram secrets still require verification in the target Cloudflare account.
-- A live public-channel scan has not been confirmed by CI; CI uses mocked network responses.
+- Production D1 migrations, the `INTEGRATION_ENCRYPTION_KEY` Worker secret, and Telegram secrets still require verification in the target Cloudflare account.
+- Live Telegram and Freelancehunt scans have not been confirmed by CI; CI uses mocked network responses.
 - Real AI-provider quality testing needs an intentionally configured provider key and representative anonymized listings. A real provider may charge for API usage.
-- Marketplace-specific discovery, official account authorization, proposal submission, and client-reply synchronization are not implemented. The UI marks these as unavailable instead of pretending they work.
+- Freelancehunt discovery and explicitly confirmed bid submission are implemented through the official API, with encrypted per-user tokens and provider-confirmed bid IDs. Live account verification still requires a real user-owned token. Kwork, Upwork, FL.ru, Fiverr, and Freelancer adapters remain pending; Upwork API access requires provider credentials/approval. Client-reply synchronization is not implemented.
 - No real production throughput, latency, success-rate, or cost measurements are claimed here.
 - Screenshots and a demo recording must be captured from the configured live app before publishing a final visual portfolio case.
 
