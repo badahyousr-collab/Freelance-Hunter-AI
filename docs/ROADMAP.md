@@ -41,7 +41,7 @@
 - [ ] Add operational monitoring for source failures, scan duration, and new-project counts.
 
 ## Phase 5 - Matching and proposal drafting
-- [x] Deterministic hard filters for language, minimum budget, currency, payment method, and excluded keywords.
+- [x] Deterministic hard filters for unsupported languages, minimum budget when currencies match, excluded keywords, and explicit unpaid-work signals; currency mismatches are not compared without an exchange rate.
 - [x] Explainable baseline score and reasons.
 - [x] OpenAI-compatible proposal drafting endpoint with profile-grounded, prompt-injection-aware instructions.
 - [ ] Configure and test an AI provider in the deployment environment.
