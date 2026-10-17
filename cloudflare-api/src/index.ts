@@ -7,6 +7,7 @@ interface Env {
   AI_API_KEY?: string;
   AI_API_BASE_URL?: string;
   AI_MODEL?: string;
+  INTEGRATION_ENCRYPTION_KEY?: string;
 }
 
 const COOKIE = "fh_session";
@@ -57,6 +58,56 @@ async function sha256(value: string): Promise<string> {
   return Array.from(new Uint8Array(digest), b => b.toString(16).padStart(2, "0")).join("");
 }
 
+function encodeBase64(bytes: Uint8Array): string {
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary);
+}
+
+function decodeBase64(value: string): Uint8Array {
+  const binary = atob(value);
+  return Uint8Array.from(binary, character => character.charCodeAt(0));
+}
+
+async function integrationCryptoKey(secret: string, usages: KeyUsage[]): Promise<CryptoKey> {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(secret));
+  return crypto.subtle.importKey("raw", digest, { name: "AES-GCM" }, false, usages);
+}
+
+async function encryptIntegrationCredential(value: string, secret: string): Promise<string> {
+  const key = await integrationCryptoKey(secret, ["encrypt"]);
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ciphertext = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, new TextEncoder().encode(value));
+  return JSON.stringify({ version: 1, algorithm: "AES-GCM", iv: encodeBase64(iv), ciphertext: encodeBase64(new Uint8Array(ciphertext)) });
+}
+
+async function decryptIntegrationCredential(value: string, secret: string): Promise<string> {
+  try {
+    const payload = JSON.parse(value) as { version?: number; algorithm?: string; iv?: string; ciphertext?: string };
+    if (payload.version !== 1 || payload.algorithm !== "AES-GCM" || !payload.iv || !payload.ciphertext) throw new Error("Invalid credential envelope");
+    const key = await integrationCryptoKey(secret, ["decrypt"]);
+    const plaintext = await crypto.subtle.decrypt({ name: "AES-GCM", iv: decodeBase64(payload.iv) }, key, decodeBase64(payload.ciphertext));
+    return new TextDecoder().decode(plaintext);
+  } catch {
+    throw new Error("Stored integration credentials cannot be decrypted. Check INTEGRATION_ENCRYPTION_KEY.");
+  }
+}
+
+async function freelancehuntRequest(token: string, path: string, init: RequestInit = {}): Promise<{ upstream: Response; data: any }> {
+  const headers = new Headers(init.headers);
+  headers.set("Authorization", `Bearer ${token}`);
+  headers.set("Accept", "application/json");
+  headers.set("Accept-Language", "ru");
+  const upstream = await fetch(new URL(path, "https://api.freelancehunt.com"), {
+    ...init,
+    headers,
+    signal: init.signal ?? AbortSignal.timeout(12000)
+  });
+  let data: any = null;
+  try { data = await upstream.json(); } catch {}
+  return { upstream, data };
+}
+
 async function body(request: Request): Promise<Record<string, any>> {
   try { const value = await request.json(); return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, any> : {}; }
   catch { return {}; }
@@ -102,7 +153,7 @@ async function linkedTelegramAccount(env: Env, telegramUserId: string): Promise<
 const sourceCatalog = [
   { source: "telegram", label: "Public Telegram channels", kind: "telegram", capabilities: ["read_public_posts"], setup_note: "Public channel previews are scanned on demand and every 15 minutes while the AI agent is enabled. Private channels are not supported." },
   { source: "kwork", label: "Kwork", kind: "marketplace", capabilities: ["discover_projects"], setup_note: "Configuration only; a tested marketplace adapter is not yet available." },
-  { source: "freelancehunt", label: "Freelancehunt", kind: "marketplace", capabilities: ["discover_projects"], setup_note: "Configuration only; a tested marketplace adapter is not yet available." },
+  { source: "freelancehunt", label: "Freelancehunt", kind: "marketplace", capabilities: ["discover_projects"], setup_note: "Official API discovery is available after connecting a personal API token in Connections. Proposal submission remains separately gated." },
   { source: "upwork", label: "Upwork", kind: "marketplace", capabilities: ["discover_projects"], setup_note: "Configuration only; a tested marketplace adapter is not yet available." },
   { source: "fl_ru", label: "FL.ru", kind: "marketplace", capabilities: ["discover_projects"], setup_note: "Configuration only; a tested marketplace adapter is not yet available." }
 ];
@@ -110,7 +161,7 @@ const sourceCatalog = [
 const integrationCatalog = [
   { provider: "upwork", label: "Upwork", description: "Marketplace account integration is not implemented yet.", setup_note: "Credential storage and account adapter are not enabled yet." },
   { provider: "kwork", label: "Kwork", description: "Marketplace account integration is not implemented yet.", setup_note: "Credential storage and account adapter are not enabled yet." },
-  { provider: "freelancehunt", label: "Freelancehunt", description: "Marketplace account integration is not implemented yet.", setup_note: "Credential storage and account adapter are not enabled yet." },
+  { provider: "freelancehunt", label: "Freelancehunt", description: "Official API token connection and open-project discovery.", setup_note: "Create an API token in your Freelancehunt account. The token is verified and stored encrypted; do not paste your account password." },
   { provider: "fl_ru", label: "FL.ru", description: "Marketplace account integration is not implemented yet.", setup_note: "Credential storage and account adapter are not enabled yet." },
   { provider: "telegram", label: "Telegram bot", description: "Link the Telegram bot to control the agent and view projects.", setup_note: "Cloudflare Worker webhook mode needs TELEGRAM_BOT_TOKEN, TELEGRAM_WEBHOOK_SECRET, and BOT_API_SECRET Worker secrets." },
   { provider: "llm", label: "AI provider", description: "AI drafting integration is not connected yet.", setup_note: "Configure AI_API_KEY, AI_MODEL, and optionally AI_API_BASE_URL as Worker secrets/variables to generate profile-grounded proposal drafts." }
