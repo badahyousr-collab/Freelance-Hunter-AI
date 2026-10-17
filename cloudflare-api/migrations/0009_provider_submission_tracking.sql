@@ -1,3 +1,7 @@
--- Store only provider-confirmed submission identifiers and safe error summaries.
+-- Store only provider-confirmed bid IDs and safe error summaries.
 ALTER TABLE applications ADD COLUMN provider_submission_id TEXT;
 ALTER TABLE applications ADD COLUMN submission_error TEXT;
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_applications_provider_submission_id
+  ON applications(user_id, provider_submission_id)
+  WHERE provider_submission_id IS NOT NULL;
