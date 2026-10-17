@@ -37,7 +37,7 @@
 - [x] Telegram post parser, public channel adapter, scheduled worker, retry behavior, deduplication, and per-source scan health.
 - [x] Per-user source subscriptions and enabled-agent filtering.
 - [x] Authenticated user-scoped manual scan endpoint.
-- [x] Build a curated catalog of eight public Telegram job channels, with URLs, languages, and focus areas.
+- [x] Build a curated catalog of ten public Telegram job channels, with URLs, languages, and focus areas.
 - [ ] Configure and test a real scan against several public channels and verify newly stored projects.
 - [x] Implement the Freelancehunt official API discovery adapter with token validation, encrypted storage, project normalization, and deduplication.
 - [ ] Implement and verify additional provider-specific marketplace discovery adapters where access is permitted.

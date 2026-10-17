@@ -1351,3 +1351,18 @@ test("Telegram bot summary, project list, and agent control use the linked user'
   assert.ok(controlWrite);
   assert.deepEqual(controlWrite.values, [0, "linked-user-2"]);
 });
+
+
+test("source catalog advertises only implemented discovery adapters", async () => {
+  const response = await worker.fetch(new Request("https://api.example/sources/catalog", {
+    headers: { Cookie: "fh_session=test-session-token" }
+  }), { DB: fakeDb() });
+  assert.equal(response.status, 200);
+  const catalog = await response.json();
+  const bySource = Object.fromEntries(catalog.map(item => [item.source, item]));
+  assert.ok(bySource.telegram.capabilities.includes("read_public_posts"));
+  assert.ok(bySource.freelancehunt.capabilities.includes("discover_projects"));
+  for (const source of ["kwork", "upwork", "fl_ru"]) {
+    assert.ok(!bySource[source].capabilities.includes("discover_projects"), source + " must not claim discovery before its adapter is tested");
+  }
+});

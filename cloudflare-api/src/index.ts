@@ -158,10 +158,10 @@ async function linkedTelegramAccount(env: Env, telegramUserId: string): Promise<
 
 const sourceCatalog = [
   { source: "telegram", label: "Public Telegram channels", kind: "telegram", capabilities: ["read_public_posts"], setup_note: "Public channel previews are scanned on demand and every 15 minutes while the AI agent is enabled. Private channels are not supported." },
-  { source: "kwork", label: "Kwork", kind: "marketplace", capabilities: ["discover_projects"], setup_note: "Configuration only; a tested marketplace adapter is not yet available." },
+  { source: "kwork", label: "Kwork", kind: "marketplace", capabilities: [], setup_note: "Pending integration. Project discovery is disabled until an official, permitted adapter passes integration tests." },
   { source: "freelancehunt", label: "Freelancehunt", kind: "marketplace", capabilities: ["discover_projects", "submit_bid"], setup_note: "Uses the official API. Connect a Freelancehunt API token in Integrations; discovery and bid submission require a verified token." },
-  { source: "upwork", label: "Upwork", kind: "marketplace", capabilities: ["discover_projects"], setup_note: "Configuration only; a tested marketplace adapter is not yet available." },
-  { source: "fl_ru", label: "FL.ru", kind: "marketplace", capabilities: ["discover_projects"], setup_note: "Configuration only; a tested marketplace adapter is not yet available." }
+  { source: "upwork", label: "Upwork", kind: "marketplace", capabilities: [], setup_note: "Pending provider approval and integration. Project discovery is disabled until access and an adapter are verified." },
+  { source: "fl_ru", label: "FL.ru", kind: "marketplace", capabilities: [], setup_note: "Pending integration. Project discovery is disabled until an official, permitted adapter passes integration tests." }
 ];
 
 const integrationCatalog = [
