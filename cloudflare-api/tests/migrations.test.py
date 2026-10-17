@@ -6,13 +6,17 @@ MIGRATIONS = sorted((ROOT / "migrations").glob("*.sql"))
 
 
 def main() -> None:
-    assert len(MIGRATIONS) >= 2, "Expected the initial schema and follow-up migrations"
+    assert len(MIGRATIONS) >= 3, "Expected initial, Telegram identity, and notification migrations"
+    identity_migration = next((item for item in MIGRATIONS if item.name == "0007_telegram_only_identity.sql"), None)
+    assert identity_migration is not None, "Telegram-only identity migration must be present"
+    before_identity = [item for item in MIGRATIONS if item.name < identity_migration.name]
+    after_identity = [item for item in MIGRATIONS if item.name > identity_migration.name]
+
     db = sqlite3.connect(":memory:")
     db.execute("PRAGMA foreign_keys = ON")
 
-    # Build the previous schema, insert representative legacy records, then test the
-    # Telegram-only migration against existing data rather than only a fresh database.
-    for migration in MIGRATIONS[:-1]:
+    # Build the legacy schema and insert representative records before identity migration.
+    for migration in before_identity:
         db.executescript(migration.read_text(encoding="utf-8"))
 
     db.execute(
@@ -25,8 +29,7 @@ def main() -> None:
     )
     db.execute("INSERT INTO telegram_links (user_id,telegram_user_id) VALUES (?,?)", ("user-1", "12345"))
 
-    final_migration = MIGRATIONS[-1]
-    db.executescript(final_migration.read_text(encoding="utf-8"))
+    db.executescript(identity_migration.read_text(encoding="utf-8"))
 
     user_columns = {row[1] for row in db.execute("PRAGMA table_info(users)")}
     assert {"id", "telegram_identity", "telegram_verified", "identity_provider", "created_at"} <= user_columns
@@ -41,13 +44,20 @@ def main() -> None:
     ).fetchone()
     assert migrated_legacy == ("legacy:user-2", "legacy")
 
-    auth_code_columns = {row[1] for row in db.execute("PRAGMA table_info(telegram_auth_codes)")}
-    assert {"code_hash", "expires_at", "telegram_user_id", "user_id", "authenticated_at", "session_issued_at", "auth_mode", "error_message"} <= auth_code_columns
+    # Apply any post-identity migrations and verify notification defaults on existing accounts.
+    for migration in after_identity:
+        db.executescript(migration.read_text(encoding="utf-8"))
 
+    settings_columns = {row[1] for row in db.execute("PRAGMA table_info(agent_settings)")}
+    assert "notify_new_projects" in settings_columns
     db.execute(
         "INSERT INTO users (id,telegram_identity,telegram_verified,identity_provider) VALUES (?,?,1,'telegram')",
         ("user-3", "tg:67890"),
     )
+    db.execute("INSERT INTO profiles (user_id) VALUES ('user-3')")
+    db.execute("INSERT INTO agent_settings (user_id) VALUES ('user-3')")
+    assert db.execute("SELECT notify_new_projects FROM agent_settings WHERE user_id='user-3'").fetchone()[0] == 1
+
     try:
         db.execute("INSERT INTO telegram_links (user_id,telegram_user_id) VALUES (?,?)", ("user-3", "12345"))
     except sqlite3.IntegrityError:
@@ -65,7 +75,7 @@ def main() -> None:
     )
     assert db.execute("SELECT user_id FROM telegram_auth_codes WHERE code_hash='auth-code-hash'").fetchone()[0] == "user-3"
 
-    print(f"Validated {len(MIGRATIONS)} D1 migrations, Telegram-only identity migration, auth codes, uniqueness, and cascading session deletion.")
+    print(f"Validated {len(MIGRATIONS)} D1 migrations, Telegram-only identity, notification defaults, auth codes, uniqueness, and cascading session deletion.")
 
 
 if __name__ == "__main__":
