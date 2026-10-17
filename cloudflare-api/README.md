@@ -13,9 +13,9 @@ This directory contains the first Cloudflare-native API implementation for Freel
 
 ## Important limitations
 
-- Email/password authentication and email delivery are disabled. Account creation and login use the Telegram bot only. Apply migration `0007_telegram_only_identity.sql` to the deployed D1 database before relying on the Telegram-only identity schema.
+- Email/password authentication and email delivery are disabled. Account creation and login use the Telegram bot only. Apply migrations `0007_telegram_only_identity.sql` and `0008_new_project_notifications.sql` to the deployed D1 database before relying on the Telegram-only identity and notification settings.
 - Public Telegram channel preview scanning is implemented for manual scans and a 15-minute Cron Trigger when the user has enabled the AI agent. It reads public previews only; private channels and provider-specific marketplace adapters are not supported yet.
-- Kwork, Freelancehunt, Upwork, and FL.ru live adapters are not active. Profile-grounded AI proposal drafting is implemented but requires an AI provider key and model configuration. Real marketplace submission, push notifications, and reply synchronization are not active. The Telegram bot can run directly as a Cloudflare Worker webhook, so a separate always-on bot host is not required.
+- Kwork, Freelancehunt, Upwork, and FL.ru live adapters are not active. Profile-grounded AI proposal drafting is implemented but requires an AI provider key and model configuration. Provider-confirmed marketplace submission and client-reply synchronization are not active. New-project Telegram notifications require migration `0008_new_project_notifications.sql`, a linked Telegram account, and configured bot secrets. The Telegram bot can run directly as a Cloudflare Worker webhook, so a separate always-on bot host is not required.
 - Integration secrets are not stored until encrypted secret storage is configured. Never add credentials to source files or commit them.
 - D1 has free-plan quotas; it is not unlimited.
 
