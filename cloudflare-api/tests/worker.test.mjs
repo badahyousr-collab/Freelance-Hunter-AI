@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import worker, { detectedBudget, evaluateProjectMatch } from "../.test-dist/src/index.js";
 
-function fakeDb({ scan = false, freelancehuntScan = false, skills = ["python", "telegram"], telegramAuth = null, telegramCode = null, linkedAccount = null, application = null, project = null, profile = null, integration = null, notificationTarget = null, agentSettings = null, pendingDraftProjects = [], sourceCount = 0, insertChanges = 1, projectInserts = [], telegramIdentitySchema = true, notificationsSchema = true, submissionSchema = true, providerStatusSchema = true, applicationUpdateNotificationsSchema = true } = {}) {
+function fakeDb({ scan = false, freelancehuntScan = false, skills = ["python", "telegram"], telegramAuth = null, telegramCode = null, linkedAccount = null, application = null, project = null, profile = null, integration = null, notificationTarget = null, agentSettings = null, pendingDraftProjects = [], sourceCount = 0, insertChanges = 1, projectInserts = [], telegramIdentitySchema = true, notificationsSchema = true, submissionSchema = true, providerStatusSchema = true, applicationUpdateNotificationsSchema = true, autoSubmissionSchema = true } = {}) {
   return {
     get storedIntegration() { return integration; },
     set storedIntegration(value) { integration = value; },
