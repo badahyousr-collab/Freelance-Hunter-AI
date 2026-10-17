@@ -169,13 +169,13 @@ export default function AgentPage() {
   }
 
   const checks = [
-    { label: "Профиль навыков", ok: Boolean(profile && profile.skills.length > 0), detail: "Укажи навыки, чтобы оценка релевантности отражала твой реальный опыт." },
-    { label: "Публичные Telegram-источники", ok: sources > 0, detail: "Включённые каналы проверяются автоматически по расписанию, когда агент активен." },
+    { label: "Профиль навыков", ok: Boolean(profile && profile.skills.length > 0), detail: "Укажи навыки, чтобы оценка релевантности отражала твой реальный опыт.", href: "/settings", action: "Настроить" },
+    { label: "Публичные Telegram-источники", ok: sources > 0, detail: "Включённые каналы проверяются автоматически по расписанию, когда агент активен.", href: "/sources", action: "Источники" },
     { label: "API Worker", ok: Boolean(readiness?.worker_runtime), detail: "Статус получен от текущего API Worker." },
     { label: "Cron Trigger", ok: Boolean(readiness?.cron_configured), detail: "Триггер настроен на каждые 15 минут. Реальное выполнение по расписанию нужно подтвердить после деплоя." },
-    { label: "Telegram-бот", ok: Boolean(readiness?.telegram_bot_configured), detail: "Нужны TELEGRAM_BOT_TOKEN, TELEGRAM_WEBHOOK_SECRET и BOT_API_SECRET в секретах Worker." },
-    { label: "AI-провайдер", ok: Boolean(readiness?.ai_provider_configured), detail: "Нужны AI_API_KEY и AI_MODEL. После настройки проверим генерацию и оценку реальных заказов." },
-    { label: "Биржи фриланса", ok: Boolean(readiness?.freelancehunt_connected), detail: "Нужны токен Freelancehunt и секрет INTEGRATION_ENCRYPTION_KEY. Upwork, Kwork и FL.ru пока не поддерживают отправку в этой версии." }
+    { label: "Telegram-бот", ok: Boolean(readiness?.telegram_bot_configured), detail: "Нужны TELEGRAM_BOT_TOKEN, TELEGRAM_WEBHOOK_SECRET и BOT_API_SECRET в секретах Worker.", href: "/integrations", action: "Интеграции" },
+    { label: "AI-провайдер", ok: Boolean(readiness?.ai_provider_configured), detail: "Нужны AI_API_KEY, AI_MODEL и AI_API_BASE_URL. Проверь подключение кнопкой ниже." },
+    { label: "Биржи фриланса", ok: Boolean(readiness?.freelancehunt_connected), detail: "Нужны токен Freelancehunt и секрет INTEGRATION_ENCRYPTION_KEY. Upwork, Kwork и FL.ru пока не поддерживают отправку в этой версии.", href: "/integrations", action: "Подключить" }
   ];
 
   return <WorkspacePage title="AI-агент" subtitle="Настрой отбор заказов и проверь готовность сервисов перед автоматическим поиском.">
@@ -208,7 +208,7 @@ export default function AgentPage() {
     </section>
     <section className="content-card">
       <div className="panel-heading"><div><h2>Готовность системы</h2><p>Состояние конфигурации загружается из API, а не задаётся статическими значениями на странице.</p></div></div>
-      <div className="sub-list" style={{ marginTop: 18 }}>{checks.map(check => <div className="sub-list-row" key={check.label}><div className="sub-list-main"><strong>{check.label}</strong><span>{check.detail}</span></div><span className={"sub-badge " + (check.ok ? "" : "pending")}>{check.ok ? <CheckCircle2 size={12} /> : <CircleAlert size={12} />} {check.ok ? "Готово" : "Не готово"}</span></div>)}</div>
+      <div className="sub-list" style={{ marginTop: 18 }}>{checks.map(check => <div className="sub-list-row" key={check.label}><div className="sub-list-main"><strong>{check.label}</strong><span>{check.detail}</span></div>{check.href && <Link className="sub-button" href={check.href}>{check.action ?? "Открыть"}</Link>}<span className={"sub-badge " + (check.ok ? "" : "pending")}>{check.ok ? <CheckCircle2 size={12} /> : <CircleAlert size={12} />} {check.ok ? "Готово" : "Не готово"}</span></div>)}</div>
       <button className="sub-button" style={{ marginTop: 14 }} disabled={testingAI} onClick={() => void testAIProvider()}>{testingAI ? "Проверяем AI…" : "Проверить подключение AI"}</button>
     </section>
     <section className="content-card">
