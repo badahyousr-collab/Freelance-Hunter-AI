@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import worker, { detectedBudget, evaluateProjectMatch } from "../.test-dist/src/index.js";
 
-function fakeDb({ scan = false, freelancehuntScan = false, skills = ["python", "telegram"], telegramAuth = null, telegramCode = null, linkedAccount = null, application = null, integration = null, notificationTarget = null, insertChanges = 1, projectInserts = [], telegramIdentitySchema = true, notificationsSchema = true, submissionSchema = true } = {}) {
+function fakeDb({ scan = false, freelancehuntScan = false, skills = ["python", "telegram"], telegramAuth = null, telegramCode = null, linkedAccount = null, application = null, project = null, profile = null, integration = null, notificationTarget = null, insertChanges = 1, projectInserts = [], telegramIdentitySchema = true, notificationsSchema = true, submissionSchema = true } = {}) {
   return {
     get storedIntegration() { return integration; },
     set storedIntegration(value) { integration = value; },
@@ -17,6 +17,9 @@ function fakeDb({ scan = false, freelancehuntScan = false, skills = ["python", "
         async run() {
           if (sql.includes("UPDATE applications SET draft_text=?,status=?")) {
             application = application ? { ...application, draft_text: values[0], status: values[1] } : application;
+          }
+          if (sql.includes("INSERT INTO applications (user_id,project_id,status,draft_text)")) {
+            application = { id: 42, project_id: values[1], status: "draft", draft_text: values[2], created_at: "2026-10-17 10:00:00", submitted_at: null, replied_at: null };
           }
           if (sql.includes("UPDATE applications SET status='submitting'")) {
             application = application ? { ...application, status: "submitting", submission_error: null } : application;
@@ -786,6 +789,87 @@ test("Freelancehunt ambiguous server failures block automatic resubmission", asy
     const duplicate = await worker.fetch(request(), { DB: db, INTEGRATION_ENCRYPTION_KEY: encryptionKey });
     assert.equal(duplicate.status, 409);
     assert.equal(bidRequests, 1);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+
+test("proposal drafting creates Russian and English drafts from profile-grounded listing facts", async () => {
+  const originalFetch = globalThis.fetch;
+  const scenarios = [
+    {
+      language: "ru",
+      project: { id: 17, source: "telegram", url: "https://t.me/example/17", title: "Нужен Telegram-бот на Python", description: "Нужно разработать Telegram-бота для обработки заявок. Бюджет 15 000 RUB.", language: "ru", budget_min: 15000, budget_max: 15000, currency: "RUB", payment_method: "fixed" },
+      draft: "Здравствуйте! Могу помочь разработать Telegram-бота на Python для обработки заявок. Предлагаю сначала согласовать сценарии и структуру данных, затем реализовать и проверить основные функции."
+    },
+    {
+      language: "en",
+      project: { id: 18, source: "telegram", url: "https://t.me/example/18", title: "Build a Python Telegram bot", description: "Build a bot to collect project applications. Budget: $300.", language: "en", budget_min: 300, budget_max: 300, currency: "USD", payment_method: "fixed" },
+      draft: "Hi! I can help build a Python Telegram bot to collect project applications. I would start by confirming the user flow and data structure, then implement and test the core features."
+    }
+  ];
+  const requests = [];
+  globalThis.fetch = async (input, init) => {
+    if (String(input) === "https://provider.example/v1/chat/completions") {
+      requests.push(JSON.parse(init.body));
+      return Response.json({ choices: [{ message: { content: scenarios[requests.length - 1].draft } }] });
+    }
+    return originalFetch(input, init);
+  };
+  try {
+    for (const scenario of scenarios) {
+      const response = await worker.fetch(new Request("https://api.example/applications/" + scenario.project.id + "/draft", {
+        method: "POST",
+        headers: { Cookie: "fh_session=test-session-token", "CF-Connecting-IP": scenario.language === "ru" ? "198.51.100.80" : "198.51.100.81" }
+      }), {
+        DB: fakeDb({
+          project: scenario.project,
+          profile: { display_name: "Developer", skills: JSON.stringify(["Python", "Telegram bots"]), languages: JSON.stringify(["ru", "en"]), payment_preferences: "[]", min_budget: 100, currency: scenario.language === "ru" ? "RUB" : "USD" }
+        }),
+        AI_API_KEY: "test-key",
+        AI_API_BASE_URL: "https://provider.example/v1",
+        AI_MODEL: "test-model"
+      });
+      assert.equal(response.status, 201);
+      const data = await response.json();
+      assert.equal(data.status, "draft");
+      assert.equal(data.draft_text, scenario.draft);
+    }
+    assert.equal(requests.length, 2);
+    for (const request of requests) {
+      assert.equal(request.model, "test-model");
+      assert.equal(request.temperature, 0.35);
+      assert.match(request.messages[0].content, /untrusted data/i);
+      assert.match(request.messages[0].content, /Never invent experience/i);
+      assert.match(request.messages[0].content, /Do not claim the proposal has been sent/i);
+      assert.equal(request.messages[1].role, "user");
+      const facts = JSON.parse(request.messages[1].content);
+      assert.deepEqual(facts.user_profile.skills, ["Python", "Telegram bots"]);
+      assert.ok(facts.project.listing_url.startsWith("https://t.me/example/"));
+    }
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("proposal drafting reports missing provider configuration and upstream failures without creating sent applications", async () => {
+  const project = { id: 19, source: "telegram", url: "https://t.me/example/19", title: "Python bot", description: "Build a Python Telegram bot", language: "en", budget_min: 200, budget_max: 200, currency: "USD", payment_method: "fixed" };
+  const profile = { display_name: null, skills: JSON.stringify(["Python"]), languages: JSON.stringify(["en"]), payment_preferences: "[]", min_budget: 100, currency: "USD" };
+  const noConfig = await worker.fetch(new Request("https://api.example/applications/19/draft", {
+    method: "POST", headers: { Cookie: "fh_session=test-session-token", "CF-Connecting-IP": "198.51.100.82" }
+  }), { DB: fakeDb({ project, profile }) });
+  assert.equal(noConfig.status, 503);
+  assert.match((await noConfig.json()).detail, /AI drafting is not configured/i);
+
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => Response.json({ error: { message: "quota exceeded" } }, { status: 429 });
+  try {
+    const failed = await worker.fetch(new Request("https://api.example/applications/19/draft", {
+      method: "POST", headers: { Cookie: "fh_session=test-session-token", "CF-Connecting-IP": "198.51.100.83" }
+    }), { DB: fakeDb({ project, profile }), AI_API_KEY: "test-key", AI_MODEL: "test-model" });
+    assert.equal(failed.status, 502);
+    assert.match((await failed.json()).detail, /AI provider request failed/i);
   } finally {
     globalThis.fetch = originalFetch;
   }
