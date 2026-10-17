@@ -22,6 +22,8 @@ export default function IntegrationsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
+  const [freelancehuntToken, setFreelancehuntToken] = useState("");
+  const [connecting, setConnecting] = useState(false);
 
   async function load() {
     setLoading(true);
@@ -70,10 +72,31 @@ export default function IntegrationsPage() {
     }
   }
 
+  async function connectFreelancehunt() {
+    const secret = freelancehuntToken.trim();
+    if (!secret) { setError("Введи API-токен Freelancehunt."); return; }
+    setConnecting(true); setError(""); setMessage("");
+    try {
+      const response = await fetch(API + "/integrations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ provider: "freelancehunt", secret })
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail ?? "Не удалось подключить Freelancehunt.");
+      setFreelancehuntToken("");
+      setMessage("API-токен проверен и сохранён в зашифрованном виде.");
+      await load();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Не удалось подключить Freelancehunt.");
+    } finally { setConnecting(false); }
+  }
+
   return (
     <WorkspacePage
       title="Подключения"
-      subtitle="Здесь будут появляться реальные подключения к биржам. Пароли от аккаунтов вводить не нужно."
+      subtitle="Freelancehunt подключается через официальный API-токен. Остальные биржи остаются недоступными, пока их разрешённые способы подключения не проверены."
     >
       {error && <div className="sub-alert error" role="alert">{error}</div>}
       {message && <div className="sub-alert" role="status">{message}</div>}
@@ -98,9 +121,16 @@ export default function IntegrationsPage() {
                     <strong>{entry.label}</strong>
                     <span>{entry.setup_note}</span>
                     {integration && <span>Запись: {integration.status.replaceAll("_", " ")}</span>}
+                    {entry.provider === "freelancehunt" && (
+                      <div className="sub-form" style={{ marginTop: 12, maxWidth: 520 }}>
+                        <label htmlFor="freelancehunt-api-token">API-токен Freelancehunt</label>
+                        <input id="freelancehunt-api-token" className="sub-input" type="password" autoComplete="new-password" value={freelancehuntToken} onChange={event => setFreelancehuntToken(event.target.value)} placeholder="Вставь API-токен, не пароль от аккаунта" />
+                        <button className="sub-button primary" type="button" disabled={connecting || !freelancehuntToken.trim()} onClick={() => void connectFreelancehunt()}>{connecting ? "Проверяем токен…" : integration?.status === "connected" ? "Проверить и обновить токен" : "Проверить и подключить"}</button>
+                      </div>
+                    )}
                   </div>
                   <span className="sub-badge pending">
-                    {integration?.status === "connected" ? "Подключено" : "Интеграция в разработке"}
+                    {integration?.status === "connected" ? "Подключено" : integration?.status === "reauth_required" ? "Нужно переподключить" : entry.provider === "freelancehunt" ? "Доступно через официальный API" : "Интеграция в разработке"}
                   </span>
                   {externalUrl && (
                     <a className="sub-button" href={externalUrl} target="_blank" rel="noreferrer">
