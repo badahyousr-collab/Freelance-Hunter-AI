@@ -49,6 +49,13 @@
 - [ ] Full browser end-to-end flows are tested on the deployed site.
 - [ ] Every visible button and form has a verified action or is explicitly marked unavailable. Proposal drafts can be edited, prepared for confirmation, returned to draft, and closed; marketplace sending remains unavailable. Critical user-scoped Worker reads and proposal mutation isolation have regression tests.
 
+## Operations and recovery
+- [x] Structured scan logs include duration, scanned sources, new-project counts, and failure counts.
+- [x] Optional Telegram operations alerts are implemented and covered by a mocked scheduled-scan failure test.
+- [ ] Configure `WORKER_ALERT_CHAT_ID` and verify delivery against the deployed bot.
+- [ ] Run a D1 backup/restore drill against a separate non-production database.
+- [ ] Complete the deployed smoke-test checklist and full user-scoped authorization coverage.
+
 ## Verification record
 - CI verifies backend tests/migrations, frontend lint/build, Playwright smoke tests, and Cloudflare Worker typecheck/tests. CodeQL and weekly Dependabot checks are configured.
 - [x] Document D1 export, migration, and test-database restore commands in [Operations and recovery](OPERATIONS.md). The backup/restore drill itself remains unverified.
