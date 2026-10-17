@@ -387,7 +387,7 @@ async function notifyNewProjects(env: Env, userId: string, added: number, posts:
       .bind(userId).first<any>();
     if (!target?.telegram_user_id || Number(target.notify_new_projects ?? 1) !== 1) return;
     const items = posts.slice(0, 3).map(post => {
-      const href = safeTelegramUrl(post.url);
+      const href = safeTelegramUrl(post.url) ?? safeFreelancehuntProjectUrl(post.url);
       const title = escapeTelegramHtml(post.title.slice(0, 180));
       return href ? `• <a href="${escapeTelegramHtml(href)}">${title}</a>` : `• ${title}`;
     }).join("\n");
