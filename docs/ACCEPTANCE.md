@@ -16,7 +16,7 @@
 - [x] Add a D1 migration that replaces email/password identity fields with Telegram identity keys and anonymizes old email-only identities.
 - [ ] Apply the D1 migration to the deployed Cloudflare database and verify existing Telegram accounts still sign in.
 - [x] Remove email/password fields from the FastAPI user model and add an Alembic migration.
-- [ ] Verify the D1 and PostgreSQL migrations against deployed environments.
+- [ ] Verify the D1 and PostgreSQL migrations against deployed environments. The Worker health endpoint now reports missing Telegram-only identity and notification migrations.
 - [ ] Verify Telegram sign-in, session expiry, logout, and cross-account data isolation against the deployed environment.
 
 ## Source ingestion
@@ -45,9 +45,9 @@
 - [ ] Configure a newly issued BotFather token and webhook secret, apply migrations, then test real Telegram messages and new-project notifications.
 - [x] CI Playwright smoke tests cover Telegram auth, project search, source setup/manual scan, and settings save/layout.
 - [ ] Full browser end-to-end flows are tested on the deployed site, including logout and session expiry.
-- [ ] Every visible button and form has a verified action or is explicitly marked unavailable. Proposal drafts can be edited, prepared for confirmation, returned to draft, and closed; marketplace sending remains unavailable.
+- [ ] Every visible button and form has a verified action or is explicitly marked unavailable. Proposal drafts can be edited, prepared for confirmation, returned to draft, and closed; marketplace sending remains unavailable. Critical user-scoped Worker reads and proposal mutation isolation have regression tests.
 
 ## Verification record
-- CI must verify backend tests/migrations, frontend lint/build, and Cloudflare Worker typecheck.
+- CI must verify backend tests/migrations, frontend lint/build, and Cloudflare Worker typecheck. Scheduled CodeQL analysis and weekly Dependabot checks are configured.
 - Live service verification is pending until Telegram secrets, AI provider configuration, and public channel scans are tested.
 - Known limitations: provider-specific marketplace discovery/authentication/submission and reply synchronization are not implemented. New-project notifications are implemented in code but need the D1 migration, bot secrets, and a live Telegram test. Telegram ingestion currently reads public channel previews only.
