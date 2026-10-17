@@ -13,12 +13,13 @@ type RecommendedChannel = { handle: string; label: string; focus: string; langua
 const recommendedChannels: RecommendedChannel[] = [
   { handle: "job_for_bots", label: "Вакансии для разработчиков ботов", focus: "Заказы на Telegram-ботов и Mini Apps, часто с ТЗ и бюджетом", language: "RU" },
   { handle: "zerocode_jobs", label: "Запили мне, зерокодер", focus: "Заказы на no-code, автоматизацию, приложения и ботов", language: "RU" },
-  { handle: "job_developer", label: "Фриланс для разработчиков", focus: "Разработка, удалённые проекты и заказы от клиентов", language: "RU" },
+  { handle: "freelancetaverna", label: "Фриланс Таверна Official", focus: "Заказы и удалённые вакансии, включая разработку и digital", language: "RU" },
   { handle: "GetClient", label: "GetClient | Фриланс вакансии", focus: "Заказы по IT, дизайну, маркетингу и другим направлениям", language: "RU" },
   { handle: "kadrof_work", label: "Вакансии для фрилансеров", focus: "Новые удалённые вакансии и заказы для фрилансеров", language: "RU" },
-  { handle: "frwork3", label: "Фриланс, удалённая работа", focus: "Заказы и вакансии для IT, дизайна, маркетинга и других сфер", language: "RU" },
+  { handle: "digitaltender", label: "DIGITAL Tender / freelance", focus: "Заказы по разработке, дизайну, маркетингу и digital", language: "RU" },
   { handle: "FreelancehuntProjects", label: "Проєкти Freelancehunt", focus: "Фриланс-проекты, включая разработку и цифровые услуги", language: "UA/RU" },
-  { handle: "itfreelancers", label: "IT freelance and remote", focus: "IT-проекты, лиды и сотрудничество", language: "EN/RU" }
+  { handle: "itfreelancers", label: "IT freelance and remote", focus: "IT-проекты, лиды и сотрудничество", language: "EN/RU" },
+  { handle: "hr_itwork", label: "IT вакансии / Работа программиста", focus: "Вакансии для программистов и фрилансеров", language: "RU" }
 ];
 
 export default function SourcesPage() {
