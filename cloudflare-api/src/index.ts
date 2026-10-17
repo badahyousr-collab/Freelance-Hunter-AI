@@ -880,6 +880,11 @@ async function handle(request: Request, env: Env): Promise<Response> {
     } catch {
       missingMigrations.push("0009_provider_submission_tracking.sql");
     }
+    try {
+      await env.DB.prepare("SELECT provider_status FROM applications LIMIT 0").all();
+    } catch {
+      missingMigrations.push("0010_freelancehunt_status_sync.sql");
+    }
     const schemaReady = missingTables.length === 0 && missingMigrations.length === 0;
     return response(request, {
       status: check?.ok === 1 && schemaReady ? "ok" : "degraded",
