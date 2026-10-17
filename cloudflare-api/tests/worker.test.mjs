@@ -490,3 +490,52 @@ test("manual scan does not notify about duplicate listings that were not inserte
     globalThis.fetch = originalFetch;
   }
 });
+
+
+test("user-scoped dashboard endpoints bind all reads to the authenticated user", async () => {
+  const statements = [];
+  const db = {
+    prepare(sql) {
+      let values = [];
+      const record = () => statements.push({ sql, values: [...values] });
+      return {
+        bind(...args) { values = args; return this; },
+        async first() {
+          record();
+          if (sql.includes("FROM sessions s JOIN users")) return { id: "user-1", created_at: "2026-10-16 10:00:00" };
+          return null;
+        },
+        async all() { record(); return { results: [] }; },
+        async run() { record(); return { meta: { changes: 1 } }; }
+      };
+    }
+  };
+  const paths = ["/projects", "/sources", "/profile", "/agent/settings", "/applications", "/integrations", "/dashboard/summary"];
+  for (const path of paths) {
+    const response = await worker.fetch(new Request("https://api.example" + path, {
+      headers: { Cookie: "fh_session=test-session-token" }
+    }), { DB: db });
+    assert.equal(response.status, 200, path);
+  }
+
+  const protectedQueries = [
+    "FROM projects WHERE user_id=?",
+    "FROM sources WHERE user_id=?",
+    "FROM profiles WHERE user_id=?",
+    "FROM agent_settings WHERE user_id=?",
+    "FROM applications a LEFT JOIN projects",
+    "FROM integrations WHERE user_id=?",
+    "FROM projects WHERE user_id=? AND match_score"
+  ];
+  for (const fragment of protectedQueries) {
+    const query = statements.find(item => item.sql.includes(fragment));
+    assert.ok(query, "Expected user-scoped query containing " + fragment);
+    assert.ok(query.values.includes("user-1"), "Expected authenticated user ID bound for " + fragment);
+  }
+});
+
+test("protected project data is not returned without a session", async () => {
+  const response = await worker.fetch(new Request("https://api.example/projects"), { DB: fakeDb() });
+  assert.equal(response.status, 401);
+  assert.match((await response.json()).detail, /authentication required/i);
+});
