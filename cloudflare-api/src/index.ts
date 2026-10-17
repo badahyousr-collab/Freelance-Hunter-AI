@@ -1245,76 +1245,6 @@ async function handle(request: Request, env: Env): Promise<Response> {
     })));
   }
 
-  if (path === "/applications/sync" && method === "POST") {
-    if (!env.INTEGRATION_ENCRYPTION_KEY || env.INTEGRATION_ENCRYPTION_KEY.trim().length < 32) {
-      return response(request, { detail: "Secure credential storage is not configured." }, 503);
-    }
-    const integration = await env.DB.prepare("SELECT credentials_json FROM integrations WHERE user_id=? AND provider='freelancehunt' AND status='connected'").bind(uid).first<any>();
-    if (!integration?.credentials_json) return response(request, { detail: "Connect a Freelancehunt account before syncing proposal statuses." }, 409);
-    let token: string;
-    try {
-      token = await decryptIntegrationSecret(String(integration.credentials_json), env.INTEGRATION_ENCRYPTION_KEY);
-    } catch {
-      return response(request, { detail: "The stored Freelancehunt credential cannot be decrypted. Reconnect the account." }, 409);
-    }
-
-    const bids = new Map<string, { status: string; isWinner: boolean }>();
-    let pagePath = "/my/bids";
-    let pageCount = 0;
-    while (pagePath && pageCount < 10) {
-      pageCount += 1;
-      let upstream: { response: Response; data: any };
-      try {
-        upstream = await freelancehuntApi(token, pagePath);
-      } catch {
-        return response(request, { detail: "Freelancehunt status sync failed before any local records were changed." }, 502);
-      }
-      if (upstream.response.status === 401 || upstream.response.status === 403) {
-        await env.DB.prepare("UPDATE integrations SET status='reauth_required' WHERE user_id=? AND provider='freelancehunt'").bind(uid).run();
-        return response(request, { detail: "Freelancehunt rejected the saved token. Reconnect the account." }, 401);
-      }
-      if (!upstream.response.ok || !Array.isArray(upstream.data?.data)) {
-        return response(request, { detail: "Freelancehunt status sync returned an invalid or unsuccessful response." }, 502);
-      }
-      for (const bid of upstream.data.data) {
-        const id = String(bid?.id ?? "");
-        const status = String(bid?.attributes?.status ?? "").toLowerCase();
-        if (id && ["active", "revoked", "rejected"].includes(status)) {
-          bids.set(id, { status, isWinner: bid?.attributes?.is_winner === true });
-        }
-      }
-      const next = upstream.data?.links?.next;
-      if (!next) {
-        pagePath = "";
-        break;
-      }
-      let parsedNext: URL;
-      try { parsedNext = new URL(String(next), "https://api.freelancehunt.com"); }
-      catch { return response(request, { detail: "Freelancehunt returned an invalid pagination link." }, 502); }
-      if (parsedNext.hostname !== "api.freelancehunt.com" || parsedNext.pathname !== "/v2/my/bids") {
-        return response(request, { detail: "Freelancehunt returned an unexpected pagination link." }, 502);
-      }
-      pagePath = parsedNext.pathname.slice("/v2".length) + parsedNext.search;
-    }
-    if (pagePath) return response(request, { detail: "Freelancehunt has more than ten bid pages. No local statuses were changed; narrow the sync before retrying." }, 502);
-
-    const rows = await env.DB.prepare("SELECT a.id,a.provider_submission_id,a.status,a.provider_status FROM applications a JOIN projects p ON p.id=a.project_id AND p.user_id=a.user_id WHERE a.user_id=? AND p.source='freelancehunt' AND a.provider_submission_id IS NOT NULL AND a.status IN ('sent','replied')").bind(uid).all<any>();
-    let updated = 0;
-    let newlyReplied = 0;
-    for (const application of rows.results ?? []) {
-      const bid = bids.get(String(application.provider_submission_id));
-      if (!bid) continue;
-      const nextStatus = bid.status === "rejected" || bid.isWinner ? "replied" : String(application.status);
-      const changed = String(application.provider_status ?? "") !== bid.status || String(application.status) !== nextStatus;
-      if (!changed) continue;
-      await env.DB.prepare("UPDATE applications SET provider_status=?,status=?,replied_at=CASE WHEN ?='replied' THEN COALESCE(replied_at,datetime('now')) ELSE replied_at END WHERE id=? AND user_id=?")
-        .bind(bid.status, nextStatus, nextStatus, application.id, uid).run();
-      updated += 1;
-      if (String(application.status) !== "replied" && nextStatus === "replied") newlyReplied += 1;
-    }
-    return response(request, { ok: true, checked: (rows.results ?? []).length, updated, newly_replied: newlyReplied, provider: "freelancehunt" });
-  }
-
   // This workflow prepares and reviews proposals, but deliberately does not fake
   // marketplace submission. Only a verified provider adapter may set sent/replied.
   const applicationMatch = path.match(/^\/applications\/(\d+)$/);
@@ -1460,7 +1390,7 @@ async function handle(request: Request, env: Env): Promise<Response> {
       return response(request, { detail: "Could not decrypt the saved Freelancehunt token. Reconnect the integration." }, 503);
     }
 
-    const rows = await env.DB.prepare("SELECT a.id,a.provider_submission_id,p.source_project_id FROM applications a JOIN projects p ON p.id=a.project_id AND p.user_id=a.user_id WHERE a.user_id=? AND a.status='sent' AND a.replied_at IS NULL AND a.provider_submission_id IS NOT NULL AND p.source='freelancehunt' ORDER BY a.submitted_at DESC LIMIT 20").bind(uid).all<any>();
+    const rows = await env.DB.prepare("SELECT a.id,a.provider_submission_id,a.provider_status,p.source_project_id FROM applications a JOIN projects p ON p.id=a.project_id AND p.user_id=a.user_id WHERE a.user_id=? AND a.status='sent' AND a.replied_at IS NULL AND a.provider_submission_id IS NOT NULL AND p.source='freelancehunt' ORDER BY a.submitted_at DESC LIMIT 20").bind(uid).all<any>();
     let checked = 0;
     let updated = 0;
     let errors = 0;
@@ -1478,10 +1408,15 @@ async function handle(request: Request, env: Env): Promise<Response> {
         if (!result.response.ok || !Array.isArray(result.data?.data)) { errors += 1; continue; }
         checked += 1;
         const bid = result.data.data.find((item: any) => String(item?.id ?? "") === bidId);
-        const attributes = bid?.attributes ?? {};
-        const hasClientResponse = attributes.status === "rejected" || attributes.is_winner === true;
+        if (!bid) continue;
+        const providerStatus = String(bid?.attributes?.status ?? "").toLowerCase();
+        if (!["active", "revoked", "rejected"].includes(providerStatus)) { errors += 1; continue; }
+        if (String(application.provider_status ?? "") !== providerStatus) {
+          await env.DB.prepare("UPDATE applications SET provider_status=? WHERE id=? AND user_id=?").bind(providerStatus, application.id, uid).run();
+        }
+        const hasClientResponse = providerStatus === "rejected" || bid?.attributes?.is_winner === true;
         if (hasClientResponse) {
-          const write = await env.DB.prepare("UPDATE applications SET status='replied',replied_at=datetime('now') WHERE id=? AND user_id=? AND status='sent' AND replied_at IS NULL").bind(application.id, uid).run();
+          const write = await env.DB.prepare("UPDATE applications SET status='replied',replied_at=COALESCE(replied_at,datetime('now')) WHERE id=? AND user_id=? AND status='sent' AND replied_at IS NULL").bind(application.id, uid).run();
           if (write.meta.changes) updated += 1;
         }
       } catch {
