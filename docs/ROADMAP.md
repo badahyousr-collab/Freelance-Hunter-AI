@@ -37,7 +37,8 @@
 - [x] Authenticated user-scoped manual scan endpoint.
 - [x] Build a curated catalog of eight public Telegram job channels, with URLs, languages, and focus areas.
 - [ ] Configure and test a real scan against several public channels and verify newly stored projects.
-- [ ] Implement and verify provider-specific marketplace discovery adapters where access is permitted.
+- [x] Implement the Freelancehunt official API discovery adapter with token validation, encrypted storage, project normalization, and deduplication.
+- [ ] Implement and verify additional provider-specific marketplace discovery adapters where access is permitted.
 - [ ] Add operational monitoring for source failures, scan duration, and new-project counts.
 
 ## Phase 5 - Matching and proposal drafting
@@ -52,11 +53,13 @@
 
 ## Phase 6 - Marketplace integrations and application tracking
 - [x] Per-user integration records with encrypted-credential design and API responses that do not expose secrets.
-- [ ] Implement provider-specific official OAuth/API authorization and verify connection status.
-- [ ] Implement proposal submission only for providers with a verified supported capability.
+- [x] Validate and encrypt Freelancehunt API tokens through the official profile endpoint; show connection status without exposing credentials.
+- [ ] Implement and verify official OAuth/API authorization for additional providers where permitted.
+- [x] Implement explicit, provider-confirmed bid submission through the Freelancehunt official API, with a concurrency guard and no automatic retry after ambiguous provider failures.
 - [x] Add editable proposal drafts and an awaiting-confirmation/closed review workflow that cannot falsely mark a proposal as sent.
-- [ ] Implement reliable reply/status synchronization and submission idempotency.
-- [x] Show clear states for draft and awaiting confirmation; submission-only states remain unavailable until a provider-confirmed adapter exists.
+- [x] Prevent duplicate Freelancehunt submissions with a status claim and require a provider bid ID before marking an application sent.
+- [ ] Implement reliable client-reply/status synchronization.
+- [x] Show draft, awaiting confirmation, submitting, sent, failed, and submission-unknown states for Freelancehunt; other providers remain unavailable until verified adapters exist.
 
 ## Phase 7 - Telegram companion
 - [x] One-time expiring website-to-Telegram account linking.
@@ -75,7 +78,7 @@
 - [ ] Validate Docker Compose end-to-end and run the deployed smoke-test checklist.
 - [x] Apply rate limits to Telegram auth, AI draft generation, and manual scans; persist source failure status.
 - [x] Add scheduled CodeQL analysis and weekly Dependabot checks for Python, Node, and GitHub Actions dependencies.
-- [x] Expand Worker health diagnostics to detect missing Telegram-only identity and notification migrations.
+- [x] Expand Worker health diagnostics to detect missing Telegram-only identity, notification, and provider-submission migrations.
 - [x] Add user-scope regression tests for core dashboard reads and proposal mutations.
 - [x] Document free-plan-compatible D1 export, migration, and separate-test-database restore procedures.
 - [ ] Execute and verify a D1 backup/restore drill against a non-production database.
