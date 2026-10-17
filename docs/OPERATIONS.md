@@ -56,7 +56,7 @@ After a verified backup, apply pending migrations:
 npx wrangler d1 migrations apply freelance-hunter-db --remote --config cloudflare-api/wrangler.toml
 ```
 
-Then re-check the migration list and `/health`. Migration `0007_telegram_only_identity.sql` changes the identity columns and removes legacy password fields. Migration `0008_new_project_notifications.sql` adds the opt-out Telegram notification preference. Migration `0009_provider_submission_tracking.sql` adds provider bid IDs and safe submission error fields. Apply all pending migrations only after a verified backup, then test Telegram sign-in and check `/health`.
+Then re-check the migration list and `/health`. Migration `0007_telegram_only_identity.sql` changes the identity columns and removes legacy password fields. Migration `0008_new_project_notifications.sql` adds the new-project notification preference. Migration `0009_provider_submission_tracking.sql` adds provider bid IDs and safe submission error fields. Migration `0010_freelancehunt_status_sync.sql` stores provider-confirmed bid status. Migration `0011_application_update_notifications.sql` adds the opt-out preference for Telegram notifications about provider-confirmed application replies. Apply all pending migrations only after a verified backup, then test Telegram sign-in and check `/health`.
 
 ## Configure marketplace token encryption
 
