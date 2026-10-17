@@ -663,3 +663,84 @@ test("Freelancehunt invalid tokens are rejected without saving credentials", asy
     globalThis.fetch = originalFetch;
   }
 });
+
+
+test("Freelancehunt bid submission requires confirmation and records only provider-confirmed success", async () => {
+  const originalFetch = globalThis.fetch;
+  const token = "test-freelancehunt-token-for-bid";
+  const encryptionKey = "test-integration-encryption-key-0123456789";
+  const db = fakeDb();
+  let bidRequests = 0;
+  globalThis.fetch = async (input, init) => {
+    const url = String(input);
+    if (url === "https://api.freelancehunt.com/v2/my/profile") {
+      return Response.json({ data: { attributes: { login: "test_freelancer" } } });
+    }
+    if (url === "https://api.freelancehunt.com/v2/projects/299172/bids") {
+      bidRequests += 1;
+      assert.equal(init.method, "POST");
+      assert.equal(new Headers(init.headers).get("Authorization"), "Bearer " + token);
+      assert.deepEqual(JSON.parse(init.body), {
+        days: 5,
+        budget: { amount: 4500, currency: "RUB" },
+        safe_type: "employer",
+        comment: "I can build the requested Telegram bot."
+      });
+      return Response.json({ data: { id: 3119168 } }, { status: 201 });
+    }
+    return originalFetch(input, init);
+  };
+  try {
+    const connect = await worker.fetch(new Request("https://api.example/integrations", {
+      method: "POST",
+      headers: { Cookie: "fh_session=test-session-token", "Content-Type": "application/json" },
+      body: JSON.stringify({ provider: "freelancehunt", secret: token })
+    }), { DB: db, INTEGRATION_ENCRYPTION_KEY: encryptionKey });
+    assert.equal(connect.status, 201);
+    db.applicationRecord = {
+      id: 5, project_id: 299172, status: "awaiting_confirmation",
+      draft_text: "I can build the requested Telegram bot.",
+      source: "freelancehunt", source_project_id: "299172",
+      url: "https://freelancehunt.com/project/python-telegram-bot/299172.html",
+      created_at: "2026-10-17 10:00:00", submitted_at: null, replied_at: null,
+      provider_submission_id: null, submission_error: null
+    };
+
+    const response = await worker.fetch(new Request("https://api.example/applications/5/submit", {
+      method: "POST",
+      headers: { Cookie: "fh_session=test-session-token", "Content-Type": "application/json" },
+      body: JSON.stringify({ days: 5, budget_amount: 4500, currency: "RUB", safe_type: "employer" })
+    }), { DB: db, INTEGRATION_ENCRYPTION_KEY: encryptionKey });
+    assert.equal(response.status, 200);
+    const result = await response.json();
+    assert.equal(result.status, "sent");
+    assert.equal(result.provider_submission_id, "3119168");
+    assert.ok(result.submitted_at);
+    assert.equal(bidRequests, 1);
+
+    const duplicate = await worker.fetch(new Request("https://api.example/applications/5/submit", {
+      method: "POST",
+      headers: { Cookie: "fh_session=test-session-token", "Content-Type": "application/json" },
+      body: JSON.stringify({ days: 5, budget_amount: 4500, currency: "RUB", safe_type: "employer" })
+    }), { DB: db, INTEGRATION_ENCRYPTION_KEY: encryptionKey });
+    assert.equal(duplicate.status, 409);
+    assert.equal(bidRequests, 1);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("Freelancehunt submission rejects drafts that were not prepared for confirmation", async () => {
+  const response = await worker.fetch(new Request("https://api.example/applications/5/submit", {
+    method: "POST",
+    headers: { Cookie: "fh_session=test-session-token", "Content-Type": "application/json" },
+    body: JSON.stringify({ days: 5, budget_amount: 4500, currency: "RUB", safe_type: "employer" })
+  }), {
+    DB: fakeDb({ application: {
+      id: 5, project_id: 299172, status: "draft", draft_text: "Proposal",
+      source: "freelancehunt", source_project_id: "299172", url: "https://freelancehunt.com/"
+    } }),
+    INTEGRATION_ENCRYPTION_KEY: "test-integration-encryption-key-0123456789"
+  });
+  assert.equal(response.status, 409);
+});
