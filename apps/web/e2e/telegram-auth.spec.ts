@@ -372,3 +372,29 @@ test("Freelancehunt integration accepts an API token but never displays it after
   await expect(page.getByLabel("API-токен Freelancehunt")).toHaveValue("");
 });
 
+
+
+test("integrations page runs Freelancehunt bid status sync", async ({ page }) => {
+  await mockAuthenticatedAccount(page);
+  await page.route("**/api/backend/integrations/catalog", async route => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([
+      { provider: "freelancehunt", label: "Freelancehunt", status: "available", setup_note: "Official API integration." }
+    ]) });
+  });
+  await page.route("**/api/backend/integrations", async route => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([
+      { id: 3, provider: "freelancehunt", label: "Freelancehunt · test-user", status: "connected", created_at: "2026-10-17T10:00:00Z" }
+    ]) });
+  });
+  let syncCalled = false;
+  await page.route("**/api/backend/integrations/freelancehunt/sync", async route => {
+    syncCalled = true;
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ checked: 2, updated: 1, errors: 0 }) });
+  });
+
+  await page.goto("/integrations");
+  await expect(page.getByRole("button", { name: "Синхронизировать отклики" })).toBeVisible();
+  await page.getByRole("button", { name: "Синхронизировать отклики" }).click();
+  await expect.poll(() => syncCalled).toBe(true);
+  await expect(page.getByText("Проверено откликов: 2. Обновлено ответов заказчиков: 1. Ошибок: 0.")).toBeVisible();
+});
