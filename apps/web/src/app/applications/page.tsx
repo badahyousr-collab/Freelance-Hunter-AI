@@ -6,8 +6,9 @@ import { Check, FileText, Save, Send, X } from "lucide-react";
 import WorkspacePage from "@/components/WorkspacePage";
 
 const API = "/api/backend";
-type Application = { id:number; project_id:number; status:string; draft_text:string|null; created_at:string; submitted_at:string|null; replied_at:string|null; provider_submission_id?:string|null; submission_error?:string|null; project:{title:string;url:string;source:string;budget_max:number|null;currency:string|null}|null };
+type Application = { id:number; project_id:number; status:string; draft_text:string|null; created_at:string; submitted_at:string|null; replied_at:string|null; provider_submission_id?:string|null; provider_status?:string|null; provider_thread_id?:string|null; submission_error?:string|null; project:{title:string;url:string;source:string;budget_max:number|null;currency:string|null}|null };
 type SubmissionInput = { budget_amount:string; currency:string; days:string; safe_type:string };
+type ApplicationMessage = { id:string; sender_type:string; message:string; posted_at:string|null };
 
 function statusLabel(status: string) {
   const labels: Record<string,string> = {
@@ -32,6 +33,8 @@ export default function ApplicationsPage() {
   const [error,setError] = useState("");
   const [message,setMessage] = useState("");
   const [submissionInputs,setSubmissionInputs] = useState<Record<number,SubmissionInput>>({});
+  const [messagesByApplication,setMessagesByApplication] = useState<Record<number,ApplicationMessage[]>>({});
+  const [loadingMessagesId,setLoadingMessagesId] = useState<number|null>(null);
 
   async function load() {
     setLoading(true);
@@ -73,6 +76,19 @@ export default function ApplicationsPage() {
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Не удалось обновить отклик");
     } finally { setter(null); }
+  }
+
+  async function loadApplicationMessages(item: Application) {
+    setLoadingMessagesId(item.id); setError("");
+    try {
+      const response = await fetch(API + "/applications/" + item.id + "/messages", { credentials: "include" });
+      if (response.status === 401) { window.location.assign("/login"); return; }
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail ?? "Не удалось загрузить переписку");
+      setMessagesByApplication(current => ({ ...current, [item.id]: data as ApplicationMessage[] }));
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Не удалось загрузить переписку");
+    } finally { setLoadingMessagesId(null); }
   }
 
   async function submitFreelancehunt(item: Application) {
@@ -144,6 +160,26 @@ export default function ApplicationsPage() {
             {item.submitted_at && <span>Подтверждено как отправленное: {new Date(item.submitted_at).toLocaleString()}</span>}
             {item.provider_submission_id && <span>ID отклика Freelancehunt: {item.provider_submission_id}</span>}
             {item.replied_at && <span>Ответ клиента: {new Date(item.replied_at).toLocaleString()}</span>}
+            {item.provider_thread_id && (
+              <div style={{ marginTop: 10 }}>
+                <button className="sub-button" type="button" disabled={loadingMessagesId===item.id} onClick={() => void loadApplicationMessages(item)}>
+                  {loadingMessagesId===item.id ? "Загружаем переписку…" : messagesByApplication[item.id] ? "Обновить переписку" : "Показать переписку"}
+                </button>
+                {messagesByApplication[item.id] && (
+                  <div style={{ marginTop: 10, display: "grid", gap: 8 }}>
+                    {messagesByApplication[item.id].length === 0 ? <p className="sub-muted">Сообщений пока нет.</p> : messagesByApplication[item.id].map(message => (
+                      <article key={message.id} className="sub-card" style={{ padding: 12 }}>
+                        <div className="sub-muted" style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+                          <span>{message.sender_type === "client" ? "Заказчик" : message.sender_type === "freelancer" ? "Вы" : "Участник переписки"}</span>
+                          {message.posted_at && <time>{new Date(message.posted_at).toLocaleString()}</time>}
+                        </div>
+                        <p style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{message.message}</p>
+                      </article>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
           {item.project?.url && <a className="sub-button" href={item.project.url} target="_blank" rel="noreferrer"><Send size={14}/>Открыть заказ</a>}
         </article>;
