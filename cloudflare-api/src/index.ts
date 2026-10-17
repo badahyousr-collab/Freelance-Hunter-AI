@@ -18,10 +18,10 @@ const json = (data: unknown, status = 200, headers: HeadersInit = {}) =>
 
 function allowedOrigin(origin: string | null): string | null {
   if (!origin) return null;
+  if (origin === "https://freelance-hunter-ai.badahyousr.workers.dev") return origin;
   try {
     const u = new URL(origin);
-    if (u.protocol === "https:" && (u.hostname.endsWith(".workers.dev") || u.hostname.endsWith(".pages.dev"))) return origin;
-    if (u.protocol === "http:" && (u.hostname === "localhost" || u.hostname === "127.0.0.1")) return origin;
+    if (u.protocol === "http:" && (u.hostname === "localhost" || u.hostname === "127.0.0.1") && (u.port === "3000" || u.port === "3001" || u.port === "5173" || u.port === "4173")) return origin;
   } catch {}
   return null;
 }
