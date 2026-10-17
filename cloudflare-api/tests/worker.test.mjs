@@ -224,6 +224,29 @@ test("unknown API route returns a structured 404", async () => {
 });
 
 
+
+test("scan ignores Telegram listings older than seven days and listings without a publication date", async () => {
+  const originalFetch = globalThis.fetch;
+  const html = [
+    '<div class="tgme_widget_message_wrap" data-post="python_jobs/201"><div class="tgme_widget_message_text js-message_text" dir="auto">We need a Python developer for a freelance project. Budget 500 USD.</div><time datetime="2026-10-01T10:00:00+00:00"></time></div>',
+    '<div class="tgme_widget_message_wrap" data-post="python_jobs/202"><div class="tgme_widget_message_text js-message_text" dir="auto">We need a Python developer for a freelance project. Budget 500 USD.</div></div>'
+  ].join("");
+  globalThis.fetch = async input => String(input).startsWith("https://t.me/s/python_jobs")
+    ? new Response(html, { status: 200, headers: { "Content-Type": "text/html" } })
+    : originalFetch(input);
+  try {
+    const response = await worker.fetch(new Request("https://api.example/agent/scan", {
+      method: "POST",
+      headers: { Cookie: "fh_session=test-session-token", "Content-Type": "application/json" },
+      body: "{}"
+    }), { DB: fakeDb({ scan: true }) });
+    assert.equal(response.status, 200);
+    assert.equal((await response.json()).newProjects, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("manual scan ingests and normalizes a public Telegram listing", async () => {
   const originalFetch = globalThis.fetch;
   const html = '<div class="tgme_widget_message_wrap" data-post="python_jobs/123"><div class="tgme_widget_message_text js-message_text" dir="auto">We need a Python developer to build a Telegram bot for a freelance project. Budget 500 USD.</div><time datetime="2026-10-15T10:00:00+00:00"></time></div>';
@@ -250,7 +273,7 @@ test("manual scan ingests and normalizes a public Telegram listing", async () =>
 
 test("manual scan persists low-relevance listings for the matching stage", async () => {
   const originalFetch = globalThis.fetch;
-  const html = '<div class="tgme_widget_message_wrap" data-post="python_jobs/124"><div class="tgme_widget_message_text js-message_text" dir="auto">We need a Python developer to build a Telegram bot for a freelance project. Budget 500 USD.</div></div>';
+  const html = '<div class="tgme_widget_message_wrap" data-post="python_jobs/124"><div class="tgme_widget_message_text js-message_text" dir="auto">We need a Python developer to build a Telegram bot for a freelance project. Budget 500 USD.</div><time datetime="2026-10-16T10:00:00+00:00"></time></div>';
   globalThis.fetch = async (input, init) => {
     if (String(input).startsWith("https://t.me/s/python_jobs")) return new Response(html, { status: 200, headers: { "Content-Type": "text/html" } });
     return originalFetch(input, init);
@@ -439,7 +462,7 @@ test("application review returns not found for records outside the current user'
 });
 
 
-test("manual scan sends one Telegram message for newly inserted projects when notifications are enabled", async () => {
+test("manual scan does not send individual Telegram messages for newly inserted projects", async () => {
   const originalFetch = globalThis.fetch;
   const html = '<div class="tgme_widget_message_wrap" data-post="python_jobs/777"><div class="tgme_widget_message_text js-message_text" dir="auto">We need a Python developer to build a Telegram bot for a freelance project. Budget 500 USD.</div><time datetime="2026-10-17T10:00:00+00:00"></time></div>';
   let sentPayload = null;
@@ -463,9 +486,7 @@ test("manual scan sends one Telegram message for newly inserted projects when no
     });
     assert.equal(response.status, 200);
     assert.equal((await response.json()).newProjects, 1);
-    assert.equal(sentPayload.chat_id, 12345);
-    assert.match(sentPayload.text, /Новые проекты: 1/);
-    assert.ok(sentPayload.text.includes("python_jobs/777"));
+    assert.equal(sentPayload, null, "new listing details must not be sent as individual Telegram messages");
   } finally {
     globalThis.fetch = originalFetch;
   }
