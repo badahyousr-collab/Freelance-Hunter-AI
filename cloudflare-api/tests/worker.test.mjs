@@ -728,7 +728,7 @@ test("Freelancehunt token connection fails closed without encryption configurati
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async () => Response.json({ error: { status: 401, title: "Unauthorized" } }, { status: 401 });
   try {
-    const rejected = await worker.fetch(request(), { DB: fakeDb(), INTEGRATION_ENCRYPTION_KEY: "test-encryption-key" });
+    const rejected = await worker.fetch(request(), { DB: fakeDb(), INTEGRATION_ENCRYPTION_KEY: "a-test-encryption-key-with-sufficient-entropy" });
     assert.equal(rejected.status, 401);
     assert.match((await rejected.json()).detail, /rejected this API token/i);
   } finally {
