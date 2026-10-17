@@ -73,7 +73,7 @@ jobs:
       - name: Verify containerized API health
         run: |
           for attempt in $(seq 1 45); do
-            if curl --fail --silent http://127.0.0.1:8000/health; then
+            if curl --max-time 3 --fail --silent http://127.0.0.1:8000/health; then
               echo
               exit 0
             fi
