@@ -535,6 +535,65 @@ async function scanFreelancehuntSource(env: Env, userId: string, source: any): P
   }
 }
 
+async function syncFreelancehuntBidStatuses(env: Env, userId: string): Promise<{ checked: number; changed: number; error?: string }> {
+  const startedAt = Date.now();
+  try {
+    if (!env.INTEGRATION_ENCRYPTION_KEY) throw new Error("Integration encryption is not configured.");
+    const integration = await env.DB.prepare("SELECT credentials_json FROM integrations WHERE user_id=? AND provider='freelancehunt' AND status='connected'")
+      .bind(userId).first<any>();
+    if (!integration?.credentials_json) return { checked: 0, changed: 0 };
+    const token = await decryptIntegrationSecret(String(integration.credentials_json), env.INTEGRATION_ENCRYPTION_KEY);
+    const { response: upstream, data } = await freelancehuntApi(token, "/my/bids");
+    if (!upstream.ok) {
+      if (upstream.status === 401 || upstream.status === 403) {
+        await env.DB.prepare("UPDATE integrations SET status='reauth_required' WHERE user_id=? AND provider='freelancehunt'").bind(userId).run();
+      }
+      throw new Error(`Freelancehunt bid status API returned HTTP ${upstream.status}.`);
+    }
+    const bids = Array.isArray(data?.data) ? data.data : [];
+    const byId = new Map<string, any>();
+    for (const bid of bids) {
+      const id = String(bid?.id ?? "");
+      const status = String(bid?.attributes?.status ?? "");
+      if (/^\\d+$/.test(id) && ["active", "rejected", "revoked"].includes(status)) byId.set(id, bid.attributes);
+    }
+    const rows = await env.DB.prepare("SELECT a.id,a.provider_submission_id,a.provider_status,a.provider_is_winner,p.title AS project_title,p.url AS project_url FROM applications a JOIN projects p ON p.id=a.project_id AND p.user_id=a.user_id WHERE a.user_id=? AND p.source='freelancehunt' AND a.status IN ('sent','replied') AND a.provider_submission_id IS NOT NULL")
+      .bind(userId).all<any>();
+    const target = await env.DB.prepare("SELECT tl.telegram_user_id,a.notify_application_updates FROM telegram_links tl JOIN agent_settings a ON a.user_id=tl.user_id WHERE tl.user_id=? AND tl.telegram_user_id IS NOT NULL")
+      .bind(userId).first<any>();
+    let checked = 0;
+    let changed = 0;
+    for (const row of rows.results ?? []) {
+      const attributes = byId.get(String(row.provider_submission_id));
+      if (!attributes) continue;
+      checked += 1;
+      const nextStatus = String(attributes.status);
+      const nextWinner = attributes.is_winner ? 1 : 0;
+      const previousStatus = row.provider_status == null ? null : String(row.provider_status);
+      const previousWinner = Number(row.provider_is_winner ?? 0) === 1 ? 1 : 0;
+      const statusChanged = previousStatus !== nextStatus;
+      const winnerChanged = previousWinner !== nextWinner;
+      await env.DB.prepare("UPDATE applications SET provider_status=?,provider_is_winner=?,provider_status_synced_at=datetime('now') WHERE id=? AND user_id=? AND provider_submission_id=?")
+        .bind(nextStatus, nextWinner, row.id, userId, row.provider_submission_id).run();
+      if (!statusChanged && !winnerChanged) continue;
+      changed += 1;
+      if (previousStatus === null || (!target?.telegram_user_id) || Number(target.notify_application_updates ?? 1) !== 1 || !env.TELEGRAM_BOT_TOKEN) continue;
+      const statusLabel = nextStatus === "rejected" ? "отклонён" : nextStatus === "revoked" ? "отозван" : "активен";
+      const projectUrl = safeFreelancehuntProjectUrl(row.project_url);
+      const projectTitle = escapeTelegramHtml(String(row.project_title ?? "Проект").slice(0, 180));
+      const projectLink = projectUrl ? `<a href="${escapeTelegramHtml(projectUrl)}">${projectTitle}</a>` : projectTitle;
+      const winnerMessage = nextWinner === 1 && previousWinner !== 1 ? "\\n\\nЗаказчик выбрал вас исполнителем." : "";
+      await telegramReply(env, Number(target.telegram_user_id), `<b>Обновился статус отклика</b>\\n${projectLink}\\nСтатус: ${statusLabel}${winnerMessage}`);
+    }
+    console.info("freelancehunt_bid_status_sync_completed", { userId, checked, changed, durationMs: Date.now() - startedAt });
+    return { checked, changed };
+  } catch (error) {
+    const message = error instanceof Error ? error.message.slice(0, 300) : "Freelancehunt status sync failed";
+    console.warn("freelancehunt_bid_status_sync_failed", { userId, durationMs: Date.now() - startedAt, error: message });
+    return { checked: 0, changed: 0, error: message };
+  }
+}
+
 async function scanUserSources(env: Env, userId: string): Promise<{ scannedSources: number; newProjects: number; errors: string[] }> {
   const rows = await env.DB.prepare("SELECT * FROM sources WHERE user_id=? AND is_enabled=1 AND source IN ('telegram','freelancehunt') ORDER BY created_at ASC").bind(userId).all<any>();
   let newProjects = 0;
