@@ -978,3 +978,38 @@ test("disconnecting Freelancehunt removes its source subscription but keeps disc
   assert.ok(sourceDelete);
   assert.deepEqual(sourceDelete.values, ["user-1"]);
 });
+
+
+test("CORS allows the production app and rejects unrelated Workers and Pages origins", async () => {
+  const DB = fakeDb();
+  const allowed = await worker.fetch(new Request("https://api.example/health", {
+    headers: { Origin: "https://freelance-hunter-ai.badahyousr.workers.dev" }
+  }), { DB });
+  assert.equal(allowed.headers.get("Access-Control-Allow-Origin"), "https://freelance-hunter-ai.badahyousr.workers.dev");
+  assert.equal(allowed.headers.get("Access-Control-Allow-Credentials"), "true");
+
+  for (const origin of [
+    "https://attacker.workers.dev",
+    "https://attacker.pages.dev",
+    "https://freelance-hunter-ai.badahyousr.workers.dev.attacker.example",
+    "null"
+  ]) {
+    const response = await worker.fetch(new Request("https://api.example/health", {
+      headers: { Origin: origin }
+    }), { DB });
+    assert.equal(response.headers.get("Access-Control-Allow-Origin"), null, origin);
+  }
+});
+
+test("CORS only permits expected local development ports", async () => {
+  const DB = fakeDb();
+  const allowed = await worker.fetch(new Request("https://api.example/health", {
+    headers: { Origin: "http://localhost:3000" }
+  }), { DB });
+  assert.equal(allowed.headers.get("Access-Control-Allow-Origin"), "http://localhost:3000");
+
+  const rejected = await worker.fetch(new Request("https://api.example/health", {
+    headers: { Origin: "http://localhost:9999" }
+  }), { DB });
+  assert.equal(rejected.headers.get("Access-Control-Allow-Origin"), null);
+});
