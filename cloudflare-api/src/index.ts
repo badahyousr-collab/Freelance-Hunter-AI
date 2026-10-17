@@ -1002,6 +1002,41 @@ async function handle(request: Request, env: Env): Promise<Response> {
     return response(request, (rows.results ?? []).map((a:any) => ({ id:a.id, project_id:a.project_id, status:a.status, draft_text:a.draft_text, created_at:a.created_at, submitted_at:a.submitted_at, replied_at:a.replied_at, project:a.project_title ? { title:a.project_title, url:a.project_url, source:a.project_source } : null })));
   }
 
+  // This workflow prepares and reviews proposals, but deliberately does not fake
+  // marketplace submission. Only a verified provider adapter may set sent/replied.
+  const applicationMatch = path.match(/^\\/applications\\/(\\d+)$/);
+  if (applicationMatch && method === "PATCH") {
+    const id = Number(applicationMatch[1]);
+    const input = await body(request);
+    const existing = await env.DB.prepare("SELECT id,project_id,status,draft_text FROM applications WHERE id=? AND user_id=?").bind(id, uid).first<any>();
+    if (!existing) return response(request, { detail: "Application not found." }, 404);
+    const currentStatus = String(existing.status);
+    if (!["draft", "awaiting_confirmation"].includes(currentStatus)) {
+      return response(request, { detail: "This application is closed or already submitted and cannot be edited." }, 409);
+    }
+    let nextStatus = currentStatus;
+    if (input.status !== undefined) {
+      const requested = String(input.status);
+      if (!["draft", "awaiting_confirmation", "closed"].includes(requested)) {
+        return response(request, { detail: "This action cannot mark an application as submitted. Submission status requires confirmation from a supported marketplace adapter." }, 400);
+      }
+      if (requested === "awaiting_confirmation" && currentStatus !== "draft" && currentStatus !== "awaiting_confirmation") {
+        return response(request, { detail: "Only a draft can be prepared for confirmation." }, 409);
+      }
+      nextStatus = requested;
+    }
+    const draftText = input.draft_text === undefined ? existing.draft_text : String(input.draft_text);
+    if (draftText !== null && draftText !== undefined && draftText.length > 5000) {
+      return response(request, { detail: "Proposal drafts must be 5,000 characters or fewer." }, 400);
+    }
+    if (nextStatus === "awaiting_confirmation" && !String(draftText ?? "").trim()) {
+      return response(request, { detail: "Add proposal text before preparing it for confirmation." }, 400);
+    }
+    await env.DB.prepare("UPDATE applications SET draft_text=?,status=? WHERE id=? AND user_id=? AND status IN ('draft','awaiting_confirmation')").bind(draftText, nextStatus, id, uid).run();
+    const saved = await env.DB.prepare("SELECT id,project_id,status,draft_text,created_at,submitted_at,replied_at FROM applications WHERE id=? AND user_id=?").bind(id, uid).first<any>();
+    return response(request, saved ?? { id, project_id: existing.project_id, status: nextStatus, draft_text: draftText });
+  }
+
   if (path === "/integrations/catalog" && method === "GET") return response(request, integrationCatalog);
   if (path === "/integrations" && method === "GET") {
     const rows = await env.DB.prepare("SELECT id,provider,label,status,created_at FROM integrations WHERE user_id=? ORDER BY created_at DESC").bind(uid).all<any>();
