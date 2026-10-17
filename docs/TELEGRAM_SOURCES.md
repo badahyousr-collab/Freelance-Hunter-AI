@@ -8,7 +8,7 @@ The site includes a curated starting set of public Telegram channels that publis
 |---|---|---|---|---|
 | Вакансии для разработчиков ботов | Requests for Telegram bots and Mini Apps, often with requirements and budget | RU | https://t.me/s/job_for_bots | Public preview contains a channel description and a bot-development request. |
 | Запили мне, зерокодер | No-code, automation, applications and bots | RU | https://t.me/s/zerocode_jobs | Public preview showed current project posts. |
-| Фриланс для разработчиков | Developer freelance orders and remote projects | RU | https://t.me/s/job_developer | Public preview describes daily freelance orders and showed developer project posts. |
+| Ит Вакансии / Работа программиста | IT-вакансии, удалённая работа и позиции для разработчиков | RU | https://t.me/s/hr_itwork | Публичный просмотр содержит свежие IT-вакансии; часть публикаций является полной занятостью, поэтому фильтрация обязательна. |
 | GetClient | Freelance orders across IT, design, marketing and related fields | RU | https://t.me/s/GetClient | Public channel listing describes regular orders and links to a companion bot. |
 | Фриланс Таверна Official | Заказы и удалённые вакансии, включая разработку и digital | RU | https://t.me/s/freelancetaverna | Публичный просмотр содержит свежие публикации с заказами; конкретные объявления всё равно требуют проверки. |
 | Вакансии для фрилансеров | Remote work and freelance orders | RU | https://t.me/s/kadrof_work | Public listing describes daily remote vacancies and freelance orders. |
