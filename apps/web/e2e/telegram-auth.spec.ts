@@ -364,3 +364,37 @@ test("Freelancehunt integration accepts an API token but never displays it after
   await expect(page.getByLabel("API-токен Freelancehunt")).toHaveValue("");
 });
 
+
+
+test("applications page can sync provider-confirmed Freelancehunt status", async ({ page }) => {
+  await mockAuthenticatedAccount(page);
+  const applications = [{
+    id: 12,
+    project_id: 123,
+    status: "sent",
+    draft_text: "I can build the Telegram bot.",
+    created_at: "2026-10-16T10:00:00Z",
+    submitted_at: "2026-10-16T10:05:00Z",
+    replied_at: null,
+    provider_submission_id: "321",
+    provider_status: "active",
+    project: { title: "Telegram bot", url: "https://freelancehunt.com/project/123", source: "freelancehunt", budget_max: 5000, currency: "RUB" }
+  }];
+  let syncCalled = false;
+  await page.route("**/api/backend/applications", async route => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(applications) });
+  });
+  await page.route("**/api/backend/integrations/freelancehunt/sync", async route => {
+    syncCalled = true;
+    applications[0] = { ...applications[0], status: "replied", provider_status: "rejected", replied_at: "2026-10-17T10:00:00Z" };
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ checked: 1, updated: 1, errors: 0, message: "Status sync completed." }) });
+  });
+
+  await page.goto("/applications");
+  await expect(page.getByText("Telegram bot")).toBeVisible();
+  await page.getByRole("button", { name: "Синхронизировать статусы Freelancehunt" }).click();
+  await expect.poll(() => syncCalled).toBe(true);
+  await expect(page.getByText("Есть ответ")).toBeVisible();
+  await expect(page.getByText("Статус на бирже: отклонён")).toBeVisible();
+  await expect(page.getByText(/Обновлено ответов: 1/i)).toBeVisible();
+});
