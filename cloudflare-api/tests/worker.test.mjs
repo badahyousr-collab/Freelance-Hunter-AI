@@ -4,6 +4,8 @@ import worker, { detectedBudget, evaluateProjectMatch } from "../.test-dist/src/
 
 function fakeDb({ scan = false, freelancehuntScan = false, skills = ["python", "telegram"], telegramAuth = null, telegramCode = null, linkedAccount = null, application = null, integration = null, notificationTarget = null, insertChanges = 1, projectInserts = [], telegramIdentitySchema = true, notificationsSchema = true } = {}) {
   return {
+    get storedIntegration() { return integration; },
+    get insertedProjects() { return projectInserts; },
     async batch(statements) { return statements.map(() => ({ meta: { changes: 1 } })); },
     prepare(sql) {
       let values = [];
@@ -545,4 +547,99 @@ test("protected project data is not returned without a session", async () => {
   const response = await worker.fetch(new Request("https://api.example/projects"), { DB: fakeDb() });
   assert.equal(response.status, 401);
   assert.match((await response.json()).detail, /authentication required/i);
+});
+
+
+test("Freelancehunt token is validated, encrypted, and used to ingest official API projects", async () => {
+  const originalFetch = globalThis.fetch;
+  const token = "test-freelancehunt-token";
+  const encryptionKey = "test-integration-encryption-key-0123456789";
+  const db = fakeDb({ freelancehuntScan: true, skills: ["python", "telegram"] });
+  const requests = [];
+  globalThis.fetch = async (input, init) => {
+    const url = String(input);
+    requests.push({ url, headers: init?.headers, body: init?.body });
+    if (url === "https://api.freelancehunt.com/v2/my/profile") {
+      assert.equal(new Headers(init.headers).get("Authorization"), "Bearer " + token);
+      return Response.json({ data: { attributes: { login: "test_freelancer" } } });
+    }
+    if (url === "https://api.freelancehunt.com/v2/projects") {
+      assert.equal(new Headers(init.headers).get("Authorization"), "Bearer " + token);
+      return Response.json({ data: [{
+        id: 299172,
+        type: "project",
+        attributes: {
+          name: "Python Telegram bot",
+          description_html: "<p>Need a Python developer to build a Telegram bot.</p>",
+          budget: { amount: 5000, currency: "RUB" },
+          safe_type: "employer",
+          published_at: "2026-10-17T09:00:00+00:00",
+          self: { web: "https://freelancehunt.com/project/python-telegram-bot/299172.html" }
+        }
+      }] });
+    }
+    return originalFetch(input, init);
+  };
+  try {
+    const connectResponse = await worker.fetch(new Request("https://api.example/integrations", {
+      method: "POST",
+      headers: { Cookie: "fh_session=test-session-token", "Content-Type": "application/json" },
+      body: JSON.stringify({ provider: "freelancehunt", secret: token })
+    }), { DB: db, INTEGRATION_ENCRYPTION_KEY: encryptionKey });
+    assert.equal(connectResponse.status, 201);
+    const connected = await connectResponse.json();
+    assert.equal(connected.status, "connected");
+    assert.equal(connected.label, "Freelancehunt · test_freelancer");
+    assert.equal(JSON.stringify(connected).includes(token), false);
+    assert.ok(db.storedIntegration.credentials_json.includes("ciphertext"));
+    assert.equal(db.storedIntegration.credentials_json.includes(token), false);
+
+    const scanResponse = await worker.fetch(new Request("https://api.example/agent/scan", {
+      method: "POST",
+      headers: { Cookie: "fh_session=test-session-token", "Content-Type": "application/json" },
+      body: "{}"
+    }), { DB: db, INTEGRATION_ENCRYPTION_KEY: encryptionKey });
+    assert.equal(scanResponse.status, 200);
+    const result = await scanResponse.json();
+    assert.equal(result.scannedSources, 1);
+    assert.equal(result.newProjects, 1);
+    assert.deepEqual(result.errors, []);
+    assert.equal(db.insertedProjects.length, 1);
+    assert.equal(db.insertedProjects[0].values[1], "299172");
+    assert.equal(db.insertedProjects[0].values[2], "https://freelancehunt.com/project/python-telegram-bot/299172.html");
+    assert.equal(db.insertedProjects[0].values[6], 5000);
+    assert.ok(requests.some(item => item.url === "https://api.freelancehunt.com/v2/projects"));
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("Freelancehunt invalid tokens are rejected without saving credentials", async () => {
+  const originalFetch = globalThis.fetch;
+  let saved = false;
+  const db = fakeDb();
+  const originalPrepare = db.prepare.bind(db);
+  db.prepare = sql => {
+    const prepared = originalPrepare(sql);
+    if (sql.includes("INSERT INTO integrations")) {
+      const originalRun = prepared.run.bind(prepared);
+      prepared.run = async (...args) => { saved = true; return originalRun(...args); };
+    }
+    return prepared;
+  };
+  globalThis.fetch = async input => {
+    if (String(input) === "https://api.freelancehunt.com/v2/my/profile") return Response.json({ error: { title: "Unauthorized" } }, { status: 401 });
+    return originalFetch(input);
+  };
+  try {
+    const response = await worker.fetch(new Request("https://api.example/integrations", {
+      method: "POST",
+      headers: { Cookie: "fh_session=test-session-token", "Content-Type": "application/json" },
+      body: JSON.stringify({ provider: "freelancehunt", secret: "invalid-token" })
+    }), { DB: db, INTEGRATION_ENCRYPTION_KEY: "test-integration-encryption-key-0123456789" });
+    assert.equal(response.status, 401);
+    assert.equal(saved, false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
