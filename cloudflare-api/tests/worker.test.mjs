@@ -915,3 +915,103 @@ test("scheduled scans continue for later users when one user's source query fail
   await scheduledTask;
   assert.deepEqual(visitedUsers, ["user-1", "user-2"]);
 });
+
+
+test("Freelancehunt bid status sync stores changes and sends one Telegram notification", async () => {
+  const originalFetch = globalThis.fetch;
+  const token = "test-freelancehunt-token-status";
+  const encryptionKey = "test-integration-encryption-key-0123456789";
+  const db = fakeDb({
+    application: {
+      id: 7, project_id: 299172, status: "sent", draft_text: "Proposal",
+      source: "freelancehunt", source_project_id: "299172",
+      provider_submission_id: "3119168", provider_status: "active", provider_is_winner: 0,
+      project_title: "Python Telegram bot",
+      project_url: "https://freelancehunt.com/project/python-telegram-bot/299172.html",
+      created_at: "2026-10-17 10:00:00", submitted_at: "2026-10-17 10:30:00", replied_at: null
+    },
+    notificationTarget: { telegram_user_id: "12345", notify_application_updates: 1 }
+  });
+  let telegramNotifications = 0;
+  globalThis.fetch = async (input, init) => {
+    const url = String(input);
+    if (url === "https://api.freelancehunt.com/v2/my/profile") {
+      return Response.json({ data: { attributes: { login: "test_freelancer" } } });
+    }
+    if (url === "https://api.freelancehunt.com/v2/my/bids") {
+      assert.equal(new Headers(init.headers).get("Authorization"), "Bearer " + token);
+      return Response.json({ data: [{ id: 3119168, attributes: { status: "rejected", is_winner: false } }] });
+    }
+    if (url.includes("api.telegram.org/botTEST_TOKEN/sendMessage")) {
+      telegramNotifications += 1;
+      const payload = JSON.parse(init.body);
+      assert.match(payload.text, /Статус: отклонён/);
+      assert.match(payload.text, /Python Telegram bot/);
+      return Response.json({ ok: true, result: { message_id: 9 } });
+    }
+    return originalFetch(input, init);
+  };
+  try {
+    const connect = await worker.fetch(new Request("https://api.example/integrations", {
+      method: "POST",
+      headers: { Cookie: "fh_session=test-session-token", "Content-Type": "application/json" },
+      body: JSON.stringify({ provider: "freelancehunt", secret: token })
+    }), { DB: db, INTEGRATION_ENCRYPTION_KEY: encryptionKey });
+    assert.equal(connect.status, 201);
+
+    const syncRequest = () => new Request("https://api.example/agent/sync-status", {
+      method: "POST", headers: { Cookie: "fh_session=test-session-token", "Content-Type": "application/json" }, body: "{}"
+    });
+    const response = await worker.fetch(syncRequest(), { DB: db, INTEGRATION_ENCRYPTION_KEY: encryptionKey, TELEGRAM_BOT_TOKEN: "TEST_TOKEN" });
+    assert.equal(response.status, 200);
+    const result = await response.json();
+    assert.equal(result.checked, 1);
+    assert.equal(result.changed, 1);
+    assert.equal(db.applicationRecord.provider_status, "rejected");
+    assert.equal(telegramNotifications, 1);
+
+    const repeated = await worker.fetch(syncRequest(), { DB: db, INTEGRATION_ENCRYPTION_KEY: encryptionKey, TELEGRAM_BOT_TOKEN: "TEST_TOKEN" });
+    assert.equal(repeated.status, 200);
+    assert.equal((await repeated.json()).changed, 0);
+    assert.equal(telegramNotifications, 1);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("Freelancehunt status sync respects the per-user notification opt-out", async () => {
+  const originalFetch = globalThis.fetch;
+  const token = "test-freelancehunt-token-optout";
+  const encryptionKey = "test-integration-encryption-key-0123456789";
+  const db = fakeDb({
+    application: {
+      id: 8, project_id: 299173, status: "sent", draft_text: "Proposal",
+      source: "freelancehunt", source_project_id: "299173",
+      provider_submission_id: "3119169", provider_status: "active", provider_is_winner: 0,
+      project_title: "Automation task", project_url: "https://freelancehunt.com/project/automation/299173.html"
+    },
+    notificationTarget: { telegram_user_id: "12345", notify_application_updates: 0 }
+  });
+  let telegramNotifications = 0;
+  globalThis.fetch = async input => {
+    const url = String(input);
+    if (url === "https://api.freelancehunt.com/v2/my/profile") return Response.json({ data: { attributes: { login: "test_freelancer" } } });
+    if (url === "https://api.freelancehunt.com/v2/my/bids") return Response.json({ data: [{ id: 3119169, attributes: { status: "rejected", is_winner: false } }] });
+    if (url.includes("api.telegram.org/botTEST_TOKEN/sendMessage")) { telegramNotifications += 1; return Response.json({ ok: true, result: { message_id: 10 } }); }
+    return originalFetch(input);
+  };
+  try {
+    await worker.fetch(new Request("https://api.example/integrations", {
+      method: "POST", headers: { Cookie: "fh_session=test-session-token", "Content-Type": "application/json" },
+      body: JSON.stringify({ provider: "freelancehunt", secret: token })
+    }), { DB: db, INTEGRATION_ENCRYPTION_KEY: encryptionKey });
+    const response = await worker.fetch(new Request("https://api.example/agent/sync-status", {
+      method: "POST", headers: { Cookie: "fh_session=test-session-token", "Content-Type": "application/json" }, body: "{}"
+    }), { DB: db, INTEGRATION_ENCRYPTION_KEY: encryptionKey, TELEGRAM_BOT_TOKEN: "TEST_TOKEN" });
+    assert.equal(response.status, 200);
+    assert.equal(db.applicationRecord.provider_status, "rejected");
+    assert.equal(telegramNotifications, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
