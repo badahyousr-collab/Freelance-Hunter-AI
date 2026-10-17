@@ -500,7 +500,10 @@ async function scanFreelancehuntSource(env: Env, userId: string): Promise<{ scan
       let url = "";
       try {
         const parsed = new URL(rawUrl);
-        if (parsed.protocol === "https:" && (parsed.hostname === "freelancehunt.com" || parsed.hostname.endsWith(".freelancehunt.com"))) url = parsed.toString();
+        if ((parsed.protocol === "https:" || parsed.protocol === "http:") && (parsed.hostname === "freelancehunt.com" || parsed.hostname.endsWith(".freelancehunt.com"))) {
+          parsed.protocol = "https:";
+          url = parsed.toString();
+        }
       } catch {}
       if (!url) continue;
       const budgetData = attributes.budget && typeof attributes.budget === "object" ? attributes.budget : {};
@@ -545,6 +548,7 @@ async function scanFreelancehuntSource(env: Env, userId: string): Promise<{ scan
     return { scanned: true, added };
   } catch (error) {
     const message = error instanceof Error ? error.message.slice(0, 500) : "Freelancehunt scan failed";
+    if (message.includes("cannot be decrypted")) await env.DB.prepare("UPDATE integrations SET status='auth_error' WHERE user_id=? AND provider='freelancehunt'").bind(userId).run();
     await env.DB.prepare("UPDATE sources SET status='error',last_scan_at=datetime('now'),last_error=? WHERE id=? AND user_id=?").bind(message, source.id, userId).run();
     console.warn("freelancehunt_source_scan_failed", { userId, sourceId: source.id, durationMs: Date.now() - startedAt, error: message });
     return { scanned: true, added: 0, error: message };
@@ -1243,8 +1247,14 @@ async function handle(request: Request, env: Env): Promise<Response> {
     const existing = await env.DB.prepare("SELECT id,project_id,status,draft_text FROM applications WHERE id=? AND user_id=?").bind(id, uid).first<any>();
     if (!existing) return response(request, { detail: "Application not found." }, 404);
     const currentStatus = String(existing.status);
+    if (currentStatus === "submission_unknown") {
+      if (input.status !== "closed" || input.draft_text !== undefined) return response(request, { detail: "This submission has an uncertain provider result. Check the listing manually; it cannot be retried automatically." }, 409);
+      await env.DB.prepare("UPDATE applications SET status='closed' WHERE id=? AND user_id=? AND status='submission_unknown'").bind(id, uid).run();
+      const saved = await env.DB.prepare("SELECT id,project_id,status,draft_text,created_at,submitted_at,replied_at,provider_submission_id,submission_error FROM applications WHERE id=? AND user_id=?").bind(id, uid).first<any>();
+      return response(request, saved ?? { id, project_id: existing.project_id, status: "closed", draft_text: existing.draft_text });
+    }
     if (!["draft", "awaiting_confirmation", "failed"].includes(currentStatus)) {
-      return response(request, { detail: "This application is closed, submitting, uncertain, or already submitted and cannot be edited." }, 409);
+      return response(request, { detail: "This application is closed, submitting, or already submitted and cannot be edited." }, 409);
     }
     let nextStatus = currentStatus;
     if (input.status !== undefined) {
