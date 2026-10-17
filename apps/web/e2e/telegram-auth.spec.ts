@@ -398,3 +398,44 @@ test("integrations page runs Freelancehunt bid status sync", async ({ page }) =>
   await expect.poll(() => syncCalled).toBe(true);
   await expect(page.getByText("Проверено откликов: 2. Обновлено ответов заказчиков: 1. Ошибок: 0.")).toBeVisible();
 });
+
+
+test("core workspace pages fit a phone viewport without horizontal overflow", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.route("**/api/backend/**", async route => {
+    const pathname = new URL(route.request().url()).pathname.replace("/api/backend", "");
+    let body: unknown = [];
+    if (pathname === "/profile") {
+      body = { display_name: "Test user", skills: [], languages: ["ru", "en"], payment_preferences: [], excluded_keywords: [], min_budget: null, currency: "RUB" };
+    } else if (pathname === "/agent/settings") {
+      body = { enabled: false, is_enabled: false, auto_draft: true, notify_new_projects: true, notify_application_updates: true, min_match_score: 60, telegram_linked: true };
+    } else if (pathname === "/agent/readiness") {
+      body = { worker_runtime: true, cron_configured: true, telegram_bot_configured: true, ai_provider_configured: false, marketplace_adapters: ["freelancehunt"] };
+    } else if (pathname === "/integrations/catalog") {
+      body = [{ provider: "freelancehunt", label: "Freelancehunt", status: "available", setup_note: "Official API" }];
+    } else if (pathname === "/integrations") {
+      body = [{ id: 1, provider: "freelancehunt", label: "Freelancehunt", status: "connected", created_at: "2026-10-17T10:00:00Z" }];
+    } else if (pathname === "/sources/catalog") {
+      body = [];
+    } else if (pathname === "/dashboard/summary") {
+      body = { projects_found: 0, matched_projects: 0, proposals_sent: 0, client_replies: 0 };
+    } else if (pathname === "/analytics") {
+      body = { projects_found: 0, matched_projects: 0, proposals_sent: 0, client_replies: 0, source_stats: [] };
+    } else if (pathname === "/agent/scan") {
+      body = { scannedSources: 0, newProjects: 0, errors: [] };
+    }
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(body) });
+  });
+  await mockAuthenticatedAccount(page);
+
+  for (const path of ["/integrations", "/agent", "/applications", "/sources"]) {
+    await page.goto(path);
+    await expect(page.locator("body")).toBeVisible();
+    await page.waitForTimeout(100);
+    const dimensions = await page.evaluate(() => ({
+      viewport: document.documentElement.clientWidth,
+      document: document.documentElement.scrollWidth
+    }));
+    expect(dimensions.document, path + " should not overflow horizontally").toBeLessThanOrEqual(dimensions.viewport + 1);
+  }
+});
