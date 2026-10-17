@@ -8,7 +8,7 @@ import WorkspacePage from "@/components/WorkspacePage";
 const API = "/api/backend";
 type Profile = { skills: string[]; languages: string[]; payment_preferences: string[]; min_budget: number | null };
 type Source = { is_enabled: boolean; source: string };
-type AgentSettings = { enabled: boolean; telegram_linked: boolean };
+type AgentSettings = { enabled: boolean; telegram_linked: boolean; notify_new_projects?: boolean };
 type Readiness = {
   worker_runtime: boolean;
   cron_configured: boolean;
@@ -87,6 +87,26 @@ export default function AgentPage() {
     } finally { setBusy(false); }
   }
 
+  async function toggleNewProjectNotifications() {
+    if (!agent) return;
+    setBusy(true); setError(""); setMessage("");
+    try {
+      const nextValue = !Boolean(agent.notify_new_projects);
+      const r = await fetch(API + "/agent/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ notify_new_projects: nextValue })
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.detail ?? "Не удалось изменить уведомления");
+      setAgent(current => current ? { ...current, ...d } : current);
+      setMessage(nextValue ? "Уведомления о новых проектах включены." : "Уведомления о новых проектах отключены.");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Не удалось изменить уведомления");
+    } finally { setBusy(false); }
+  }
+
   const checks = [
     { label: "Профиль навыков", ok: Boolean(profile && profile.skills.length > 0), detail: "Укажи навыки, чтобы оценка релевантности отражала твой реальный опыт." },
     { label: "Публичные Telegram-источники", ok: sources > 0, detail: "Включённые каналы можно сканировать вручную и по расписанию." },
@@ -106,6 +126,10 @@ export default function AgentPage() {
         {agent?.enabled ? <Pause size={15} /> : <Play size={15} />}{busy ? "Сохраняем…" : agent?.enabled ? "Приостановить агента" : "Включить агента"}
       </button>
       <p style={{ marginTop: 12 }}>Включение не заменяет проверку деплоя, секретов и реального выполнения Cron Trigger.</p>
+      <label style={{ display: "flex", alignItems: "flex-start", gap: 10, marginTop: 16 }}>
+        <input type="checkbox" checked={Boolean(agent?.notify_new_projects)} disabled={busy || !agent} onChange={() => void toggleNewProjectNotifications()} />
+        <span><strong>Уведомлять о новых заказах в Telegram</strong><br/><span className="sub-muted">При отключении новые проекты всё равно сохраняются на сайте. Уведомления отправляются только для действительно новых записей.</span></span>
+      </label>
       <button className="sub-button" style={{ marginTop: 8 }} disabled={scanning || sources === 0} onClick={() => void scanNow()}><Workflow size={15} />{scanning ? "Сканируем…" : "Сканировать Telegram-каналы"}</button>
     </section>
     <section className="content-card">

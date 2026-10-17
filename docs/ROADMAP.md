@@ -62,7 +62,8 @@
 - [x] Statistics, project listing, pause/resume, and help commands.
 - [x] Cloudflare Worker webhook mode and server-side secret checks.
 - [ ] Configure and verify the deployed bot token/webhook secrets and real Telegram messages.
-- [ ] Add notifications for new matches and tracked client replies.
+- [x] Add opt-out Telegram notifications for newly inserted projects, with deduplication and a three-listing message cap.
+- [ ] Add notifications for tracked client replies after provider reply synchronization is available.
 - [ ] Verify that site and bot show the same persisted state.
 
 ## Phase 8 - Quality and deployment

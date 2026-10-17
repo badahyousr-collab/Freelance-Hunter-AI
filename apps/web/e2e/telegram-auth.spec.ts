@@ -221,6 +221,7 @@ test("expired session redirects a protected settings page to Telegram login", as
 test("AI agent toggle and manual scan call the API and show results", async ({ page }) => {
   await mockAuthenticatedAccount(page);
   let enabled = false;
+  let notifyNewProjects = true;
   await page.route("**/api/backend/profile", async route => {
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ display_name: "Dev", skills: ["Python"], languages: ["ru", "en"], payment_preferences: [], excluded_keywords: [], min_budget: null, currency: "ALL" }) });
   });
@@ -229,11 +230,13 @@ test("AI agent toggle and manual scan call the API and show results", async ({ p
   });
   await page.route("**/api/backend/agent/settings", async route => {
     if (route.request().method() === "PATCH") {
-      enabled = Boolean((route.request().postDataJSON() as { enabled?: boolean }).enabled);
-      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ enabled, telegram_linked: true }) });
+      const payload = route.request().postDataJSON() as { enabled?: boolean; notify_new_projects?: boolean };
+      if (payload.enabled !== undefined) enabled = payload.enabled;
+      if (payload.notify_new_projects !== undefined) notifyNewProjects = payload.notify_new_projects;
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ enabled, notify_new_projects: notifyNewProjects, telegram_linked: true }) });
       return;
     }
-    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ enabled, telegram_linked: true }) });
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ enabled, notify_new_projects: notifyNewProjects, telegram_linked: true }) });
   });
   await page.route("**/api/backend/agent/readiness", async route => {
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ worker_runtime: true, cron_configured: true, telegram_bot_configured: true, ai_provider_configured: false, marketplace_adapters: [] }) });
@@ -243,6 +246,11 @@ test("AI agent toggle and manual scan call the API and show results", async ({ p
   });
 
   await page.goto("/agent");
+  const notifications = page.getByRole("checkbox", { name: /Уведомлять о новых заказах в Telegram/i });
+  await expect(notifications).toBeChecked();
+  await notifications.uncheck();
+  await expect(page.getByText(/Уведомления о новых проектах отключены/i)).toBeVisible();
+  expect(notifyNewProjects).toBe(false);
   await page.getByRole("button", { name: "Включить агента" }).click();
   await expect(page.getByText(/AI-агент включён/i)).toBeVisible();
   await expect(page.getByRole("button", { name: "Приостановить агента" })).toBeVisible();
