@@ -9,6 +9,16 @@ This guide documents the free-plan-compatible operational steps for the Cloudfla
 3. Export a database backup before applying destructive migrations or restoring data.
 4. Keep the backup outside Git and store it somewhere private. It contains account and project data.
 
+## Configure operational alerts
+
+Scheduled scan failures and new-project notification delivery failures can be sent to a private Telegram operations chat. Set `WORKER_ALERT_CHAT_ID` to the chat ID and ensure `TELEGRAM_BOT_TOKEN` is configured:
+
+```bash
+npx wrangler secret put WORKER_ALERT_CHAT_ID --config cloudflare-api/wrangler.toml
+```
+
+Paste the private chat ID only into the Wrangler prompt. The health/readiness endpoint reports whether alert delivery is configured. Without this setting, failures remain in Worker logs and persisted source status; that is not live alerting.
+
 ## Check migration state
 
 Run from the repository root:
