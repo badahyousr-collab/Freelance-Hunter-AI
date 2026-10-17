@@ -44,7 +44,7 @@ export default function AgentPage() {
       const r = await rs[3].json();
       if (rs.some(response => !response.ok)) throw new Error("Не удалось загрузить состояние AI-агента");
       setProfile(p);
-      setSources(s.filter((item: Source) => item.is_enabled && item.source === "telegram").length);
+      setSources(s.filter((item: Source) => item.is_enabled && (item.source === "telegram" || item.source === "freelancehunt")).length);
       setAgent(a);
       setReadiness(r);
     } catch (e) {
@@ -179,7 +179,7 @@ export default function AgentPage() {
 
   const checks = [
     { label: "Профиль навыков", ok: Boolean(profile && profile.skills.length > 0), detail: "Укажи навыки, чтобы оценка релевантности отражала твой реальный опыт.", href: "/settings", action: "Настроить" },
-    { label: "Публичные Telegram-источники", ok: sources > 0, detail: "Включённые каналы проверяются автоматически по расписанию, когда агент активен.", href: "/sources", action: "Источники" },
+    { label: "Активные источники заказов", ok: sources > 0, detail: "Включённые Telegram-каналы и Freelancehunt проверяются по расписанию, когда агент активен.", href: "/sources", action: "Источники" },
     { label: "API Worker", ok: Boolean(readiness?.worker_runtime), detail: "Статус получен от текущего API Worker." },
     { label: "Cron Trigger", ok: Boolean(readiness?.cron_configured), detail: "Триггер настроен на каждые 15 минут. Реальное выполнение по расписанию нужно подтвердить после деплоя." },
     { label: "Telegram-бот", ok: Boolean(readiness?.telegram_bot_configured), detail: "Нужны TELEGRAM_BOT_TOKEN, TELEGRAM_WEBHOOK_SECRET и BOT_API_SECRET в секретах Worker.", href: "/integrations", action: "Интеграции" },
