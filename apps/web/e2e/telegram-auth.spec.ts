@@ -231,13 +231,14 @@ test("AI agent toggle and manual scan call the API and show results", async ({ p
   });
   await page.route("**/api/backend/agent/settings", async route => {
     if (route.request().method() === "PATCH") {
-      const payload = route.request().postDataJSON() as { enabled?: boolean; notify_new_projects?: boolean };
+      const payload = route.request().postDataJSON() as { enabled?: boolean; notify_new_projects?: boolean; notify_application_updates?: boolean };
       if (payload.enabled !== undefined) enabled = payload.enabled;
       if (payload.notify_new_projects !== undefined) notifyNewProjects = payload.notify_new_projects;
-      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ enabled, notify_new_projects: notifyNewProjects, telegram_linked: true }) });
+      if (payload.notify_application_updates !== undefined) notifyApplicationUpdates = payload.notify_application_updates;
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ enabled, notify_new_projects: notifyNewProjects, notify_application_updates: notifyApplicationUpdates, telegram_linked: true }) });
       return;
     }
-    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ enabled, notify_new_projects: notifyNewProjects, telegram_linked: true }) });
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ enabled, notify_new_projects: notifyNewProjects, notify_application_updates: notifyApplicationUpdates, telegram_linked: true }) });
   });
   await page.route("**/api/backend/agent/readiness", async route => {
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ worker_runtime: true, cron_configured: true, telegram_bot_configured: true, ai_provider_configured: false, marketplace_adapters: [] }) });
