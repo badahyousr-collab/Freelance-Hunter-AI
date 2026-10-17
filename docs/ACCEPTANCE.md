@@ -14,10 +14,9 @@
 - [x] User-owned source, project, application, and integration data use owner checks.
 - [x] Remove email delivery settings/helpers and disable email auth routes in active API code.
 - [x] Add a D1 migration that replaces email/password identity fields with Telegram identity keys and anonymizes old email-only identities.
-- [ ] Apply the D1 migration to the deployed Cloudflare database and verify existing Telegram accounts still sign in.
 - [x] Remove email/password fields from the FastAPI user model and add an Alembic migration.
 - [x] Verify the PostgreSQL identity migration and FastAPI startup through the Docker Compose smoke test in CI.
-- [ ] Apply and verify the D1 identity migration against the deployed Cloudflare database. The Worker health endpoint reports missing Telegram-only identity, notification, and provider-submission migrations.
+- [ ] Apply pending D1 migrations to the deployed Cloudflare database after a verified backup. Confirm existing Telegram accounts still sign in and `/health` reports a ready schema; the Worker reports missing identity, notification, or provider-submission migrations until they are applied.
 - [ ] Verify Telegram sign-in, session expiry, logout, and cross-account data isolation against the deployed environment.
 
 ## Source ingestion
@@ -35,7 +34,7 @@
 - [x] Proposal prompt treats listing content as untrusted and forbids fabricated experience.
 - [x] Provider absence is reported as a configuration error.
 - [x] Mocked provider-contract tests cover Russian and English drafts, profile/listing payloads, safety instructions, and provider failures.
-- [ ] A real model provider is configured and proposal quality is evaluated against real anonymized listings in Russian and English.
+- [ ] Configure a real model provider and evaluate proposal quality against real anonymized listings in Russian and English.
 - [x] Labeled RU/EN test set covers matching quality, budget thresholds, language, excluded keywords, unpaid work, risk, and complexity; deterministic hard filters cannot be overridden by AI.
 - [x] No user-facing endpoint can mark a proposal as sent/replied directly. Freelancehunt is marked sent only after a successful official API response with a bid ID; ambiguous failures are blocked from automatic retry. A manual sync endpoint marks a sent bid as replied only when the official API reports it rejected or selected as winner; message-thread replies remain pending.
 
