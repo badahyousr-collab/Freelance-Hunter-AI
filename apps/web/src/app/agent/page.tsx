@@ -8,7 +8,7 @@ import WorkspacePage from "@/components/WorkspacePage";
 const API = "/api/backend";
 type Profile = { skills: string[]; languages: string[]; payment_preferences: string[]; min_budget: number | null };
 type Source = { is_enabled: boolean; source: string };
-type AgentSettings = { enabled: boolean; telegram_linked: boolean; notify_new_projects?: boolean };
+type AgentSettings = { enabled: boolean; telegram_linked: boolean; notify_new_projects?: boolean; notify_application_updates?: boolean };
 type Readiness = {
   worker_runtime: boolean;
   cron_configured: boolean;
@@ -43,7 +43,7 @@ export default function AgentPage() {
       const r = await rs[3].json();
       if (rs.some(response => !response.ok)) throw new Error("Не удалось загрузить состояние AI-агента");
       setProfile(p);
-      setSources(s.filter((item: Source) => item.is_enabled && item.source === "telegram").length);
+      setSources(s.filter((item: Source) => item.is_enabled && ["telegram","freelancehunt"].includes(item.source)).length);
       setAgent(a);
       setReadiness(r);
     } catch (e) {
@@ -110,6 +110,29 @@ export default function AgentPage() {
     } finally { setBusy(false); }
   }
 
+  async function toggleApplicationNotifications() {
+    if (!agent) return;
+    const previousValue = Boolean(agent.notify_application_updates ?? true);
+    const nextValue = !previousValue;
+    setAgent(current => current ? { ...current, notify_application_updates: nextValue } : current);
+    setBusy(true); setError(""); setMessage("");
+    try {
+      const r = await fetch(API + "/agent/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ notify_application_updates: nextValue })
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.detail ?? "Не удалось изменить уведомления о статусах откликов");
+      setAgent(current => current ? { ...current, ...d } : current);
+      setMessage(nextValue ? "Уведомления о статусах откликов включены." : "Уведомления о статусах откликов отключены.");
+    } catch (e) {
+      setAgent(current => current ? { ...current, notify_application_updates: previousValue } : current);
+      setError(e instanceof Error ? e.message : "Не удалось изменить уведомления о статусах откликов");
+    } finally { setBusy(false); }
+  }
+
   const checks = [
     { label: "Профиль навыков", ok: Boolean(profile && profile.skills.length > 0), detail: "Укажи навыки, чтобы оценка релевантности отражала твой реальный опыт." },
     { label: "Публичные Telegram-источники", ok: sources > 0, detail: "Включённые каналы можно сканировать вручную и по расписанию." },
@@ -117,7 +140,7 @@ export default function AgentPage() {
     { label: "Cron Trigger", ok: Boolean(readiness?.cron_configured), detail: "Триггер настроен на каждые 15 минут. Реальное выполнение по расписанию нужно подтвердить после деплоя." },
     { label: "Telegram-бот", ok: Boolean(readiness?.telegram_bot_configured), detail: "Нужны TELEGRAM_BOT_TOKEN, TELEGRAM_WEBHOOK_SECRET и BOT_API_SECRET в секретах Worker." },
     { label: "AI-провайдер", ok: Boolean(readiness?.ai_provider_configured), detail: "Нужны AI_API_KEY и AI_MODEL. После настройки проверим генерацию и оценку реальных заказов." },
-    { label: "Биржи фриланса", ok: Boolean(readiness?.marketplace_adapters.length), detail: "Адаптеры Kwork, Freelancehunt, Upwork и FL.ru пока не реализованы." }
+    { label: "Биржи фриланса", ok: Boolean(readiness?.marketplace_adapters.length), detail: "Freelancehunt использует официальный API; Kwork, Upwork и FL.ru остаются в очереди на проверку доступного доступа." }
   ];
 
   return <WorkspacePage title="AI-агент" subtitle="Настрой отбор заказов и проверь готовность сервисов перед автоматическим поиском.">
@@ -132,6 +155,10 @@ export default function AgentPage() {
       <label style={{ display: "flex", alignItems: "flex-start", gap: 10, marginTop: 16 }}>
         <input type="checkbox" checked={Boolean(agent?.notify_new_projects)} disabled={busy || !agent} onChange={() => void toggleNewProjectNotifications()} />
         <span><strong>Уведомлять о новых заказах в Telegram</strong><br/><span className="sub-muted">При отключении новые проекты всё равно сохраняются на сайте. Уведомления отправляются только для действительно новых записей.</span></span>
+      </label>
+      <label style={{ display: "flex", alignItems: "flex-start", gap: 10, marginTop: 12 }}>
+        <input type="checkbox" checked={Boolean(agent?.notify_application_updates ?? true)} disabled={busy || !agent} onChange={() => void toggleApplicationNotifications()} />
+        <span><strong>Уведомлять об изменении статуса отклика</strong><br/><span className="sub-muted">Пока поддерживаются статусы Freelancehunt: активен, отклонён и выбран победителем. Синхронизация личных сообщений заказчика пока не поддерживается API-адаптером.</span></span>
       </label>
       <button className="sub-button" style={{ marginTop: 8 }} disabled={scanning || sources === 0} onClick={() => void scanNow()}><Workflow size={15} />{scanning ? "Сканируем…" : "Сканировать источники"}</button>
     </section>
