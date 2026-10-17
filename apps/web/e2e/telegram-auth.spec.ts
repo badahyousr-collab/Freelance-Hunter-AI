@@ -334,3 +334,54 @@ test("proposal draft can be edited and prepared for confirmation without claimin
   expect(application.draft_text).toContain("skills in my profile");
   expect(application.status).not.toBe("sent");
 });
+
+
+test("Freelancehunt API token can be connected and its projects scanned", async ({ page }) => {
+  await mockAuthenticatedAccount(page);
+  let connected = false;
+  let postedToken = "";
+  await page.route("**/api/backend/integrations/catalog", async route => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify([
+        { provider: "freelancehunt", label: "Freelancehunt", setup_note: "Official API token connection." },
+        { provider: "upwork", label: "Upwork", setup_note: "Adapter not ready." }
+      ])
+    });
+  });
+  await page.route("**/api/backend/integrations", async route => {
+    if (route.request().method() === "GET") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(connected ? [{ id: 4, provider: "freelancehunt", label: "Freelancehunt", status: "connected", created_at: "2026-10-17T10:00:00Z" }] : [])
+      });
+      return;
+    }
+    const payload = route.request().postDataJSON() as { provider: string; secret: string };
+    postedToken = payload.secret;
+    connected = payload.provider === "freelancehunt" && payload.secret === "token-from-user";
+    await route.fulfill({
+      status: connected ? 201 : 400,
+      contentType: "application/json",
+      body: JSON.stringify(connected ? { id: 4, provider: "freelancehunt", label: "Freelancehunt", status: "connected" } : { detail: "Invalid token" })
+    });
+  });
+  await page.route("**/api/backend/agent/scan", async route => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ scannedSources: 1, newProjects: 2, errors: [] })
+    });
+  });
+
+  await page.goto("/integrations");
+  await page.getByLabel("API-токен Freelancehunt").fill("token-from-user");
+  await page.getByRole("button", { name: "Подключить API" }).click();
+  await expect(page.getByText("Freelancehunt подключён. Токен проверен и сохранён в зашифрованном виде.")).toBeVisible();
+  expect(postedToken).toBe("token-from-user");
+  await expect(page.getByRole("button", { name: "Сканировать проекты" })).toBeVisible();
+  await page.getByRole("button", { name: "Сканировать проекты" }).click();
+  await expect(page.getByText(/Сканирование завершено\. Источников: 1, новых проектов: 2/i)).toBeVisible();
+});
