@@ -89,7 +89,7 @@ export default function IntegrationsPage() {
         if (data.integration_status === "reauth_required") await load();
         throw new Error(data.detail ?? "Не удалось синхронизировать статусы Freelancehunt.");
       }
-      setMessage(`Проверено откликов: ${data.checked}. Обновлено ответов заказчиков: ${data.updated}. Ошибок: ${data.errors}.`);
+      setMessage(`Проверено откликов: ${data.checked}. Обновлено ответов заказчиков: ${data.updated}. Новых сообщений: ${data.new_messages ?? 0}. Ошибок: ${data.errors}.`);
       await load();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Не удалось синхронизировать статусы.");
