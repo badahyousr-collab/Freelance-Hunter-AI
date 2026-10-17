@@ -47,10 +47,10 @@
 - [x] CI Playwright smoke tests cover Telegram auth, project search, source setup/manual scan, and settings save/layout.
 - [x] CI browser end-to-end tests cover dashboard, logout, and session expiry.
 - [ ] Full browser end-to-end flows are tested on the deployed site.
-- [ ] Every visible button and form has a verified action or is explicitly marked unavailable. Proposal drafts can be edited, prepared for confirmation, returned to draft, and closed; marketplace sending remains unavailable. Critical user-scoped Worker reads and proposal mutation isolation have regression tests.
+- [ ] Every visible button and form has a verified action or is explicitly marked unavailable. Freelancehunt proposals can be edited, prepared for confirmation, and submitted after explicit confirmation; other marketplace providers remain unavailable. Critical user-scoped Worker reads and proposal mutation isolation have regression tests.
 
 ## Verification record
 - CI verifies backend tests/migrations, frontend lint/build, Playwright smoke tests, and Cloudflare Worker typecheck/tests. CodeQL and weekly Dependabot checks are configured.
 - [x] Document D1 export, migration, and test-database restore commands in [Operations and recovery](OPERATIONS.md). The backup/restore drill itself remains unverified.
 - Live service verification is pending until Telegram secrets, AI provider configuration, and public channel scans are tested.
-- Known limitations: Freelancehunt API discovery/submission is implemented but needs a real user token test; other marketplace adapters and client-reply synchronization are not implemented. New-project notifications need the D1 migration, bot secrets, and a live Telegram test. Telegram ingestion currently reads public channel previews only.
+- Known limitations: Freelancehunt API discovery/submission is implemented but needs a real user token test and the Worker encryption secret; other marketplace adapters and client-reply synchronization are not implemented. New-project notifications need the D1 migration, bot secrets, and a live Telegram test. Telegram ingestion currently reads public channel previews only.
