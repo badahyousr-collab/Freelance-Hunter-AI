@@ -64,9 +64,11 @@ function encodeBase64(bytes: Uint8Array): string {
   return btoa(binary);
 }
 
-function decodeBase64(value: string): Uint8Array {
+function decodeBase64(value: string): Uint8Array<ArrayBuffer> {
   const binary = atob(value);
-  return Uint8Array.from(binary, character => character.charCodeAt(0));
+  const bytes = new Uint8Array(new ArrayBuffer(binary.length));
+  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+  return bytes;
 }
 
 async function integrationCryptoKey(secret: string, usages: KeyUsage[]): Promise<CryptoKey> {
@@ -76,7 +78,7 @@ async function integrationCryptoKey(secret: string, usages: KeyUsage[]): Promise
 
 async function encryptIntegrationCredential(value: string, secret: string): Promise<string> {
   const key = await integrationCryptoKey(secret, ["encrypt"]);
-  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const iv = crypto.getRandomValues(new Uint8Array(new ArrayBuffer(12)));
   const ciphertext = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, new TextEncoder().encode(value));
   return JSON.stringify({ version: 1, algorithm: "AES-GCM", iv: encodeBase64(iv), ciphertext: encodeBase64(new Uint8Array(ciphertext)) });
 }
