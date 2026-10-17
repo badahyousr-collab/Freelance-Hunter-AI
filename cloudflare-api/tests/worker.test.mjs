@@ -414,7 +414,7 @@ test("manual scan sends one Telegram message for newly inserted projects when no
     assert.equal((await response.json()).newProjects, 1);
     assert.equal(sentPayload.chat_id, 12345);
     assert.match(sentPayload.text, /Новые проекты: 1/);
-    assert.match(sentPayload.text, /python_jobs\\/777/);
+    assert.ok(sentPayload.text.includes("python_jobs/777"));
   } finally {
     globalThis.fetch = originalFetch;
   }
