@@ -25,6 +25,7 @@ export default function AgentPage() {
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
+  const [testingAI, setTestingAI] = useState(false);
 
   async function load() {
     setError("");
@@ -51,6 +52,18 @@ export default function AgentPage() {
   }
 
   useEffect(() => { void load(); }, []);
+
+  async function testAIProvider() {
+    setTestingAI(true); setError(""); setMessage("");
+    try {
+      const r = await fetch(API + "/agent/test-ai", { method: "POST", credentials: "include" });
+      const d = await r.json();
+      if (!r.ok || !d.ok) throw new Error(d.detail ?? "Проверка AI-провайдера не прошла");
+      setMessage("AI-провайдер отвечает. Модель: " + d.model);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Не удалось проверить AI-провайдера");
+    } finally { setTestingAI(false); }
+  }
 
   async function toggle() {
     if (!agent) return;
@@ -195,6 +208,7 @@ export default function AgentPage() {
     <section className="content-card">
       <div className="panel-heading"><div><h2>Готовность системы</h2><p>Состояние конфигурации загружается из API, а не задаётся статическими значениями на странице.</p></div></div>
       <div className="sub-list" style={{ marginTop: 18 }}>{checks.map(check => <div className="sub-list-row" key={check.label}><div className="sub-list-main"><strong>{check.label}</strong><span>{check.detail}</span></div><span className={"sub-badge " + (check.ok ? "" : "pending")}>{check.ok ? <CheckCircle2 size={12} /> : <CircleAlert size={12} />} {check.ok ? "Готово" : "Не готово"}</span></div>)}</div>
+      <button className="sub-button" style={{ marginTop: 14 }} disabled={testingAI} onClick={() => void testAIProvider()}>{testingAI ? "Проверяем AI…" : "Проверить подключение AI"}</button>
     </section>
     <section className="content-card">
       <h2>Следующие шаги</h2>
