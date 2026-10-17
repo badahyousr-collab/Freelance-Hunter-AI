@@ -988,6 +988,11 @@ async function handle(request: Request, env: Env): Promise<Response> {
     } catch {
       missingMigrations.push("0011_application_update_notifications.sql");
     }
+    try {
+      await env.DB.prepare("SELECT auto_submit,daily_submission_limit FROM agent_settings LIMIT 0").all();
+    } catch {
+      missingMigrations.push("0012_auto_submission.sql");
+    }
     const schemaReady = missingTables.length === 0 && missingMigrations.length === 0;
     return response(request, {
       status: check?.ok === 1 && schemaReady ? "ok" : "degraded",
