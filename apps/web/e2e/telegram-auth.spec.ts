@@ -280,7 +280,7 @@ test("integrations page does not ask for marketplace passwords or pretend to con
   await expect(page.getByRole("link", { name: /Открыть биржу/ })).toHaveCount(2);
   await expect(page.locator('input[type="password"], input[name="secret"]')).toHaveCount(0);
   await expect(page.getByRole("button", { name: /Подключить|Добавить в список/ })).toHaveCount(0);
-  await expect(page.getByText(/Интеграция в разработке/).first()).toBeVisible();
+  await expect(page.getByText(/Не подключено/).first()).toBeVisible();
 });
 
 test("security page logs out and returns to Telegram login", async ({ page }) => {
