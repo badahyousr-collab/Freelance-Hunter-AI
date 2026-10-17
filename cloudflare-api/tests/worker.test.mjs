@@ -1230,3 +1230,48 @@ test("agent settings can opt out of client response notifications", async () => 
   assert.equal(update.values[4], 0);
   assert.equal(update.values[5], "user-1");
 });
+
+
+test("user-scoped read, create, and Telegram link endpoints bind the authenticated owner", async () => {
+  const statements = [];
+  const DB = {
+    prepare(sql) {
+      let values = [];
+      const record = () => statements.push({ sql, values: [...values] });
+      return {
+        bind(...args) { values = args; return this; },
+        async first() {
+          record();
+          if (sql.includes("FROM sessions s JOIN users")) return { id: "user-1", created_at: "2026-10-16 10:00:00" };
+          return null;
+        },
+        async all() { record(); return { results: [] }; },
+        async run() { record(); return { meta: { changes: 1 } }; }
+      };
+    }
+  };
+  const cases = [
+    { path: "/sources", method: "GET", status: 200, sql: "FROM sources WHERE user_id=?", ownerPosition: 0 },
+    { path: "/applications", method: "GET", status: 200, sql: "FROM applications a LEFT JOIN projects", ownerPosition: 0 },
+    { path: "/integrations", method: "GET", status: 200, sql: "FROM integrations WHERE user_id=?", ownerPosition: 0 },
+    { path: "/profile", method: "GET", status: 200, sql: "FROM profiles WHERE user_id=?", ownerPosition: 0 },
+    { path: "/agent/settings", method: "GET", status: 200, sql: "SELECT * FROM agent_settings WHERE user_id=?", ownerPosition: 0 },
+    { path: "/applications", method: "POST", body: { project_id: 999 }, status: 404, sql: "FROM projects WHERE id=? AND user_id=?", ownerPosition: 1 },
+    { path: "/telegram/link-code", method: "POST", body: {}, status: 200, sql: "UPDATE telegram_links SET link_code_hash=?", ownerPosition: 1 },
+    { path: "/telegram/link", method: "DELETE", status: 200, sql: "UPDATE telegram_links SET link_code_hash=NULL", ownerPosition: 0 }
+  ];
+  for (const item of cases) {
+    const response = await worker.fetch(new Request("https://api.example" + item.path, {
+      method: item.method,
+      headers: {
+        Cookie: "fh_session=test-session-token",
+        ...(item.body ? { "Content-Type": "application/json" } : {})
+      },
+      ...(item.body ? { body: JSON.stringify(item.body) } : {})
+    }), { DB });
+    assert.equal(response.status, item.status, item.path);
+    const statement = statements.findLast(entry => entry.sql.includes(item.sql));
+    assert.ok(statement, "Expected scoped query for " + item.path);
+    assert.equal(statement.values[item.ownerPosition], "user-1", "Authenticated user ID must be bound for " + item.path);
+  }
+});
