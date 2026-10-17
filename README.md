@@ -26,7 +26,7 @@ Freelance Hunter is part of the Pipisso ecosystem. It discovers freelance opport
 - API health endpoint: https://plain-voice-c13ffreelance-hunter-api.badahyousr.workers.dev/health
 - Telegram sign-in: one-time code with a short expiry and HTTP-only session cookie.
 - Public Telegram channel ingestion: manual scan and a 15-minute Cron Trigger while the agent is enabled.
-- AI proposal drafts: require an OpenAI-compatible provider configuration and start as drafts. They are marked sent only after an explicit Freelancehunt submit action returns a provider bid ID.
+- AI proposals: require an OpenAI-compatible provider configuration and use profile-grounded natural-writing instructions. When the agent and auto-submit are enabled, eligible fresh Freelancehunt listings are submitted through the official API without per-proposal confirmation, subject to a configurable daily cap. A proposal is marked sent only after the API returns a verifiable bid ID. Missing or unsupported budget/currency, unavailable credentials, Telegram listings, and unimplemented marketplace adapters are not auto-submitted.
 - Operational alerts: optional Telegram alerts for scheduled scan and notification failures require `WORKER_ALERT_CHAT_ID` plus the configured bot token.
 - Freelancehunt client-response notifications: after manual status sync confirms a rejected bid or winner selection, the bot can notify the linked Telegram account; this can be disabled in AI-agent settings.
 - Marketplace discovery and explicitly confirmed bid submission: Freelancehunt official API adapter implemented; a manual sync checks bid rejection/winner status. Message-thread reply sync and Upwork, Kwork, FL.ru, and other marketplace adapters remain pending.
