@@ -1160,13 +1160,37 @@ async function handle(request: Request, env: Env): Promise<Response> {
     return response(request, rows.results ?? []);
   }
   if (path === "/integrations" && method === "POST") {
+    if (await isRateLimited(request, env, "integration-connect", 10)) return response(request, { detail: "Too many connection attempts. Wait 15 minutes before trying again." }, 429, { "Retry-After": "900" });
     const input = await body(request);
     const provider = String(input.provider ?? "");
     const item = integrationCatalog.find(i => i.provider === provider);
     if (!item) return response(request, { detail: "Unsupported integration." }, 400);
     const label = String(input.label ?? item.label).slice(0,100);
-    // Never silently discard or store credentials in plaintext. Encryption must be configured before accepting secrets.
-    if (String(input.secret ?? "").trim()) return response(request, { detail: "No credential was saved. Secure encrypted credential storage must be configured before this integration can be connected." }, 503);
+    const credential = String(input.secret ?? "").trim();
+
+    if (provider === "freelancehunt") {
+      if (!credential || credential.length > 2048) return response(request, { detail: "Enter a valid Freelancehunt API token." }, 400);
+      if (!env.INTEGRATION_ENCRYPTION_KEY) return response(request, { detail: "Encrypted credential storage is not configured. Set INTEGRATION_ENCRYPTION_KEY on the API Worker first." }, 503);
+      let verification: { upstream: Response; data: any };
+      try {
+        verification = await freelancehuntRequest(credential, "/v2/my/profile");
+      } catch {
+        return response(request, { detail: "Could not reach Freelancehunt API. Check the connection and try again." }, 502);
+      }
+      if (verification.upstream.status === 401 || verification.upstream.status === 403) return response(request, { detail: "Freelancehunt rejected this API token. Create or copy a valid token from your account settings." }, 401);
+      if (!verification.upstream.ok) return response(request, { detail: verification.upstream.status === 429 ? "Freelancehunt rate limit reached. Wait before reconnecting." : "Freelancehunt could not verify the token. Try again later." }, 502);
+      if (!verification.data?.data) return response(request, { detail: "Freelancehunt returned an unexpected profile response." }, 502);
+      const encrypted = await encryptIntegrationCredential(credential, env.INTEGRATION_ENCRYPTION_KEY);
+      await env.DB.prepare("INSERT INTO integrations (user_id,provider,label,status,credentials_json) VALUES (?,?,?,?,?) ON CONFLICT(user_id,provider) DO UPDATE SET label=excluded.label,status='connected',credentials_json=excluded.credentials_json")
+        .bind(uid, provider, label, "connected", encrypted).run();
+      await env.DB.prepare("INSERT INTO sources (user_id,source,identifier,is_enabled,status) VALUES (?,'freelancehunt','official-api',1,'configured') ON CONFLICT(user_id,source,identifier) DO UPDATE SET is_enabled=1,status='configured',last_error=NULL")
+        .bind(uid).run();
+      const saved = await env.DB.prepare("SELECT id,provider,label,status,created_at FROM integrations WHERE user_id=? AND provider=?").bind(uid,provider).first<any>();
+      return response(request, saved ?? { provider, label, status: "connected" }, 201);
+    }
+
+    // Never silently discard or store credentials in plaintext for unsupported providers.
+    if (credential) return response(request, { detail: "This provider does not have a verified credential adapter yet. No credential was saved." }, 503);
     await env.DB.prepare("INSERT INTO integrations (user_id,provider,label,status,credentials_json) VALUES (?,?,?,?, '{}') ON CONFLICT(user_id,provider) DO UPDATE SET label=excluded.label").bind(uid,provider,label,"not_connected").run();
     return response(request, await env.DB.prepare("SELECT id,provider,label,status,created_at FROM integrations WHERE user_id=? AND provider=?").bind(uid,provider).first(), 201);
   }
