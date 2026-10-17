@@ -232,10 +232,12 @@ function parseTelegramPreview(html: string, channel: string): TelegramPost[] {
     const postId = postMatch[2];
     if (seen.has(postId)) continue;
     const description = decodeHtml(textMatch[1]).slice(0, 12000);
+    const dateMatch = chunk.match(/<time[^>]*datetime=["']([^"']+)["']/i);
+    const publishedAt = dateMatch?.[1] ?? null;
+    if (!isRecentListing(publishedAt)) continue;
     if (description.length < 25 || !/(ищу|ищем|нужен|нужна|требуется|заказ|бюджет|оплата|looking for|hiring|need a|project|freelance|разработчик|исполнитель|бот|сайт)/i.test(description)) continue;
     const title = (description.split("\n").map(line => line.trim()).find(Boolean) || description).slice(0, 180);
-    const dateMatch = chunk.match(/<time[^>]*datetime=["']([^"']+)["']/i);
-    posts.push({ postId, title, description, url: `https://t.me/${channel}/${postId}`, publishedAt: dateMatch?.[1] ?? null });
+    posts.push({ postId, title, description, url: `https://t.me/${channel}/${postId}`, publishedAt });
     seen.add(postId);
     if (posts.length >= 50) break;
   }
