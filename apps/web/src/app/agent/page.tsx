@@ -117,7 +117,7 @@ export default function AgentPage() {
     { label: "Cron Trigger", ok: Boolean(readiness?.cron_configured), detail: "Триггер настроен на каждые 15 минут. Реальное выполнение по расписанию нужно подтвердить после деплоя." },
     { label: "Telegram-бот", ok: Boolean(readiness?.telegram_bot_configured), detail: "Нужны TELEGRAM_BOT_TOKEN, TELEGRAM_WEBHOOK_SECRET и BOT_API_SECRET в секретах Worker." },
     { label: "AI-провайдер", ok: Boolean(readiness?.ai_provider_configured), detail: "Нужны AI_API_KEY и AI_MODEL. После настройки проверим генерацию и оценку реальных заказов." },
-    { label: "Биржи фриланса", ok: Boolean(readiness?.marketplace_adapters.length), detail: "Адаптеры Kwork, Freelancehunt, Upwork и FL.ru пока не реализованы." }
+    { label: "Биржи фриланса", ok: Boolean(readiness?.marketplace_adapters.length), detail: "Freelancehunt поддерживается через официальный API после подключения токена. Адаптеры Upwork, Kwork и FL.ru пока не готовы." }
   ];
 
   return <WorkspacePage title="AI-агент" subtitle="Настрой отбор заказов и проверь готовность сервисов перед автоматическим поиском.">
