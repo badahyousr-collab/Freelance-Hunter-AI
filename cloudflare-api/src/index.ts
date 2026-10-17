@@ -540,7 +540,7 @@ async function autoSubmitFreelancehuntProposal(env: Env, userId: string, applica
   if (!application || String(application.status) !== "draft") return false;
   const comment = String(application.draft_text ?? "").trim();
   if (!comment || comment.length > 5000) return false;
-  const claimed = await env.DB.prepare("UPDATE applications SET status='submitting',submission_error=NULL WHERE id=? AND user_id=? AND status='draft'").bind(applicationId,userId).run();
+  const claimed = await env.DB.prepare("UPDATE applications SET status='submitting',submission_error=NULL WHERE id=? AND user_id=? AND status='draft' AND (SELECT COUNT(*) FROM applications WHERE user_id=? AND status IN ('sent','submitting','submission_unknown') AND (submitted_at >= date('now') OR (submitted_at IS NULL AND created_at >= date('now')))) < ?").bind(applicationId,userId,userId,limit).run();
   if (!claimed.meta.changes) return false;
   try {
     const result = await freelancehuntApi(token, "/projects/" + String(project.source_project_id) + "/bids", {
