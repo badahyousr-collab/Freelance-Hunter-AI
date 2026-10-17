@@ -254,6 +254,12 @@ test("AI agent toggle and manual scan call the API and show results", async ({ p
   await expect(notifications).not.toBeChecked();
   await expect(page.getByText(/Уведомления о новых проектах отключены/i)).toBeVisible();
   expect(notifyNewProjects).toBe(false);
+  const replyNotifications = page.getByRole("checkbox", { name: /Уведомлять об ответах на отклики в Telegram/i });
+  await expect(replyNotifications).toBeChecked();
+  await replyNotifications.click();
+  await expect(replyNotifications).not.toBeChecked();
+  await expect(page.getByText(/Уведомления об ответах на отклики отключены/i)).toBeVisible();
+  expect(notifyApplicationUpdates).toBe(false);
   await page.getByRole("button", { name: "Включить агента" }).click();
   await expect(page.getByText(/AI-агент включён/i)).toBeVisible();
   await expect(page.getByRole("button", { name: "Приостановить агента" })).toBeVisible();
