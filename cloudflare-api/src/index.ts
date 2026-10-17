@@ -1275,6 +1275,7 @@ async function handle(request: Request, env: Env): Promise<Response> {
 
   const submitApplicationMatch = path.match(/^\/applications\/(\d+)\/submit$/);
   if (submitApplicationMatch && method === "POST") {
+    if (await isRateLimited(request, env, "proposal-submit", 5)) return response(request, { detail: "Too many submission attempts. Wait 15 minutes before trying again." }, 429, { "Retry-After": "900" });
     const id = Number(submitApplicationMatch[1]);
     const input = await body(request);
     const application = await env.DB.prepare("SELECT a.id,a.project_id,a.status,a.draft_text,p.source,p.source_project_id,p.url FROM applications a JOIN projects p ON p.id=a.project_id AND p.user_id=a.user_id WHERE a.id=? AND a.user_id=?")
