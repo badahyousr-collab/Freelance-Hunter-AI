@@ -1196,7 +1196,7 @@ async function handle(request: Request, env: Env): Promise<Response> {
 
   if (path === "/agent/test-ai" && method === "POST") {
     if (!env.AI_API_KEY || !env.AI_MODEL) return response(request, { ok: false, detail: "Set AI_API_KEY and AI_MODEL in Worker settings first." }, 503);
-    const apiBase = (env.AI_API_BASE_URL || "https://api.openai.com/v1").replace(/\\/+$/, "");
+    const apiBase = (env.AI_API_BASE_URL || "https://api.openai.com/v1").replace(/\/+$/, "");
     const endpoint = apiBase.endsWith("/chat/completions") ? apiBase : apiBase + "/chat/completions";
     try {
       const upstream = await fetch(endpoint, {
