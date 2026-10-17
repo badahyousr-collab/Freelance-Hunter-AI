@@ -69,6 +69,12 @@ function base64ToBytes(value: string): Uint8Array {
   return Uint8Array.from(binary, char => char.charCodeAt(0));
 }
 
+function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
+  const copy = new Uint8Array(bytes.byteLength);
+  copy.set(bytes);
+  return copy.buffer;
+}
+
 async function integrationCryptoKey(masterSecret: string, usage: KeyUsage[]): Promise<CryptoKey> {
   if (masterSecret.trim().length < 32) throw new Error("INTEGRATION_ENCRYPTION_KEY must be at least 32 characters.");
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(masterSecret));
@@ -78,7 +84,7 @@ async function integrationCryptoKey(masterSecret: string, usage: KeyUsage[]): Pr
 async function encryptIntegrationSecret(secret: string, masterSecret: string): Promise<string> {
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const key = await integrationCryptoKey(masterSecret, ["encrypt"]);
-  const encrypted = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, new TextEncoder().encode(secret));
+  const encrypted = await crypto.subtle.encrypt({ name: "AES-GCM", iv: toArrayBuffer(iv) }, key, toArrayBuffer(new TextEncoder().encode(secret)));
   return JSON.stringify({ version: 1, iv: bytesToBase64(iv), ciphertext: bytesToBase64(new Uint8Array(encrypted)) });
 }
 
@@ -86,7 +92,7 @@ async function decryptIntegrationSecret(serialized: string, masterSecret: string
   const value = JSON.parse(serialized) as { version?: number; iv?: string; ciphertext?: string };
   if (value.version !== 1 || !value.iv || !value.ciphertext) throw new Error("Stored integration credential format is invalid.");
   const key = await integrationCryptoKey(masterSecret, ["decrypt"]);
-  const decrypted = await crypto.subtle.decrypt({ name: "AES-GCM", iv: base64ToBytes(value.iv) }, key, base64ToBytes(value.ciphertext));
+  const decrypted = await crypto.subtle.decrypt({ name: "AES-GCM", iv: toArrayBuffer(base64ToBytes(value.iv)) }, key, toArrayBuffer(base64ToBytes(value.ciphertext)));
   return new TextDecoder().decode(decrypted);
 }
 
