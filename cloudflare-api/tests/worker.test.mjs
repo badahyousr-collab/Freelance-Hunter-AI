@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import worker, { detectedBudget, evaluateProjectMatch } from "../.test-dist/src/index.js";
 
-function fakeDb({ scan = false, freelancehuntScan = false, skills = ["python", "telegram"], telegramAuth = null, telegramCode = null, linkedAccount = null, application = null, project = null, profile = null, integration = null, notificationTarget = null, insertChanges = 1, projectInserts = [], telegramIdentitySchema = true, notificationsSchema = true, submissionSchema = true, providerStatusSchema = true, applicationUpdateNotificationsSchema = true } = {}) {
+function fakeDb({ scan = false, freelancehuntScan = false, skills = ["python", "telegram"], telegramAuth = null, telegramCode = null, linkedAccount = null, application = null, project = null, profile = null, integration = null, notificationTarget = null, agentSettings = null, pendingDraftProjects = [], sourceCount = 0, insertChanges = 1, projectInserts = [], telegramIdentitySchema = true, notificationsSchema = true, submissionSchema = true, providerStatusSchema = true, applicationUpdateNotificationsSchema = true } = {}) {
   return {
     get storedIntegration() { return integration; },
     set storedIntegration(value) { integration = value; },
@@ -58,7 +58,8 @@ function fakeDb({ scan = false, freelancehuntScan = false, skills = ["python", "
           if (sql.includes("SELECT code_hash,auth_mode FROM telegram_auth_codes")) return telegramCode;
           if (sql.includes("SELECT user_id FROM telegram_links WHERE telegram_user_id=?")) return linkedAccount;
           if (sql.includes("FROM sessions s JOIN users")) return { id: "user-1", created_at: "2026-10-16 10:00:00" };
-          if (sql.includes("SELECT COUNT(*) AS total FROM sources")) return { total: 0 };
+          if (sql.includes("SELECT COUNT(*) AS total FROM sources")) return { total: sourceCount };
+          if (sql.includes("SELECT is_enabled,auto_draft,min_match_score FROM agent_settings WHERE user_id=?")) return agentSettings;
           if (sql.includes("SELECT skills,languages,payment_preferences,min_budget,currency,excluded_keywords")) return { skills: JSON.stringify(skills), languages: '["ru","en"]', payment_preferences: "[]", min_budget: null, currency: "RUB", excluded_keywords: "[]" };
           if (sql.includes("SELECT skills, min_budget, currency, excluded_keywords")) return { skills: JSON.stringify(skills), min_budget: null, currency: "USD", excluded_keywords: "[]" };
           if (sql.includes("SELECT min_match_score FROM agent_settings")) return { min_match_score: 60 };
@@ -74,6 +75,7 @@ function fakeDb({ scan = false, freelancehuntScan = false, skills = ["python", "
           if (sql.includes("sqlite_master") && sql.includes("auth_rate_limits")) {
             return { results: ["users", "sessions", "telegram_auth_codes", "auth_rate_limits", "profiles", "agent_settings", "sources", "projects", "applications", "integrations", "telegram_links"].map(name => ({ name })) };
           }
+          if (sql.includes("LEFT JOIN applications a ON a.user_id=p.user_id AND a.project_id=p.id")) return { results: pendingDraftProjects };
           if (sql.includes("SELECT * FROM sources WHERE user_id=? AND is_enabled=1")) {
             if (freelancehuntScan) return { results: [{ id: 8, user_id: "user-1", source: "freelancehunt", identifier: "", is_enabled: 1 }] };
             if (scan) return { results: [{ id: 7, user_id: "user-1", source: "telegram", identifier: "@python_jobs", is_enabled: 1 }] };
@@ -224,6 +226,70 @@ test("unknown API route returns a structured 404", async () => {
 });
 
 
+
+test("scan ignores Telegram listings older than seven days and listings without a publication date", async () => {
+  const originalFetch = globalThis.fetch;
+  const html = [
+    '<div class="tgme_widget_message_wrap" data-post="python_jobs/201"><div class="tgme_widget_message_text js-message_text" dir="auto">We need a Python developer for a freelance project. Budget 500 USD.</div><time datetime="2026-10-01T10:00:00+00:00"></time></div>',
+    '<div class="tgme_widget_message_wrap" data-post="python_jobs/202"><div class="tgme_widget_message_text js-message_text" dir="auto">We need a Python developer for a freelance project. Budget 500 USD.</div></div>'
+  ].join("");
+  globalThis.fetch = async input => String(input).startsWith("https://t.me/s/python_jobs")
+    ? new Response(html, { status: 200, headers: { "Content-Type": "text/html" } })
+    : originalFetch(input);
+  try {
+    const response = await worker.fetch(new Request("https://api.example/agent/scan", {
+      method: "POST",
+      headers: { Cookie: "fh_session=test-session-token", "Content-Type": "application/json" },
+      body: "{}"
+    }), { DB: fakeDb({ scan: true }) });
+    assert.equal(response.status, 200);
+    assert.equal((await response.json()).newProjects, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+
+test("source creation has no arbitrary per-account limit", async () => {
+  const response = await worker.fetch(new Request("https://api.example/sources", {
+    method: "POST",
+    headers: { Cookie: "fh_session=test-session-token", "Content-Type": "application/json" },
+    body: JSON.stringify({ source: "telegram", identifier: "@fresh_jobs", is_enabled: true })
+  }), { DB: fakeDb({ sourceCount: 50 }) });
+  assert.notEqual(response.status, 429);
+});
+
+test("scheduled scan automatically saves AI proposal drafts for fresh matching projects", async () => {
+  const originalFetch = globalThis.fetch;
+  const html = '<div class="tgme_widget_message_wrap" data-post="python_jobs/203"><div class="tgme_widget_message_text js-message_text" dir="auto">We need a Python developer for a freelance project. Budget 500 USD.</div><time datetime="2026-10-16T10:00:00+00:00"></time></div>';
+  globalThis.fetch = async input => {
+    const url = String(input);
+    if (url.startsWith("https://t.me/s/python_jobs")) return new Response(html, { status: 200, headers: { "Content-Type": "text/html" } });
+    if (url.includes("/chat/completions")) return Response.json({ choices: [{ message: { content: "Здравствуйте! Могу помочь с разработкой Telegram-бота на Python. Предлагаю сначала согласовать требования и объём работ." } }] });
+    return originalFetch(input);
+  };
+  try {
+    const response = await worker.fetch(new Request("https://api.example/agent/scan", {
+      method: "POST",
+      headers: { Cookie: "fh_session=test-session-token", "Content-Type": "application/json" },
+      body: "{}"
+    }), {
+      DB: fakeDb({
+        scan: true,
+        agentSettings: { is_enabled: 1, auto_draft: 1, min_match_score: 60 },
+        pendingDraftProjects: [{ id: 301, source: "telegram", url: "https://t.me/python_jobs/203", title: "Python developer", description: "Telegram bot project", language: "en", budget_min: 500, budget_max: 500, currency: "USD", payment_method: null }]
+      }),
+      AI_API_KEY: "test-key",
+      AI_MODEL: "test-model"
+    });
+    assert.equal(response.status, 200);
+    const result = await response.json();
+    assert.equal(result.draftedApplications, 1);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("manual scan ingests and normalizes a public Telegram listing", async () => {
   const originalFetch = globalThis.fetch;
   const html = '<div class="tgme_widget_message_wrap" data-post="python_jobs/123"><div class="tgme_widget_message_text js-message_text" dir="auto">We need a Python developer to build a Telegram bot for a freelance project. Budget 500 USD.</div><time datetime="2026-10-15T10:00:00+00:00"></time></div>';
@@ -250,7 +316,7 @@ test("manual scan ingests and normalizes a public Telegram listing", async () =>
 
 test("manual scan persists low-relevance listings for the matching stage", async () => {
   const originalFetch = globalThis.fetch;
-  const html = '<div class="tgme_widget_message_wrap" data-post="python_jobs/124"><div class="tgme_widget_message_text js-message_text" dir="auto">We need a Python developer to build a Telegram bot for a freelance project. Budget 500 USD.</div></div>';
+  const html = '<div class="tgme_widget_message_wrap" data-post="python_jobs/124"><div class="tgme_widget_message_text js-message_text" dir="auto">We need a Python developer to build a Telegram bot for a freelance project. Budget 500 USD.</div><time datetime="2026-10-16T10:00:00+00:00"></time></div>';
   globalThis.fetch = async (input, init) => {
     if (String(input).startsWith("https://t.me/s/python_jobs")) return new Response(html, { status: 200, headers: { "Content-Type": "text/html" } });
     return originalFetch(input, init);
@@ -439,7 +505,7 @@ test("application review returns not found for records outside the current user'
 });
 
 
-test("manual scan sends one Telegram message for newly inserted projects when notifications are enabled", async () => {
+test("manual scan does not send individual Telegram messages for newly inserted projects", async () => {
   const originalFetch = globalThis.fetch;
   const html = '<div class="tgme_widget_message_wrap" data-post="python_jobs/777"><div class="tgme_widget_message_text js-message_text" dir="auto">We need a Python developer to build a Telegram bot for a freelance project. Budget 500 USD.</div><time datetime="2026-10-17T10:00:00+00:00"></time></div>';
   let sentPayload = null;
@@ -463,9 +529,7 @@ test("manual scan sends one Telegram message for newly inserted projects when no
     });
     assert.equal(response.status, 200);
     assert.equal((await response.json()).newProjects, 1);
-    assert.equal(sentPayload.chat_id, 12345);
-    assert.match(sentPayload.text, /Новые проекты: 1/);
-    assert.ok(sentPayload.text.includes("python_jobs/777"));
+    assert.equal(sentPayload, null, "new listing details must not be sent as individual Telegram messages");
   } finally {
     globalThis.fetch = originalFetch;
   }

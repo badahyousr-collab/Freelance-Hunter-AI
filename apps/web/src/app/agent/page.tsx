@@ -8,7 +8,7 @@ import WorkspacePage from "@/components/WorkspacePage";
 const API = "/api/backend";
 type Profile = { skills: string[]; languages: string[]; payment_preferences: string[]; min_budget: number | null };
 type Source = { is_enabled: boolean; source: string };
-type AgentSettings = { enabled: boolean; telegram_linked: boolean; notify_new_projects?: boolean; notify_application_updates?: boolean };
+type AgentSettings = { enabled: boolean; auto_draft?: boolean; telegram_linked: boolean; notify_application_updates?: boolean };
 type Readiness = {
   worker_runtime: boolean;
   cron_configured: boolean;
@@ -25,7 +25,6 @@ export default function AgentPage() {
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
-  const [scanning, setScanning] = useState(false);
 
   async function load() {
     setError("");
@@ -53,19 +52,6 @@ export default function AgentPage() {
 
   useEffect(() => { void load(); }, []);
 
-  async function scanNow() {
-    setScanning(true); setError(""); setMessage("");
-    try {
-      const r = await fetch(API + "/agent/scan", { method: "POST", credentials: "include" });
-      const d = await r.json();
-      if (!r.ok) throw new Error(d.detail ?? "Не удалось запустить сканирование");
-      setMessage("Сканирование завершено: новых проектов " + Number(d.newProjects ?? 0) + ", источников " + Number(d.scannedSources ?? 0) + ".");
-      if (Array.isArray(d.errors) && d.errors.length) setError(d.errors.join("; "));
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Не удалось запустить сканирование");
-    } finally { setScanning(false); }
-  }
-
   async function toggle() {
     if (!agent) return;
     setBusy(true); setError(""); setMessage("");
@@ -87,26 +73,23 @@ export default function AgentPage() {
     } finally { setBusy(false); }
   }
 
-  async function toggleNewProjectNotifications() {
+  async function toggleAutoDraft() {
     if (!agent) return;
-    const previousValue = Boolean(agent.notify_new_projects);
-    const nextValue = !previousValue;
-    setAgent(current => current ? { ...current, notify_new_projects: nextValue } : current);
+    const nextValue = !Boolean(agent.auto_draft);
     setBusy(true); setError(""); setMessage("");
     try {
       const r = await fetch(API + "/agent/settings", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ notify_new_projects: nextValue })
+        body: JSON.stringify({ auto_draft: nextValue })
       });
       const d = await r.json();
-      if (!r.ok) throw new Error(d.detail ?? "Не удалось изменить уведомления");
+      if (!r.ok) throw new Error(d.detail ?? "Не удалось изменить автоматическую подготовку откликов");
       setAgent(current => current ? { ...current, ...d } : current);
-      setMessage(nextValue ? "Уведомления о новых проектах включены." : "Уведомления о новых проектах отключены.");
+      setMessage(nextValue ? "Автоматическая подготовка откликов включена." : "Автоматическая подготовка откликов отключена.");
     } catch (e) {
-      setAgent(current => current ? { ...current, notify_new_projects: previousValue } : current);
-      setError(e instanceof Error ? e.message : "Не удалось изменить уведомления");
+      setError(e instanceof Error ? e.message : "Не удалось изменить автоматическую подготовку откликов");
     } finally { setBusy(false); }
   }
 
@@ -135,7 +118,7 @@ export default function AgentPage() {
 
   const checks = [
     { label: "Профиль навыков", ok: Boolean(profile && profile.skills.length > 0), detail: "Укажи навыки, чтобы оценка релевантности отражала твой реальный опыт." },
-    { label: "Публичные Telegram-источники", ok: sources > 0, detail: "Включённые каналы можно сканировать вручную и по расписанию." },
+    { label: "Публичные Telegram-источники", ok: sources > 0, detail: "Включённые каналы проверяются автоматически по расписанию, когда агент активен." },
     { label: "API Worker", ok: Boolean(readiness?.worker_runtime), detail: "Статус получен от текущего API Worker." },
     { label: "Cron Trigger", ok: Boolean(readiness?.cron_configured), detail: "Триггер настроен на каждые 15 минут. Реальное выполнение по расписанию нужно подтвердить после деплоя." },
     { label: "Telegram-бот", ok: Boolean(readiness?.telegram_bot_configured), detail: "Нужны TELEGRAM_BOT_TOKEN, TELEGRAM_WEBHOOK_SECRET и BOT_API_SECRET в секретах Worker." },
@@ -153,14 +136,13 @@ export default function AgentPage() {
       </button>
       <p style={{ marginTop: 12 }}>Включение не заменяет проверку деплоя, секретов и реального выполнения Cron Trigger.</p>
       <label style={{ display: "flex", alignItems: "flex-start", gap: 10, marginTop: 16 }}>
-        <input type="checkbox" checked={Boolean(agent?.notify_new_projects)} disabled={busy || !agent} onChange={() => void toggleNewProjectNotifications()} />
-        <span><strong>Уведомлять о новых заказах в Telegram</strong><br/><span className="sub-muted">При отключении новые проекты всё равно сохраняются на сайте. Уведомления отправляются только для действительно новых записей.</span></span>
+        <input type="checkbox" checked={Boolean(agent?.auto_draft)} disabled={busy || !agent} onChange={() => void toggleAutoDraft()} />
+        <span><strong>Автоматически готовить отклики</strong><br/><span className="sub-muted">AI создаёт черновики для свежих подходящих заказов. Черновики появятся во вкладке «Отклики»; отправка на биржу автоматически не выполняется.</span></span>
       </label>
       <label style={{ display: "flex", alignItems: "flex-start", gap: 10, marginTop: 12 }}>
         <input type="checkbox" checked={Boolean(agent?.notify_application_updates ?? true)} disabled={busy || !agent} onChange={() => void toggleApplicationUpdateNotifications()} />
         <span><strong>Уведомлять об ответах на отклики в Telegram</strong><br/><span className="sub-muted">После ручной синхронизации Freelancehunt бот сообщит о подтверждённом отклонении отклика или выборе исполнителя.</span></span>
       </label>
-      <button className="sub-button" style={{ marginTop: 8 }} disabled={scanning || sources === 0} onClick={() => void scanNow()}><Workflow size={15} />{scanning ? "Сканируем…" : "Сканировать источники"}</button>
     </section>
     <section className="content-card">
       <div className="panel-heading"><div><h2>Готовность системы</h2><p>Состояние конфигурации загружается из API, а не задаётся статическими значениями на странице.</p></div></div>
@@ -171,7 +153,7 @@ export default function AgentPage() {
       <p>Настрой источники и профиль, затем проверим полный путь от объявления до объяснимой оценки и черновика отклика.</p>
       <div className="sub-list">
         <div className="sub-list-row"><div className="sub-list-main"><strong>1. Профиль и фильтры</strong><span>Укажи навыки, языки, минимальный бюджет, способы выплат и исключаемые фразы.</span></div><Link className="sub-button" href="/settings"><Settings2 size={14} />Настройки</Link></div>
-        <div className="sub-list-row"><div className="sub-list-main"><strong>2. Источники заказов</strong><span>Добавь публичные Telegram-каналы и запусти сканирование.</span></div><Link className="sub-button" href="/sources"><Workflow size={14} />Источники</Link></div>
+        <div className="sub-list-row"><div className="sub-list-main"><strong>2. Источники заказов</strong><span>Добавь публичные Telegram-каналы. Агент проверит их по расписанию.</span></div><Link className="sub-button" href="/sources"><Workflow size={14} />Источники</Link></div>
       </div>
     </section>
     <section className="content-card"><h2>Безопасность откликов</h2><p>Сгенерированные отклики сохраняются как черновики. Отправка считается успешной только после подтверждения со стороны площадки. AI не должен выдумывать опыт, клиентов или результаты.</p></section>
