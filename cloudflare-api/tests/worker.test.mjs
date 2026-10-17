@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import worker, { detectedBudget, evaluateProjectMatch } from "../.test-dist/src/index.js";
 
-function fakeDb({ scan = false, skills = ["python", "telegram"], telegramAuth = null, telegramCode = null, linkedAccount = null, application = null, notificationTarget = null, insertChanges = 1, telegramIdentitySchema = true, notificationsSchema = true } = {}) {
+function fakeDb({ scan = false, skills = ["python", "telegram"], telegramAuth = null, telegramCode = null, linkedAccount = null, application = null, project = null, profile = null, notificationTarget = null, insertChanges = 1, telegramIdentitySchema = true, notificationsSchema = true } = {}) {
   return {
     async batch(statements) { return statements.map(() => ({ meta: { changes: 1 } })); },
     prepare(sql) {
@@ -18,7 +18,7 @@ function fakeDb({ scan = false, skills = ["python", "telegram"], telegramAuth = 
         async first() {
           if (sql.includes("SELECT tl.telegram_user_id,a.notify_new_projects")) return notificationTarget;
           if (sql.includes("SELECT id,project_id,status,draft_text FROM applications WHERE id=? AND user_id=?")) return application;
-          if (sql.includes("SELECT id,project_id,status,draft_text,created_at,submitted_at,replied_at FROM applications WHERE id=? AND user_id=?")) return application;
+          if (sql.includes("SELECT id,project_id,status,draft_text,created_at,submitted_at,replied_at FROM applications WHERE id=? AND user_id=?")) return application;\n          if (sql.includes("SELECT id,status FROM applications WHERE user_id=? AND project_id=?")) return application;\n          if (sql.includes("SELECT id,project_id,status,draft_text,created_at,submitted_at,replied_at FROM applications WHERE user_id=? AND project_id=?")) return application;\n          if (sql.includes("SELECT id,source,url,title,description,language,budget_min,budget_max,currency,payment_method FROM projects WHERE id=? AND user_id=?")) return project;\n          if (sql.includes("SELECT display_name,skills,languages,payment_preferences,min_budget,currency FROM profiles WHERE user_id=?")) return profile;
           if (sql.includes("SELECT attempts FROM auth_rate_limits")) return { attempts: 1 };
           if (sql.includes("SELECT user_id,authenticated_at,session_issued_at,error_message FROM telegram_auth_codes")) return telegramAuth;
           if (sql.includes("SELECT code_hash,auth_mode FROM telegram_auth_codes")) return telegramCode;
@@ -538,4 +538,85 @@ test("protected project data is not returned without a session", async () => {
   const response = await worker.fetch(new Request("https://api.example/projects"), { DB: fakeDb() });
   assert.equal(response.status, 401);
   assert.match((await response.json()).detail, /authentication required/i);
+});
+
+
+test("proposal drafting creates Russian and English drafts from profile-grounded listing facts", async () => {
+  const originalFetch = globalThis.fetch;
+  const scenarios = [
+    {
+      language: "ru",
+      project: { id: 17, source: "telegram", url: "https://t.me/example/17", title: "Нужен Telegram-бот на Python", description: "Нужно разработать Telegram-бота для обработки заявок. Бюджет 15 000 RUB.", language: "ru", budget_min: 15000, budget_max: 15000, currency: "RUB", payment_method: "fixed" },
+      draft: "Здравствуйте! Могу помочь разработать Telegram-бота на Python для обработки заявок. Предлагаю сначала согласовать сценарии и структуру данных, затем реализовать и проверить основные функции."
+    },
+    {
+      language: "en",
+      project: { id: 18, source: "telegram", url: "https://t.me/example/18", title: "Build a Python Telegram bot", description: "Build a bot to collect project applications. Budget: $300.", language: "en", budget_min: 300, budget_max: 300, currency: "USD", payment_method: "fixed" },
+      draft: "Hi! I can help build a Python Telegram bot to collect project applications. I would start by confirming the user flow and data structure, then implement and test the core features."
+    }
+  ];
+  const requests = [];
+  globalThis.fetch = async (input, init) => {
+    if (String(input) === "https://provider.example/v1/chat/completions") {
+      requests.push(JSON.parse(init.body));
+      return Response.json({ choices: [{ message: { content: scenarios[requests.length - 1].draft } }] });
+    }
+    return originalFetch(input, init);
+  };
+  try {
+    for (const scenario of scenarios) {
+      const response = await worker.fetch(new Request(`https://api.example/applications/${scenario.project.id}/draft`, {
+        method: "POST",
+        headers: { Cookie: "fh_session=test-session-token", "CF-Connecting-IP": "198.51.100.80" }
+      }), {
+        DB: fakeDb({
+          project: scenario.project,
+          profile: { display_name: "Developer", skills: JSON.stringify(["Python", "Telegram bots"]), languages: JSON.stringify(["ru", "en"]), payment_preferences: "[]", min_budget: 100, currency: scenario.language === "ru" ? "RUB" : "USD" }
+        }),
+        AI_API_KEY: "test-key",
+        AI_API_BASE_URL: "https://provider.example/v1",
+        AI_MODEL: "test-model"
+      });
+      assert.equal(response.status, 201);
+      const data = await response.json();
+      assert.equal(data.status, "draft");
+      assert.equal(data.draft_text, scenario.draft);
+    }
+    assert.equal(requests.length, 2);
+    for (const request of requests) {
+      assert.equal(request.model, "test-model");
+      assert.equal(request.temperature, 0.35);
+      assert.match(request.messages[0].content, /untrusted data/i);
+      assert.match(request.messages[0].content, /Never invent experience/i);
+      assert.match(request.messages[0].content, /Do not claim the proposal has been sent/i);
+      assert.equal(request.messages[1].role, "user");
+      const facts = JSON.parse(request.messages[1].content);
+      assert.deepEqual(facts.user_profile.skills, ["Python", "Telegram bots"]);
+      assert.ok(facts.project.listing_url.startsWith("https://t.me/example/"));
+    }
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("proposal drafting reports missing provider configuration and upstream failures without creating sent applications", async () => {
+  const project = { id: 19, source: "telegram", url: "https://t.me/example/19", title: "Python bot", description: "Build a Python Telegram bot", language: "en", budget_min: 200, budget_max: 200, currency: "USD", payment_method: "fixed" };
+  const profile = { display_name: null, skills: JSON.stringify(["Python"]), languages: JSON.stringify(["en"]), payment_preferences: "[]", min_budget: 100, currency: "USD" };
+  const noConfig = await worker.fetch(new Request("https://api.example/applications/19/draft", {
+    method: "POST", headers: { Cookie: "fh_session=test-session-token", "CF-Connecting-IP": "198.51.100.81" }
+  }), { DB: fakeDb({ project, profile }) });
+  assert.equal(noConfig.status, 503);
+  assert.match((await noConfig.json()).detail, /AI drafting is not configured/i);
+
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => Response.json({ error: { message: "quota exceeded" } }, { status: 429 });
+  try {
+    const failed = await worker.fetch(new Request("https://api.example/applications/19/draft", {
+      method: "POST", headers: { Cookie: "fh_session=test-session-token", "CF-Connecting-IP": "198.51.100.82" }
+    }), { DB: fakeDb({ project, profile }), AI_API_KEY: "test-key", AI_MODEL: "test-model" });
+    assert.equal(failed.status, 502);
+    assert.match((await failed.json()).detail, /AI provider request failed/i);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
