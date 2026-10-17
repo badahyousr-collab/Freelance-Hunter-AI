@@ -848,6 +848,12 @@ async function handle(request: Request, env: Env): Promise<Response> {
     } catch {
       missingMigrations.push("0009_provider_submission_tracking.sql");
     }
+    try {
+      await env.DB.prepare("SELECT provider_status,provider_is_winner,provider_status_synced_at FROM applications LIMIT 0").all();
+      await env.DB.prepare("SELECT notify_application_updates FROM agent_settings LIMIT 0").all();
+    } catch {
+      missingMigrations.push("0010_provider_status_notifications.sql");
+    }
     const schemaReady = missingTables.length === 0 && missingMigrations.length === 0;
     return response(request, {
       status: check?.ok === 1 && schemaReady ? "ok" : "degraded",
