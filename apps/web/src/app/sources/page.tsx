@@ -128,7 +128,7 @@ export default function SourcesPage() {
   const selected = catalog.find(c => c.source === source);
   const configuredHandles = new Set(items.filter(item => item.source === "telegram").map(item => item.identifier.replace(/^@/, "").toLowerCase()));
 
-  return <WorkspacePage title="Источники" subtitle="Подключай публичные Telegram-каналы с заказами и управляй сбором проектов.">
+  return <WorkspacePage title="Источники" subtitle="Собирай заказы из публичных Telegram-каналов и официального Freelancehunt API.">
     {error && <div className="sub-alert error" role="alert">{error}</div>}
     {message && <div className="sub-alert" role="status">{message}</div>}
 
@@ -160,7 +160,7 @@ export default function SourcesPage() {
       <form className="sub-form" onSubmit={add}>
         <div className="sub-form-grid">
           <div className="sub-form-field"><label htmlFor="source-kind">Тип источника</label><select id="source-kind" className="sub-select" value={source} onChange={e => setSource(e.target.value)}>{catalog.map(c => <option key={c.source} value={c.source}>{c.label}</option>)}</select></div>
-          <div className="sub-form-field"><label htmlFor="source-id">{source === "telegram" ? "Имя публичного канала" : "Идентификатор (если нужен)"}</label><input id="source-id" className="sub-input" value={identifier} onChange={e => setIdentifier(e.target.value)} placeholder={source === "telegram" ? "@python_jobs" : "Необязательно"} required={source === "telegram"}/></div>
+          <div className="sub-form-field"><label htmlFor="source-id">{source === "telegram" ? "Имя публичного канала" : source === "freelancehunt" ? "Для Freelancehunt не требуется" : "Идентификатор (если нужен)"}</label><input id="source-id" className="sub-input" value={identifier} onChange={e => setIdentifier(e.target.value)} placeholder={source === "telegram" ? "@python_jobs" : source === "freelancehunt" ? "Оставь пустым" : "Необязательно"} required={source === "telegram"}/></div>
         </div>
         {selected && <div className="sub-muted">{selected.setup_note}</div>}
         <button className="sub-button primary" disabled={busy} type="submit"><Plus size={15}/>{busy ? "Сохраняем…" : "Добавить источник"}</button>
@@ -168,7 +168,7 @@ export default function SourcesPage() {
     </section>
 
     <section className="content-card">
-      <div className="panel-heading"><div><h2>Подключённые источники</h2><p>Здесь отображается состояние источника и результат последнего сканирования.</p></div><div className="sub-actions"><button className="sub-button" onClick={() => void load()} disabled={loading || scanning}><RefreshCw size={14}/>Обновить</button><button className="sub-button primary" onClick={() => void scanNow()} disabled={loading || scanning || !items.some(item => item.source === "telegram" && item.is_enabled)}><Radio size={14}/>{scanning ? "Сканируем…" : "Сканировать сейчас"}</button></div></div>
+      <div className="panel-heading"><div><h2>Подключённые источники</h2><p>Здесь отображается состояние источника и результат последнего сканирования.</p></div><div className="sub-actions"><button className="sub-button" onClick={() => void load()} disabled={loading || scanning}><RefreshCw size={14}/>Обновить</button><button className="sub-button primary" onClick={() => void scanNow()} disabled={loading || scanning || !items.some(item => ["telegram","freelancehunt"].includes(item.source) && item.is_enabled)}><Radio size={14}/>{scanning ? "Сканируем…" : "Сканировать сейчас"}</button></div></div>
       {loading ? <div className="sub-empty">Загружаем источники…</div> : items.length === 0 ? <div className="sub-empty"><Workflow size={25}/><strong>Источники пока не добавлены</strong><span>Добавь канал из подборки выше или укажи публичный Telegram-канал вручную.</span></div> :
         <div className="sub-list">{items.map(item => <article className="sub-list-row" key={item.id}>
           <div className="sub-list-main">
@@ -183,8 +183,8 @@ export default function SourcesPage() {
 
     <section className="content-card">
       <h2>Статус адаптеров</h2>
-      <p>Публичные Telegram-каналы поддерживаются сканером превью. Остальные площадки не будут помечаться как активные до проверки интеграции.</p>
-      <div className="sub-list">{catalog.map(c => <div className="sub-list-row" key={c.source}><div className="sub-list-main"><strong>{c.label}</strong><span>{c.setup_note}</span></div><span className={"sub-badge " + (c.source === "telegram" ? "" : "pending")}>{c.source === "telegram" ? "Сканер реализован" : "Адаптер ожидается"}</span></div>)}</div>
+      <p>Публичные Telegram-каналы поддерживаются сканером превью. Freelancehunt требует подключённый и проверенный API-токен; остальные площадки не будут помечаться как активные до реализации разрешённого адаптера.</p>
+      <div className="sub-list">{catalog.map(c => <div className="sub-list-row" key={c.source}><div className="sub-list-main"><strong>{c.label}</strong><span>{c.setup_note}</span></div><span className={"sub-badge " + (["telegram","freelancehunt"].includes(c.source) ? "" : "pending")}>{c.source === "telegram" ? "Сканер реализован" : c.source === "freelancehunt" ? "Официальный API адаптер" : "Адаптер ожидается"}</span></div>)}</div>
     </section>
   </WorkspacePage>;
 }
