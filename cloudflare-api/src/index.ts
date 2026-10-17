@@ -8,6 +8,7 @@ interface Env {
   AI_API_BASE_URL?: string;
   AI_MODEL?: string;
   INTEGRATION_ENCRYPTION_KEY?: string;
+  WORKER_ALERT_CHAT_ID?: string;
 }
 
 const COOKIE = "fh_session";
@@ -400,10 +401,9 @@ async function notifyNewProjects(env: Env, userId: string, added: number, posts:
     const remainder = added > 3 ? `\n\nЕщё новых заказов: ${added - 3}` : "";
     await telegramReply(env, Number(target.telegram_user_id), `<b>Новые проекты: ${added}</b>\n\n${items}${remainder}`);
   } catch (notificationError) {
-    console.warn("new_project_notification_failed", {
-      userId,
-      error: notificationError instanceof Error ? notificationError.message : "Unknown notification error"
-    });
+    const detail = notificationError instanceof Error ? notificationError.message : "Unknown notification error";
+    console.warn("new_project_notification_failed", { userId, error: detail });
+    await sendOperationalAlert(env, "New-project Telegram notification failed. Error: " + detail);
   }
 }
 
@@ -551,10 +551,19 @@ async function scanUserSources(env: Env, userId: string): Promise<{ scannedSourc
 
 async function runScheduledScan(env: Env): Promise<void> {
   const startedAt = Date.now();
-  const rows = await env.DB.prepare("SELECT DISTINCT s.user_id FROM sources s JOIN agent_settings a ON a.user_id=s.user_id WHERE s.is_enabled=1 AND s.source IN ('telegram','freelancehunt') AND a.is_enabled=1").all<any>();
+  let rows: { results?: Array<{ user_id: string }> };
+  try {
+    rows = await env.DB.prepare("SELECT DISTINCT s.user_id FROM sources s JOIN agent_settings a ON a.user_id=s.user_id WHERE s.is_enabled=1 AND s.source IN ('telegram','freelancehunt') AND a.is_enabled=1").all<any>();
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : "Unknown database error";
+    console.error("scheduled_scan_query_failed", { error: detail });
+    await sendOperationalAlert(env, "Scheduled scan failed before processing users. Error: " + detail);
+    return;
+  }
   let scannedSources = 0;
   let newProjects = 0;
   let failedUsers = 0;
+  let failedSources = 0;
   const users = rows.results ?? [];
   for (const row of users) {
     const userId = String(row.user_id);
@@ -562,13 +571,20 @@ async function runScheduledScan(env: Env): Promise<void> {
       const result = await scanUserSources(env, userId);
       scannedSources += result.scannedSources;
       newProjects += result.newProjects;
-      if (result.errors.length) console.warn("scheduled_scan_user_sources_failed", { userId, errorCount: result.errors.length });
+      if (result.errors.length) {
+        failedSources += result.errors.length;
+        console.warn("scheduled_scan_user_sources_failed", { userId, errorCount: result.errors.length });
+      }
     } catch (error) {
       failedUsers += 1;
       console.error("scheduled_scan_user_failed", { userId, error: error instanceof Error ? error.message : "Unknown error" });
     }
   }
-  console.info("scheduled_scan_completed", { users: users.length, scannedSources, newProjects, failedUsers, durationMs: Date.now() - startedAt });
+  const durationMs = Date.now() - startedAt;
+  console.info("scheduled_scan_completed", { users: users.length, scannedSources, newProjects, failedUsers, failedSources, durationMs });
+  if (failedUsers || failedSources) {
+    await sendOperationalAlert(env, "Scheduled scan completed with issues. Users: " + users.length + "; sources scanned: " + scannedSources + "; source errors: " + failedSources + "; user errors: " + failedUsers + "; new projects: " + newProjects + "; duration: " + durationMs + " ms.");
+  }
 }
 
 
@@ -623,6 +639,22 @@ async function telegramApi(env: Env, method: string, payload: Record<string, unk
     throw new Error("TELEGRAM_API_REJECTED");
   }
   return data.result;
+}
+
+async function sendOperationalAlert(env: Env, message: string): Promise<void> {
+  if (!env.TELEGRAM_BOT_TOKEN || !env.WORKER_ALERT_CHAT_ID) {
+    console.warn("worker_alert_skipped_not_configured", { hasBotToken: Boolean(env.TELEGRAM_BOT_TOKEN), hasAlertChatId: Boolean(env.WORKER_ALERT_CHAT_ID) });
+    return;
+  }
+  try {
+    await telegramApi(env, "sendMessage", {
+      chat_id: env.WORKER_ALERT_CHAT_ID,
+      text: message.slice(0, 3500),
+      disable_web_page_preview: true
+    });
+  } catch (error) {
+    console.error("worker_alert_delivery_failed", { error: error instanceof Error ? error.message : "Unknown alert error" });
+  }
 }
 
 async function telegramReply(env: Env, chatId: number, text: string): Promise<void> {
