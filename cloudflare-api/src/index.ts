@@ -1280,7 +1280,8 @@ async function handle(request: Request, env: Env): Promise<Response> {
     return response(request, (rows.results ?? []).map((a:any) => ({
       id:a.id, project_id:a.project_id, status:a.status, draft_text:a.draft_text, created_at:a.created_at,
       submitted_at:a.submitted_at, replied_at:a.replied_at, provider_submission_id:a.provider_submission_id ?? null,
-      submission_error:a.submission_error ?? null,
+      submission_error:a.submission_error ?? null, provider_status:a.provider_status ?? null,
+      provider_is_winner:Boolean(a.provider_is_winner), provider_status_synced_at:a.provider_status_synced_at ?? null,
       project:a.project_title ? { title:a.project_title, url:a.project_url, source:a.project_source, budget_max:a.project_budget_max ?? null, currency:a.project_currency ?? null } : null
     })));
   }
