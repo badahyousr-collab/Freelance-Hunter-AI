@@ -468,7 +468,12 @@ async function scanFreelancehuntSource(env: Env, userId: string, source: any): P
     if (!integration?.credentials_json) throw new Error("Connect a verified Freelancehunt API token in Integrations first.");
     const token = await decryptIntegrationSecret(String(integration.credentials_json), env.INTEGRATION_ENCRYPTION_KEY);
     const { response: upstream, data } = await freelancehuntApi(token, "/projects");
-    if (!upstream.ok) throw new Error(`Freelancehunt API returned HTTP ${upstream.status}.`);
+    if (!upstream.ok) {
+      if (upstream.status === 401 || upstream.status === 403) {
+        await env.DB.prepare("UPDATE integrations SET status='reauth_required' WHERE user_id=? AND provider='freelancehunt'").bind(userId).run();
+      }
+      throw new Error(`Freelancehunt API returned HTTP ${upstream.status}.`);
+    }
     const projects = Array.isArray(data?.data) ? data.data : [];
     const profileRow = await env.DB.prepare("SELECT skills,languages,payment_preferences,min_budget,currency,excluded_keywords FROM profiles WHERE user_id=?").bind(userId).first<any>() ?? {};
     const profile: MatchProfile = {
@@ -1305,6 +1310,7 @@ async function handle(request: Request, env: Env): Promise<Response> {
     return response(request, rows.results ?? []);
   }
   if (path === "/integrations" && method === "POST") {
+    if (await isRateLimited(request, env, "integration-connect", 5)) return response(request, { detail: "Too many integration attempts. Wait 15 minutes before trying again." }, 429, { "Retry-After": "900" });
     const input = await body(request);
     const provider = String(input.provider ?? "");
     const item = integrationCatalog.find(i => i.provider === provider);
