@@ -34,8 +34,8 @@
 - [x] Proposal prompt treats listing content as untrusted and forbids fabricated experience.
 - [x] Provider absence is reported as a configuration error.
 - [ ] A real model provider is configured and proposal quality is evaluated in Russian and English.
-- [ ] Labeled test set measures matching quality and hard filters cannot be overridden by AI.
-- [ ] No provider submission is marked sent without source confirmation.
+- [x] Labeled RU/EN test set covers matching quality, budget thresholds, language, excluded keywords, unpaid work, risk, and complexity; deterministic hard filters cannot be overridden by AI.
+- [x] No user-facing endpoint can mark a proposal as sent/replied without a provider-confirmed adapter; proposal editing and awaiting-confirmation workflow are available.
 
 ## Web and Telegram
 - [x] Dashboard numbers come from persisted API records.
@@ -45,7 +45,7 @@
 - [ ] Configure a newly issued BotFather token and webhook secret, then test real Telegram messages.
 - [x] CI Playwright smoke tests cover Telegram auth, project search, source setup/manual scan, and settings save/layout.
 - [ ] Full browser end-to-end flows are tested on the deployed site, including logout and session expiry.
-- [ ] Every visible button and form has a verified action or is explicitly marked unavailable.
+- [ ] Every visible button and form has a verified action or is explicitly marked unavailable. Proposal drafts can be edited, prepared for confirmation, returned to draft, and closed; marketplace sending remains unavailable.
 
 ## Verification record
 - CI must verify backend tests/migrations, frontend lint/build, and Cloudflare Worker typecheck.
