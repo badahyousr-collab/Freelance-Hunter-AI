@@ -806,6 +806,11 @@ async function handle(request: Request, env: Env): Promise<Response> {
     } catch {
       missingMigrations.push("0008_new_project_notifications.sql");
     }
+    try {
+      await env.DB.prepare("SELECT provider_submission_id,submission_error FROM applications LIMIT 0").all();
+    } catch {
+      missingMigrations.push("0009_provider_submission_tracking.sql");
+    }
     const schemaReady = missingTables.length === 0 && missingMigrations.length === 0;
     return response(request, {
       status: check?.ok === 1 && schemaReady ? "ok" : "degraded",
