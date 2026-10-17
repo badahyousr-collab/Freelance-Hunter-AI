@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import worker, { detectedBudget } from "../.test-dist/src/index.js";
+import worker, { detectedBudget, evaluateProjectMatch } from "../.test-dist/src/index.js";
 
 function fakeDb({ scan = false, skills = ["python", "telegram"], telegramAuth = null, telegramCode = null, linkedAccount = null } = {}) {
   return {
