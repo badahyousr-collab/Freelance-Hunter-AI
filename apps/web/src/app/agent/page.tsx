@@ -133,7 +133,7 @@ export default function AgentPage() {
         <input type="checkbox" checked={Boolean(agent?.notify_new_projects)} disabled={busy || !agent} onChange={() => void toggleNewProjectNotifications()} />
         <span><strong>Уведомлять о новых заказах в Telegram</strong><br/><span className="sub-muted">При отключении новые проекты всё равно сохраняются на сайте. Уведомления отправляются только для действительно новых записей.</span></span>
       </label>
-      <button className="sub-button" style={{ marginTop: 8 }} disabled={scanning || sources === 0} onClick={() => void scanNow()}><Workflow size={15} />{scanning ? "Сканируем…" : "Сканировать Telegram-каналы"}</button>
+      <button className="sub-button" style={{ marginTop: 8 }} disabled={scanning || sources === 0} onClick={() => void scanNow()}><Workflow size={15} />{scanning ? "Сканируем…" : "Сканировать источники"}</button>
     </section>
     <section className="content-card">
       <div className="panel-heading"><div><h2>Готовность системы</h2><p>Состояние конфигурации загружается из API, а не задаётся статическими значениями на странице.</p></div></div>
