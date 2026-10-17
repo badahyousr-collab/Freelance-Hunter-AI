@@ -555,7 +555,7 @@ async function syncFreelancehuntBidStatuses(env: Env, userId: string): Promise<{
     for (const bid of bids) {
       const id = String(bid?.id ?? "");
       const status = String(bid?.attributes?.status ?? "");
-      if (/^\\d+$/.test(id) && ["active", "rejected", "revoked"].includes(status)) byId.set(id, bid.attributes);
+      if (/^\d+$/.test(id) && ["active", "rejected", "revoked"].includes(status)) byId.set(id, bid.attributes);
     }
     const rows = await env.DB.prepare("SELECT a.id,a.provider_submission_id,a.provider_status,a.provider_is_winner,p.title AS project_title,p.url AS project_url FROM applications a JOIN projects p ON p.id=a.project_id AND p.user_id=a.user_id WHERE a.user_id=? AND p.source='freelancehunt' AND a.status IN ('sent','replied') AND a.provider_submission_id IS NOT NULL")
       .bind(userId).all<any>();
@@ -582,7 +582,7 @@ async function syncFreelancehuntBidStatuses(env: Env, userId: string): Promise<{
       const projectUrl = safeFreelancehuntProjectUrl(row.project_url);
       const projectTitle = escapeTelegramHtml(String(row.project_title ?? "Проект").slice(0, 180));
       const projectLink = projectUrl ? `<a href="${escapeTelegramHtml(projectUrl)}">${projectTitle}</a>` : projectTitle;
-      const winnerMessage = nextWinner === 1 && previousWinner !== 1 ? "\\n\\nЗаказчик выбрал вас исполнителем." : "";
+      const winnerMessage = nextWinner === 1 && previousWinner !== 1 ? "\n\nЗаказчик выбрал вас исполнителем." : "";
       await telegramReply(env, Number(target.telegram_user_id), `<b>Обновился статус отклика</b>\\n${projectLink}\\nСтатус: ${statusLabel}${winnerMessage}`);
     }
     console.info("freelancehunt_bid_status_sync_completed", { userId, checked, changed, durationMs: Date.now() - startedAt });
