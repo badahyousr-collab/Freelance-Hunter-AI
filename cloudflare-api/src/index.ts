@@ -433,7 +433,6 @@ async function scanTelegramSource(env: Env, userId: string, source: any): Promis
       excluded_keywords: safeJson(profileRow.excluded_keywords, [])
     };
     let added = 0;
-    const newlyAddedPosts: TelegramPost[] = [];
     for (const post of posts) {
       const budget = detectedBudget(post.description);
       const language = /[а-яё]/i.test(post.description) ? "ru" : "en";
@@ -446,7 +445,6 @@ async function scanTelegramSource(env: Env, userId: string, source: any): Promis
           budget?.currency ?? null, post.publishedAt, evaluation.score, JSON.stringify(evaluation.reasons)).run();
       const inserted = Number(result.meta.changes ?? 0);
       added += inserted;
-      if (inserted > 0) newlyAddedPosts.push(post);
     }
     await env.DB.prepare("UPDATE sources SET status='active',last_scan_at=datetime('now'),last_error=NULL,last_discovered_count=? WHERE id=? AND user_id=?")
       .bind(added, source.id, userId).run();
@@ -487,7 +485,6 @@ async function scanFreelancehuntSource(env: Env, userId: string, source: any): P
       excluded_keywords: safeJson(profileRow.excluded_keywords, [])
     };
     let added = 0;
-    const newlyAdded: Array<{ title: string; url: string }> = [];
     for (const item of projects.slice(0, 50)) {
       const attributes = item?.attributes ?? {};
       const id = String(item?.id ?? "").trim();
@@ -508,7 +505,6 @@ async function scanFreelancehuntSource(env: Env, userId: string, source: any): P
           String(attributes.safe_type ?? ""), attributes.published_at ?? null, evaluation.score, JSON.stringify(evaluation.reasons)).run();
       const inserted = Number(result.meta.changes ?? 0);
       added += inserted;
-      if (inserted > 0) newlyAdded.push({ title, url });
     }
     await env.DB.prepare("UPDATE sources SET status='active',last_scan_at=datetime('now'),last_error=NULL,last_discovered_count=? WHERE id=? AND user_id=?")
       .bind(added, source.id, userId).run();
