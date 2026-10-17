@@ -16,6 +16,7 @@ const recommendedChannels: RecommendedChannel[] = [
   { handle: "freelancetaverna", label: "Фриланс Таверна Official", focus: "Заказы и удалённые вакансии, включая разработку и digital", language: "RU" },
   { handle: "GetClient", label: "GetClient | Фриланс вакансии", focus: "Заказы по IT, дизайну, маркетингу и другим направлениям", language: "RU" },
   { handle: "kadrof_work", label: "Вакансии для фрилансеров", focus: "Новые удалённые вакансии и заказы для фрилансеров", language: "RU" },
+  { handle: "frwork3", label: "Фриланс, удалённая работа", focus: "Свежие заказы и вакансии по digital и другим направлениям", language: "RU" },
   { handle: "digitaltender", label: "DIGITAL Tender / freelance", focus: "Заказы по разработке, дизайну, маркетингу и digital", language: "RU" },
   { handle: "FreelancehuntProjects", label: "Проєкти Freelancehunt", focus: "Фриланс-проекты, включая разработку и цифровые услуги", language: "UA/RU" },
   { handle: "itfreelancers", label: "IT freelance and remote", focus: "IT-проекты, лиды и сотрудничество", language: "EN/RU" },

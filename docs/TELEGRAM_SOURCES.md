@@ -1,6 +1,6 @@
 # Public Telegram sources
 
-Last reviewed: 2026-10-16.
+Last reviewed: 2026-10-17.
 
 The site includes a curated starting set of public Telegram channels that publish freelance requests, projects, or remote-work listings. Public previews and channel descriptions were checked on the review date. This is not an exhaustive list of all Telegram sources, and public activity alone does not prove that the deployed Worker can parse a channel successfully.
 
@@ -8,10 +8,12 @@ The site includes a curated starting set of public Telegram channels that publis
 |---|---|---|---|---|
 | Вакансии для разработчиков ботов | Requests for Telegram bots and Mini Apps, often with requirements and budget | RU | https://t.me/s/job_for_bots | Public preview contains a channel description and a bot-development request. |
 | Запили мне, зерокодер | No-code, automation, applications and bots | RU | https://t.me/s/zerocode_jobs | Public preview showed current project posts. |
-| Фриланс для разработчиков | Developer freelance orders and remote projects | RU | https://t.me/s/job_developer | Public preview describes daily freelance orders and showed developer project posts. |
+| Ит Вакансии / Работа программиста | IT-вакансии, удалённая работа и позиции для разработчиков | RU | https://t.me/s/hr_itwork | Публичный просмотр содержит свежие IT-вакансии; часть публикаций является полной занятостью, поэтому фильтрация обязательна. |
 | GetClient | Freelance orders across IT, design, marketing and related fields | RU | https://t.me/s/GetClient | Public channel listing describes regular orders and links to a companion bot. |
+| Фриланс Таверна Official | Заказы и удалённые вакансии, включая разработку и digital | RU | https://t.me/s/freelancetaverna | Публичный просмотр содержит свежие публикации с заказами; конкретные объявления всё равно требуют проверки. |
 | Вакансии для фрилансеров | Remote work and freelance orders | RU | https://t.me/s/kadrof_work | Public listing describes daily remote vacancies and freelance orders. |
 | Фриланс, удалённая работа | Orders and vacancies in IT, design, marketing and other areas | RU | https://t.me/s/frwork3 | Public channel listing describes freelance orders and regular activity. |
+| DIGITAL Tender / freelance | Проекты и вакансии в digital, IT и смежных направлениях | RU | https://t.me/s/digitaltender | Публичный просмотр содержит публикации с задачами и описанием условий; качество потока нужно проверить сканированием. |
 | Проєкти Freelancehunt | Freelance projects, including development | UA/RU | https://t.me/s/FreelancehuntProjects | Existing catalog entry; verify recent posts and parsing in the deployed scanner before treating as reliable. |
 | IT freelance and remote | IT projects, leads and collaboration | EN/RU | https://t.me/s/itfreelancers | Existing catalog entry; verify recent posts and parsing in the deployed scanner before treating as reliable. |
 

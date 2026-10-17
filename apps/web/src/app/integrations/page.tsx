@@ -24,6 +24,7 @@ export default function IntegrationsPage() {
   const [message, setMessage] = useState("");
   const [freelancehuntToken, setFreelancehuntToken] = useState("");
   const [connecting, setConnecting] = useState(false);
+  const [syncing, setSyncing] = useState(false);
 
   async function load() {
     setLoading(true);
@@ -70,6 +71,22 @@ export default function IntegrationsPage() {
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Не удалось удалить подключение.");
     }
+  }
+
+  async function syncFreelancehunt() {
+    setSyncing(true); setError(""); setMessage("");
+    try {
+      const response = await fetch(API + "/integrations/freelancehunt/sync", {
+        method: "POST",
+        credentials: "include",
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail ?? "Не удалось синхронизировать статусы Freelancehunt.");
+      setMessage(`Проверено откликов: ${data.checked}. Обновлено ответов заказчиков: ${data.updated}. Ошибок: ${data.errors}.`);
+      await load();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Не удалось синхронизировать статусы.");
+    } finally { setSyncing(false); }
   }
 
   async function connectFreelancehunt() {
@@ -136,6 +153,11 @@ export default function IntegrationsPage() {
                     <a className="sub-button" href={externalUrl} target="_blank" rel="noreferrer">
                       <ExternalLink size={14} /> Открыть биржу
                     </a>
+                  )}
+                  {integration?.provider === "freelancehunt" && integration.status === "connected" && (
+                    <button className="sub-button" type="button" disabled={syncing} onClick={() => void syncFreelancehunt()}>
+                      {syncing ? "Проверяем статусы…" : "Синхронизировать отклики"}
+                    </button>
                   )}
                   {integration && (
                     <button className="sub-button danger" type="button" onClick={() => void remove(integration)}>
