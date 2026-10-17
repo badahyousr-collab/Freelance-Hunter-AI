@@ -50,4 +50,4 @@
 ## Verification record
 - CI must verify backend tests/migrations, frontend lint/build, and Cloudflare Worker typecheck.
 - Live service verification is pending until Telegram secrets, AI provider configuration, and public channel scans are tested.
-- Known limitations: provider-specific marketplace discovery/authentication/submission/reply adapters and push notifications are not yet implemented. Telegram ingestion currently reads public channel previews only.
+- Known limitations: provider-specific marketplace discovery/authentication/submission and reply synchronization are not implemented. New-project notifications are implemented in code but need the D1 migration, bot secrets, and a live Telegram test. Telegram ingestion currently reads public channel previews only.
