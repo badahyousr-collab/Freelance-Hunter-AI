@@ -53,8 +53,9 @@
 - [x] Per-user integration records with encrypted-credential design and API responses that do not expose secrets.
 - [ ] Implement provider-specific official OAuth/API authorization and verify connection status.
 - [ ] Implement proposal submission only for providers with a verified supported capability.
+- [x] Add editable proposal drafts and an awaiting-confirmation/closed review workflow that cannot falsely mark a proposal as sent.
 - [ ] Implement reliable reply/status synchronization and submission idempotency.
-- [ ] Show clear states for draft, awaiting confirmation, submitting, confirmed sent, failed, and replied.
+- [x] Show clear states for draft and awaiting confirmation; submission-only states remain unavailable until a provider-confirmed adapter exists.
 
 ## Phase 7 - Telegram companion
 - [x] One-time expiring website-to-Telegram account linking.
