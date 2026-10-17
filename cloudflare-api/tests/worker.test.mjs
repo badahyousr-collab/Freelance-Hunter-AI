@@ -2,14 +2,22 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import worker, { detectedBudget, evaluateProjectMatch } from "../.test-dist/src/index.js";
 
-function fakeDb({ scan = false, skills = ["python", "telegram"], telegramAuth = null, telegramCode = null, linkedAccount = null } = {}) {
+function fakeDb({ scan = false, skills = ["python", "telegram"], telegramAuth = null, telegramCode = null, linkedAccount = null, application = null } = {}) {
   return {
     async batch(statements) { return statements.map(() => ({ meta: { changes: 1 } })); },
     prepare(sql) {
+      let values = [];
       return {
-        bind() { return this; },
-        async run() { return { meta: { changes: 1 } }; },
+        bind(...args) { values = args; return this; },
+        async run() {
+          if (sql.includes("UPDATE applications SET draft_text=?,status=?")) {
+            application = application ? { ...application, draft_text: values[0], status: values[1] } : application;
+          }
+          return { meta: { changes: 1 } };
+        },
         async first() {
+          if (sql.includes("SELECT id,project_id,status,draft_text FROM applications WHERE id=? AND user_id=?")) return application;
+          if (sql.includes("SELECT id,project_id,status,draft_text,created_at,submitted_at,replied_at FROM applications WHERE id=? AND user_id=?")) return application;
           if (sql.includes("SELECT attempts FROM auth_rate_limits")) return { attempts: 1 };
           if (sql.includes("SELECT user_id,authenticated_at,session_issued_at,error_message FROM telegram_auth_codes")) return telegramAuth;
           if (sql.includes("SELECT code_hash,auth_mode FROM telegram_auth_codes")) return telegramCode;
@@ -342,4 +350,38 @@ test("budget parser ignores missing currency, zero, and unreasonable values", ()
   assert.equal(detectedBudget("Опыт от 2020 года"), null);
   assert.equal(detectedBudget("Бюджет: 0 ₽"), null);
   assert.equal(detectedBudget("Оплата 9999999999 RUB"), null);
+});
+
+
+test("application review can edit a draft and move it to awaiting confirmation", async () => {
+  const db = fakeDb({ application: { id: 4, project_id: 9, status: "draft", draft_text: "Initial draft", created_at: "2026-10-17 09:00:00", submitted_at: null, replied_at: null } });
+  const response = await worker.fetch(new Request("https://api.example/applications/4", {
+    method: "PATCH",
+    headers: { Cookie: "fh_session=test-session-token", "Content-Type": "application/json" },
+    body: JSON.stringify({ draft_text: "Edited proposal", status: "awaiting_confirmation" })
+  }), { DB: db });
+  assert.equal(response.status, 200);
+  const result = await response.json();
+  assert.equal(result.status, "awaiting_confirmation");
+  assert.equal(result.draft_text, "Edited proposal");
+});
+
+test("application review cannot fake a provider-confirmed sent status", async () => {
+  const db = fakeDb({ application: { id: 4, project_id: 9, status: "draft", draft_text: "Proposal" } });
+  const response = await worker.fetch(new Request("https://api.example/applications/4", {
+    method: "PATCH",
+    headers: { Cookie: "fh_session=test-session-token", "Content-Type": "application/json" },
+    body: JSON.stringify({ status: "sent" })
+  }), { DB: db });
+  assert.equal(response.status, 400);
+  assert.match((await response.json()).detail, /supported marketplace adapter/i);
+});
+
+test("application review returns not found for records outside the current user's scope", async () => {
+  const response = await worker.fetch(new Request("https://api.example/applications/4", {
+    method: "PATCH",
+    headers: { Cookie: "fh_session=test-session-token", "Content-Type": "application/json" },
+    body: JSON.stringify({ draft_text: "Edited proposal" })
+  }), { DB: fakeDb() });
+  assert.equal(response.status, 404);
 });
