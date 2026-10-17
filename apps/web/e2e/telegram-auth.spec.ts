@@ -222,6 +222,7 @@ test("AI agent toggle and manual scan call the API and show results", async ({ p
   await mockAuthenticatedAccount(page);
   let enabled = false;
   let notifyNewProjects = true;
+  let notifyApplicationUpdates = true;
   await page.route("**/api/backend/profile", async route => {
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ display_name: "Dev", skills: ["Python"], languages: ["ru", "en"], payment_preferences: [], excluded_keywords: [], min_budget: null, currency: "ALL" }) });
   });
