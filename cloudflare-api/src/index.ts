@@ -1076,7 +1076,8 @@ async function handle(request: Request, env: Env): Promise<Response> {
       cron_configured: true,
       telegram_bot_configured: Boolean(env.TELEGRAM_BOT_TOKEN && env.TELEGRAM_WEBHOOK_SECRET && env.BOT_API_SECRET),
       ai_provider_configured: Boolean(env.AI_API_KEY && env.AI_MODEL),
-      marketplace_adapters: []
+      marketplace_adapters: ["freelancehunt"],
+      worker_alerting_configured: Boolean(env.TELEGRAM_BOT_TOKEN && env.WORKER_ALERT_CHAT_ID)
     });
   }
 
