@@ -57,3 +57,30 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: python3 tests/migrations.test.py
+
+  compose-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare local-only environment
+        run: cp .env.example .env
+      - name: Validate Compose configuration
+        run: docker compose config --quiet
+      - name: Build API and bot images
+        run: docker compose build api bot
+      - name: Start PostgreSQL, Redis, and API
+        run: docker compose up -d db redis api
+      - name: Verify containerized API health
+        run: |
+          for attempt in $(seq 1 45); do
+            if curl --max-time 3 --fail --silent http://127.0.0.1:8000/health; then
+              echo
+              exit 0
+            fi
+            sleep 2
+          done
+          docker compose logs api
+          exit 1
+      - name: Stop Compose stack
+        if: always()
+        run: docker compose down -v

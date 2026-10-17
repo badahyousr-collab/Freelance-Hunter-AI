@@ -17,7 +17,8 @@
 - [x] Add a D1 migration to replace email/password identity fields with Telegram identity keys and anonymize legacy email-only identities.
 - [ ] Apply the D1 migration in Cloudflare and verify existing Telegram accounts can still sign in.
 - [x] Remove email/password fields from the parallel FastAPI user model and add an Alembic migration.
-- [ ] Verify the D1 and PostgreSQL identity migrations against their target deployments.
+- [x] Verify the PostgreSQL identity migration through the Docker Compose startup smoke test in CI.
+- [ ] Apply and verify the D1 identity migration against the deployed Cloudflare database.
 - [ ] Verify session expiry, account isolation, and Telegram sign-in against the deployed environment.
 
 ## Phase 3 - Web control panel
@@ -79,7 +80,8 @@
 - [x] Alembic migration upgrade and downgrade check in CI.
 - [x] Frontend lint and production build in CI.
 - [x] Python syntax checks for bot and local setup scripts.
-- [ ] Validate Docker Compose end-to-end and run the deployed smoke-test checklist.
+- [x] Validate Docker Compose configuration, build the API/bot images, start PostgreSQL/Redis/FastAPI, and pass `/health` in CI.
+- [ ] Run the deployed smoke-test checklist.
 - [x] Apply rate limits to Telegram auth, AI draft generation, and manual scans; persist source failure status.
 - [x] Add scheduled CodeQL analysis and weekly Dependabot checks for Python, Node, and GitHub Actions dependencies.
 - [x] Expand Worker health diagnostics to detect missing Telegram-only identity, notification, and provider-submission migrations.

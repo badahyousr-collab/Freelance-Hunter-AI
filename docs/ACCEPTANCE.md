@@ -16,7 +16,8 @@
 - [x] Add a D1 migration that replaces email/password identity fields with Telegram identity keys and anonymizes old email-only identities.
 - [ ] Apply the D1 migration to the deployed Cloudflare database and verify existing Telegram accounts still sign in.
 - [x] Remove email/password fields from the FastAPI user model and add an Alembic migration.
-- [ ] Verify the D1 and PostgreSQL migrations against deployed environments. The Worker health endpoint now reports missing Telegram-only identity, notification, and provider-submission migrations.
+- [x] Verify the PostgreSQL identity migration and FastAPI startup through the Docker Compose smoke test in CI.
+- [ ] Apply and verify the D1 identity migration against the deployed Cloudflare database. The Worker health endpoint reports missing Telegram-only identity, notification, and provider-submission migrations.
 - [ ] Verify Telegram sign-in, session expiry, logout, and cross-account data isolation against the deployed environment.
 
 ## Source ingestion
@@ -53,6 +54,7 @@
 - [x] Structured scan logs include duration, scanned sources, new-project counts, and failure counts.
 - [x] Optional Telegram operations alerts are implemented and covered by a mocked scheduled-scan failure test.
 - [ ] Configure `WORKER_ALERT_CHAT_ID` and verify delivery against the deployed bot.
+- [x] Run the local PostgreSQL-backed Docker Compose startup and `/health` smoke test in CI.
 - [ ] Run a D1 backup/restore drill against a separate non-production database.
 - [ ] Complete the deployed smoke-test checklist and full user-scoped authorization coverage.
 
