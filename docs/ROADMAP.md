@@ -39,7 +39,9 @@
 - [ ] Configure and test a real scan against several public channels and verify newly stored projects.
 - [x] Implement the Freelancehunt official API discovery adapter with token validation, encrypted storage, project normalization, and deduplication.
 - [ ] Implement and verify additional provider-specific marketplace discovery adapters where access is permitted.
-- [ ] Add operational monitoring for source failures, scan duration, and new-project counts.
+- [x] Add structured logs for per-source scan outcomes, durations, new-project counts, and scheduled scan failures.
+- [x] Add a free hourly GitHub Actions health monitor that opens/resolves one issue when the deployed Worker, D1 connection, or schema is unhealthy.
+- [ ] Add alert delivery for individual source failures and scheduled scan errors.
 
 ## Phase 5 - Matching and proposal drafting
 - [x] Deterministic hard filters for unsupported languages, minimum budget when currencies match, excluded keywords, and explicit unpaid-work signals; currency mismatches are not compared without an exchange rate.
@@ -82,7 +84,8 @@
 - [x] Add user-scope regression tests for core dashboard reads and proposal mutations.
 - [x] Document free-plan-compatible D1 export, migration, and separate-test-database restore procedures.
 - [ ] Execute and verify a D1 backup/restore drill against a non-production database.
-- [ ] Add production alerting for Worker errors, scheduled scans, and notification failures.
+- [x] Add optional Telegram operations alerts for scheduled scan and new-project notification failures, with a readiness indicator.
+- [ ] Configure the private alert chat and verify real alert delivery in the deployed Worker.
 - [ ] Complete authorization/data-isolation coverage for every user-scoped endpoint.
 
 ## Phase 9 - Portfolio
