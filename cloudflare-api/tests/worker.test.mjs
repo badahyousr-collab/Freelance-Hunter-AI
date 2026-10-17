@@ -130,7 +130,8 @@ test("agent readiness reflects provider and bot configuration", async () => {
     cron_configured: true,
     telegram_bot_configured: true,
     ai_provider_configured: true,
-    marketplace_adapters: []
+    marketplace_adapters: ["freelancehunt"],
+    worker_alerting_configured: false
   });
 });
 
@@ -907,4 +908,73 @@ test("scheduled scans continue for later users when one user's source query fail
   await worker.scheduled({}, { DB }, { waitUntil(task) { scheduledTask = task; } });
   await scheduledTask;
   assert.deepEqual(visitedUsers, ["user-1", "user-2"]);
+});
+
+
+test("scheduled scan sends an operational Telegram alert when a user scan fails", async () => {
+  const DB = {
+    prepare(sql) {
+      return {
+        bind() { return this; },
+        async all() {
+          if (sql.includes("SELECT DISTINCT s.user_id FROM sources s JOIN agent_settings")) return { results: [{ user_id: "user-1" }] };
+          if (sql.includes("SELECT * FROM sources WHERE user_id=? AND is_enabled=1 AND source IN")) throw new Error("synthetic source query failure");
+          return { results: [] };
+        },
+        async first() { return null; },
+        async run() { return { meta: { changes: 1 } }; }
+      };
+    }
+  };
+  const originalFetch = globalThis.fetch;
+  let alertRequest = null;
+  globalThis.fetch = async (input, init) => {
+    alertRequest = { url: String(input), body: JSON.parse(init.body) };
+    return Response.json({ ok: true, result: { message_id: 10 } });
+  };
+  let scheduledTask;
+  try {
+    await worker.scheduled({}, { DB, TELEGRAM_BOT_TOKEN: "ops-test-token", WORKER_ALERT_CHAT_ID: "123456" }, {
+      waitUntil(task) { scheduledTask = task; }
+    });
+    await scheduledTask;
+    assert.equal(alertRequest.url, "https://api.telegram.org/botops-test-token/sendMessage");
+    assert.equal(alertRequest.body.chat_id, "123456");
+    assert.match(alertRequest.body.text, /user errors: 1/i);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+
+test("disconnecting Freelancehunt removes its source subscription but keeps discovered projects", async () => {
+  const statements = [];
+  const DB = {
+    prepare(sql) {
+      let values = [];
+      return {
+        bind(...args) { values = args; return this; },
+        async first() {
+          if (sql.includes("FROM sessions s JOIN users")) return { id: "user-1", created_at: "2026-10-16 10:00:00" };
+          if (sql.includes("SELECT provider FROM integrations WHERE id=? AND user_id=?")) return { provider: "freelancehunt" };
+          return null;
+        },
+        async run() {
+          statements.push({ sql, values: [...values] });
+          return { meta: { changes: 1 } };
+        },
+        async all() { return { results: [] }; }
+      };
+    }
+  };
+  const response = await worker.fetch(new Request("https://api.example/integrations/7", {
+    method: "DELETE",
+    headers: { Cookie: "fh_session=test-session-token", "CF-Connecting-IP": "198.51.100.95" }
+  }), { DB });
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { ok: true });
+  assert.ok(statements.some(item => item.sql.includes("DELETE FROM integrations WHERE id=? AND user_id=?")));
+  const sourceDelete = statements.find(item => item.sql.includes("DELETE FROM sources WHERE user_id=? AND source='freelancehunt'"));
+  assert.ok(sourceDelete);
+  assert.deepEqual(sourceDelete.values, ["user-1"]);
 });
