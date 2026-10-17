@@ -50,6 +50,8 @@ def main() -> None:
 
     settings_columns = {row[1] for row in db.execute("PRAGMA table_info(agent_settings)")}
     assert "notify_new_projects" in settings_columns
+    application_columns = {row[1] for row in db.execute("PRAGMA table_info(applications)")}
+    assert {"provider_submission_id", "submission_error"} <= application_columns
     db.execute(
         "INSERT INTO users (id,telegram_identity,telegram_verified,identity_provider) VALUES (?,?,1,'telegram')",
         ("user-3", "tg:67890"),
@@ -75,7 +77,7 @@ def main() -> None:
     )
     assert db.execute("SELECT user_id FROM telegram_auth_codes WHERE code_hash='auth-code-hash'").fetchone()[0] == "user-3"
 
-    print(f"Validated {len(MIGRATIONS)} D1 migrations, Telegram-only identity, notification defaults, auth codes, uniqueness, and cascading session deletion.")
+    print(f"Validated {len(MIGRATIONS)} D1 migrations, Telegram-only identity, notification defaults, provider submission tracking, auth codes, uniqueness, and cascading session deletion.")
 
 
 if __name__ == "__main__":
