@@ -125,6 +125,7 @@ test("agent readiness reflects provider and bot configuration", async () => {
     DB: fakeDb(),
     AI_API_KEY: "configured-ai-key",
     AI_MODEL: "configured-model",
+    AI_API_BASE_URL: "https://provider.example/v1",
     TELEGRAM_BOT_TOKEN: "configured-bot-token",
     TELEGRAM_WEBHOOK_SECRET: "configured-webhook-secret",
     BOT_API_SECRET: "configured-bot-api-secret"
@@ -136,6 +137,7 @@ test("agent readiness reflects provider and bot configuration", async () => {
     telegram_bot_configured: true,
     ai_provider_configured: true,
     marketplace_adapters: ["freelancehunt"],
+    freelancehunt_connected: false,
     worker_alerting_configured: false
   });
 });
