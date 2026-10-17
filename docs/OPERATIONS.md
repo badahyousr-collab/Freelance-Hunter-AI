@@ -58,6 +58,10 @@ npx wrangler secret put INTEGRATION_ENCRYPTION_KEY --config cloudflare-api/wrang
 
 Generate a strong random value with `python -c "import secrets; print(secrets.token_urlsafe(48))"`. Do not commit it or expose it as a frontend environment variable. Losing this key makes stored Freelancehunt tokens unrecoverable; users must reconnect. After setting it, connect a user-owned API token through the website and verify the integration status without exposing the token in API responses.
 
+## Scheduled health alert
+
+The `Worker health monitor` GitHub Actions workflow checks the deployed Worker health endpoint hourly. It opens one repository issue if the Worker, D1 connection, or required schema is unhealthy, and closes that issue after a later healthy check. It does not inspect private Worker logs or confirm source-scan success; those still require Cloudflare log review. The monitor is free within GitHub Actions usage and does not require an external uptime service.
+
 ## Restore to a separate test database
 
 Do not experiment with restore commands against production. Create or choose a separate empty D1 database, update the command to its name, and import the SQL backup:
