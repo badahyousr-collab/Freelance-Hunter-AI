@@ -93,6 +93,44 @@ export default function AgentPage() {
     } finally { setBusy(false); }
   }
 
+  async function toggleAutoSubmit() {
+    if (!agent) return;
+    const nextValue = !Boolean(agent.auto_submit ?? true);
+    setBusy(true); setError(""); setMessage("");
+    try {
+      const r = await fetch(API + "/agent/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ auto_submit: nextValue })
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.detail ?? "Не удалось изменить автоотправку");
+      setAgent(current => current ? { ...current, ...d } : current);
+      setMessage(nextValue ? "Автоотправка включена для поддерживаемых интеграций." : "Автоотправка отключена. Отклики будут сохраняться без отправки.");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Не удалось изменить автоотправку");
+    } finally { setBusy(false); }
+  }
+
+  async function changeDailyLimit(value: number) {
+    setBusy(true); setError(""); setMessage("");
+    try {
+      const r = await fetch(API + "/agent/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ daily_submission_limit: value })
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.detail ?? "Не удалось сохранить лимит");
+      setAgent(current => current ? { ...current, ...d } : current);
+      setMessage("Дневной лимит отправок сохранён.");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Не удалось сохранить лимит");
+    } finally { setBusy(false); }
+  }
+
   async function toggleApplicationUpdateNotifications() {
     if (!agent) return;
     const previousValue = Boolean(agent.notify_application_updates ?? true);
@@ -138,6 +176,16 @@ export default function AgentPage() {
       <label style={{ display: "flex", alignItems: "flex-start", gap: 10, marginTop: 16 }}>
         <input type="checkbox" checked={Boolean(agent?.auto_draft)} disabled={busy || !agent} onChange={() => void toggleAutoDraft()} />
         <span><strong>Автоматически готовить отклики</strong><br/><span className="sub-muted">AI пишет персональные сообщения для свежих подходящих заказов. Там, где подключённый адаптер поддерживает отправку, агент может отправить их сам.</span></span>
+      </label>
+      <label style={{ display: "flex", alignItems: "flex-start", gap: 10, marginTop: 12 }}>
+        <input type="checkbox" checked={Boolean(agent?.auto_submit ?? true)} disabled={busy || !agent} onChange={() => void toggleAutoSubmit()} />
+        <span><strong>Автоматически отправлять отклики</strong><br/><span className="sub-muted">Без подтверждения каждой заявки. Сейчас отправка реализуется через официальный API Freelancehunt; для Telegram-публикаций и неподключённых бирж доступна только подготовка текста.</span></span>
+      </label>
+      <label style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 12 }}>
+        <span><strong>Лимит отправок в сутки</strong><br/><span className="sub-muted">Для подключённых бирж с поддержкой отправки.</span></span>
+        <select value={agent?.daily_submission_limit ?? 10} disabled={busy || !agent} onChange={e => void changeDailyLimit(Number(e.target.value))} style={{ marginLeft: "auto", minWidth: 90 }}>
+          <option value={5}>5</option><option value={10}>10</option><option value={20}>20</option><option value={30}>30</option><option value={50}>50</option>
+        </select>
       </label>
       <label style={{ display: "flex", alignItems: "flex-start", gap: 10, marginTop: 12 }}>
         <input type="checkbox" checked={Boolean(agent?.notify_application_updates ?? true)} disabled={busy || !agent} onChange={() => void toggleApplicationUpdateNotifications()} />
