@@ -99,7 +99,7 @@ test("health endpoint reports missing Telegram identity and notification migrati
   const data = await response.json();
   assert.equal(data.status, "degraded");
   assert.equal(data.schema, "incomplete");
-  assert.deepEqual(data.missing_migrations, ["0007_telegram_only_identity.sql", "0008_new_project_notifications.sql", "0009_provider_submission_tracking.sql", "0010_freelancehunt_status_sync.sql", "0011_application_update_notifications.sql"]);
+  assert.deepEqual(data.missing_migrations, ["0007_telegram_only_identity.sql", "0008_new_project_notifications.sql", "0009_provider_submission_tracking.sql", "0010_freelancehunt_status_sync.sql", "0011_application_update_notifications.sql", "0012_auto_submission.sql"]);
 });
 
 test("Telegram webhook rejects requests when webhook secrets are not configured", async () => {
