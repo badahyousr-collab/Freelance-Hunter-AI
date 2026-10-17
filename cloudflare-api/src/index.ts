@@ -672,16 +672,29 @@ async function handle(request: Request, env: Env): Promise<Response> {
   if (method === "GET" && (path === "/health" || path === "/")) {
     const check = await env.DB.prepare("SELECT 1 AS ok").first<{ok:number}>();
     const tables = await env.DB.prepare(
-      "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('users','sessions','telegram_auth_codes','auth_rate_limits')"
+      "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('users','sessions','telegram_auth_codes','auth_rate_limits','profiles','agent_settings','sources','projects','applications','integrations','telegram_links')"
     ).all<{ name: string }>();
     const present = new Set((tables.results ?? []).map(row => row.name));
-    const required = ["users", "sessions", "telegram_auth_codes", "auth_rate_limits"];
+    const required = ["users", "sessions", "telegram_auth_codes", "auth_rate_limits", "profiles", "agent_settings", "sources", "projects", "applications", "integrations", "telegram_links"];
     const missingTables = required.filter(name => !present.has(name));
+    const missingMigrations: string[] = [];
+    try {
+      await env.DB.prepare("SELECT telegram_identity,identity_provider,telegram_verified FROM users LIMIT 0").all();
+    } catch {
+      missingMigrations.push("0007_telegram_only_identity.sql");
+    }
+    try {
+      await env.DB.prepare("SELECT notify_new_projects FROM agent_settings LIMIT 0").all();
+    } catch {
+      missingMigrations.push("0008_new_project_notifications.sql");
+    }
+    const schemaReady = missingTables.length === 0 && missingMigrations.length === 0;
     return response(request, {
-      status: check?.ok === 1 && missingTables.length === 0 ? "ok" : "degraded",
+      status: check?.ok === 1 && schemaReady ? "ok" : "degraded",
       database: check?.ok === 1 ? "connected" : "unavailable",
-      schema: missingTables.length === 0 ? "ready" : "incomplete",
+      schema: schemaReady ? "ready" : "incomplete",
       ...(missingTables.length ? { missing_tables: missingTables } : {}),
+      ...(missingMigrations.length ? { missing_migrations: missingMigrations } : {}),
       service: "freelance-hunter-api"
     });
   }
