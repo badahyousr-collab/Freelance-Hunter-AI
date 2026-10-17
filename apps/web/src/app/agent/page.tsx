@@ -89,9 +89,11 @@ export default function AgentPage() {
 
   async function toggleNewProjectNotifications() {
     if (!agent) return;
+    const previousValue = Boolean(agent.notify_new_projects);
+    const nextValue = !previousValue;
+    setAgent(current => current ? { ...current, notify_new_projects: nextValue } : current);
     setBusy(true); setError(""); setMessage("");
     try {
-      const nextValue = !Boolean(agent.notify_new_projects);
       const r = await fetch(API + "/agent/settings", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -103,6 +105,7 @@ export default function AgentPage() {
       setAgent(current => current ? { ...current, ...d } : current);
       setMessage(nextValue ? "Уведомления о новых проектах включены." : "Уведомления о новых проектах отключены.");
     } catch (e) {
+      setAgent(current => current ? { ...current, notify_new_projects: previousValue } : current);
       setError(e instanceof Error ? e.message : "Не удалось изменить уведомления");
     } finally { setBusy(false); }
   }
