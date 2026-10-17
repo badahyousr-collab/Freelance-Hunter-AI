@@ -757,7 +757,7 @@ test("manual scan imports open Freelancehunt projects through the official API a
       published_at: "2026-10-17T08:00:00+00:00",
       safe_type: null
     },
-    links: { self: { web: "https://freelancehunt.com/project/python-telegram-bot/12345.html" } }
+    links: { self: { web: "http://freelancehunt.com/project/python-telegram-bot/12345.html" } }
   };
   const DB = {
     prepare(sql) {
@@ -801,7 +801,7 @@ test("manual scan imports open Freelancehunt projects through the official API a
     assert.ok(insert);
     assert.equal(insert.values[1], "freelancehunt");
     assert.equal(insert.values[2], "12345");
-    assert.equal(insert.values[3], listing.links.self.web);
+    assert.equal(insert.values[3], "https://freelancehunt.com/project/python-telegram-bot/12345.html");
     assert.equal(insert.values[4], "Python Telegram bot");
     assert.ok(statements.some(item => item.sql.includes("UPDATE sources SET status='active'")));
   } finally {
