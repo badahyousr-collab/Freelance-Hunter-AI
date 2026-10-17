@@ -222,6 +222,7 @@ test("AI agent toggle and manual scan call the API and show results", async ({ p
   await mockAuthenticatedAccount(page);
   let enabled = false;
   let notifyNewProjects = true;
+  let notifyApplicationUpdates = true;
   await page.route("**/api/backend/profile", async route => {
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ display_name: "Dev", skills: ["Python"], languages: ["ru", "en"], payment_preferences: [], excluded_keywords: [], min_budget: null, currency: "ALL" }) });
   });
@@ -230,13 +231,14 @@ test("AI agent toggle and manual scan call the API and show results", async ({ p
   });
   await page.route("**/api/backend/agent/settings", async route => {
     if (route.request().method() === "PATCH") {
-      const payload = route.request().postDataJSON() as { enabled?: boolean; notify_new_projects?: boolean };
+      const payload = route.request().postDataJSON() as { enabled?: boolean; notify_new_projects?: boolean; notify_application_updates?: boolean };
       if (payload.enabled !== undefined) enabled = payload.enabled;
       if (payload.notify_new_projects !== undefined) notifyNewProjects = payload.notify_new_projects;
-      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ enabled, notify_new_projects: notifyNewProjects, telegram_linked: true }) });
+      if (payload.notify_application_updates !== undefined) notifyApplicationUpdates = payload.notify_application_updates;
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ enabled, notify_new_projects: notifyNewProjects, notify_application_updates: notifyApplicationUpdates, telegram_linked: true }) });
       return;
     }
-    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ enabled, notify_new_projects: notifyNewProjects, telegram_linked: true }) });
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ enabled, notify_new_projects: notifyNewProjects, notify_application_updates: notifyApplicationUpdates, telegram_linked: true }) });
   });
   await page.route("**/api/backend/agent/readiness", async route => {
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ worker_runtime: true, cron_configured: true, telegram_bot_configured: true, ai_provider_configured: false, marketplace_adapters: [] }) });
@@ -252,6 +254,12 @@ test("AI agent toggle and manual scan call the API and show results", async ({ p
   await expect(notifications).not.toBeChecked();
   await expect(page.getByText(/Уведомления о новых проектах отключены/i)).toBeVisible();
   expect(notifyNewProjects).toBe(false);
+  const replyNotifications = page.getByRole("checkbox", { name: /Уведомлять об ответах на отклики в Telegram/i });
+  await expect(replyNotifications).toBeChecked();
+  await replyNotifications.click();
+  await expect(replyNotifications).not.toBeChecked();
+  await expect(page.getByText(/Уведомления об ответах на отклики отключены/i)).toBeVisible();
+  expect(notifyApplicationUpdates).toBe(false);
   await page.getByRole("button", { name: "Включить агента" }).click();
   await expect(page.getByText(/AI-агент включён/i)).toBeVisible();
   await expect(page.getByRole("button", { name: "Приостановить агента" })).toBeVisible();
@@ -364,3 +372,29 @@ test("Freelancehunt integration accepts an API token but never displays it after
   await expect(page.getByLabel("API-токен Freelancehunt")).toHaveValue("");
 });
 
+
+
+test("integrations page runs Freelancehunt bid status sync", async ({ page }) => {
+  await mockAuthenticatedAccount(page);
+  await page.route("**/api/backend/integrations/catalog", async route => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([
+      { provider: "freelancehunt", label: "Freelancehunt", status: "available", setup_note: "Official API integration." }
+    ]) });
+  });
+  await page.route("**/api/backend/integrations", async route => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([
+      { id: 3, provider: "freelancehunt", label: "Freelancehunt · test-user", status: "connected", created_at: "2026-10-17T10:00:00Z" }
+    ]) });
+  });
+  let syncCalled = false;
+  await page.route("**/api/backend/integrations/freelancehunt/sync", async route => {
+    syncCalled = true;
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ checked: 2, updated: 1, errors: 0 }) });
+  });
+
+  await page.goto("/integrations");
+  await expect(page.getByRole("button", { name: "Синхронизировать отклики" })).toBeVisible();
+  await page.getByRole("button", { name: "Синхронизировать отклики" }).click();
+  await expect.poll(() => syncCalled).toBe(true);
+  await expect(page.getByText("Проверено откликов: 2. Обновлено ответов заказчиков: 1. Ошибок: 0.")).toBeVisible();
+});
