@@ -16,6 +16,7 @@ function statusLabel(status: string) {
     submitting: "Отправляется",
     sent: "Отправлен площадкой",
     failed: "Ошибка отправки",
+    submission_unknown: "Нужно проверить на бирже",
     replied: "Есть ответ",
     closed: "Закрыт"
   };
