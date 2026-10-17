@@ -37,8 +37,9 @@
 - [x] Authenticated user-scoped manual scan endpoint.
 - [x] Build a curated catalog of eight public Telegram job channels, with URLs, languages, and focus areas.
 - [ ] Configure and test a real scan against several public channels and verify newly stored projects.
-- [ ] Implement and verify provider-specific marketplace discovery adapters where access is permitted.
-- [ ] Add operational monitoring for source failures, scan duration, and new-project counts.
+- [x] Implement the official Freelancehunt API-token connection and open-project discovery adapter with mocked tests.
+- [ ] Verify the Freelancehunt adapter against a real account and implement other permitted marketplace discovery adapters.
+- [x] Add structured operational logs for source failures, scan duration, fetched listings, and new-project counts.
 
 ## Phase 5 - Matching and proposal drafting
 - [x] Deterministic hard filters for unsupported languages, minimum budget when currencies match, excluded keywords, and explicit unpaid-work signals; currency mismatches are not compared without an exchange rate.
@@ -52,7 +53,8 @@
 
 ## Phase 6 - Marketplace integrations and application tracking
 - [x] Per-user integration records with encrypted-credential design and API responses that do not expose secrets.
-- [ ] Implement provider-specific official OAuth/API authorization and verify connection status.
+- [x] Implement Freelancehunt API-token verification, AES-GCM credential storage, and connected/auth-error states with mocked tests.
+- [ ] Verify connection status against a real Freelancehunt account in the deployed Worker.
 - [ ] Implement proposal submission only for providers with a verified supported capability.
 - [x] Add editable proposal drafts and an awaiting-confirmation/closed review workflow that cannot falsely mark a proposal as sent.
 - [ ] Implement reliable reply/status synchronization and submission idempotency.
