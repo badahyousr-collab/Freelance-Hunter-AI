@@ -1204,11 +1204,17 @@ async function handle(request: Request, env: Env): Promise<Response> {
     await env.DB.prepare("UPDATE agent_settings SET is_enabled=?,auto_draft=?,min_match_score=?,notify_new_projects=?,updated_at=datetime('now') WHERE user_id=?").bind(enabled,autoDraft,score,notifyNewProjects,uid).run();
     return response(request, { enabled: Boolean(enabled), is_enabled: Boolean(enabled), auto_draft: Boolean(autoDraft), notify_new_projects: Boolean(notifyNewProjects), min_match_score: score });
   }
+  if (path === "/agent/sync-status" && method === "POST") {
+    if (await isRateLimited(request, env, "provider-status-sync", 5)) return response(request, { detail: "Too many status sync attempts. Wait 15 minutes before trying again." }, 429, { "Retry-After": "900" });
+    const result = await syncFreelancehuntBidStatuses(env, uid);
+    if (result.error) return response(request, { ...result, detail: result.error }, 502);
+    return response(request, { ...result, message: `Checked ${result.checked} Freelancehunt bid statuses; ${result.changed} changed.` });
+  }
   if (path === "/agent/scan" && method === "POST") {
     const recentScan = await env.DB.prepare("SELECT COUNT(*) AS total FROM sources WHERE user_id=? AND is_enabled=1 AND last_scan_at > datetime('now','-1 minute')").bind(uid).first<any>();
     if (Number(recentScan?.total ?? 0) > 0) return response(request, { detail: "A source was scanned recently. Wait one minute before scanning again." }, 429);
     const result = await scanUserSources(env, uid);
-    return response(request, { ...result, message: result.scannedSources ? "Scan completed." : "Add an enabled public Telegram channel to scan." });
+    return response(request, { ...result, message: result.scannedSources ? "Scan completed." : "Add an enabled source to scan." });
   }
 
 
