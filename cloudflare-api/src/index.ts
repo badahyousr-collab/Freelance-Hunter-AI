@@ -520,12 +520,64 @@ async function scanFreelancehuntSource(env: Env, userId: string, source: any): P
 }
 
 
+async function autoSubmitFreelancehuntProposal(env: Env, userId: string, applicationId: number, project: any, profile: any): Promise<boolean> {
+  const settings = await env.DB.prepare("SELECT auto_submit,daily_submission_limit FROM agent_settings WHERE user_id=?").bind(userId).first<any>();
+  if (Number(settings?.auto_submit ?? 1) !== 1) return false;
+  if (!env.INTEGRATION_ENCRYPTION_KEY || env.INTEGRATION_ENCRYPTION_KEY.trim().length < 32) return false;
+  if (String(project.source) !== "freelancehunt" || !/^\d+$/.test(String(project.source_project_id ?? ""))) return false;
+  const amount = Number(project.budget_max ?? project.budget_min ?? profile.min_budget ?? 0);
+  const currency = String(project.currency ?? profile.currency ?? "").toUpperCase();
+  if (!Number.isFinite(amount) || amount <= 0 || !["UAH", "RUB"].includes(currency)) return false;
+  const limit = Math.max(1, Math.min(50, Number(settings?.daily_submission_limit ?? 10)));
+  const today = await env.DB.prepare("SELECT COUNT(*) AS total FROM applications WHERE user_id=? AND status IN ('sent','submitting','submission_unknown') AND (submitted_at >= date('now') OR (submitted_at IS NULL AND created_at >= date('now')))").bind(userId).first<any>();
+  if (Number(today?.total ?? 0) >= limit) return false;
+  const integration = await env.DB.prepare("SELECT credentials_json FROM integrations WHERE user_id=? AND provider='freelancehunt' AND status='connected'").bind(userId).first<any>();
+  if (!integration?.credentials_json) return false;
+  let token: string;
+  try { token = await decryptIntegrationSecret(String(integration.credentials_json), env.INTEGRATION_ENCRYPTION_KEY); }
+  catch { return false; }
+  const application = await env.DB.prepare("SELECT draft_text,status FROM applications WHERE id=? AND user_id=?").bind(applicationId,userId).first<any>();
+  if (!application || String(application.status) !== "draft") return false;
+  const comment = String(application.draft_text ?? "").trim();
+  if (!comment || comment.length > 5000) return false;
+  const claimed = await env.DB.prepare("UPDATE applications SET status='submitting',submission_error=NULL WHERE id=? AND user_id=? AND status='draft'").bind(applicationId,userId).run();
+  if (!claimed.meta.changes) return false;
+  try {
+    const result = await freelancehuntApi(token, "/projects/" + String(project.source_project_id) + "/bids", {
+      method: "POST",
+      body: JSON.stringify({ days: 7, budget: { amount: Math.round(amount * 100) / 100, currency }, safe_type: null, comment }),
+      signal: AbortSignal.timeout(15000)
+    });
+    if (!result.response.ok) {
+      const rejected = result.response.status >= 400 && result.response.status < 500;
+      const detail = rejected
+        ? "Freelancehunt rejected the automatic bid (HTTP " + result.response.status + ")."
+        : "Freelancehunt returned a server error. Verify the bid in the marketplace before retrying.";
+      if (result.response.status === 401 || result.response.status === 403) {
+        await env.DB.prepare("UPDATE integrations SET status='reauth_required' WHERE user_id=? AND provider='freelancehunt'").bind(userId).run();
+      }
+      await env.DB.prepare("UPDATE applications SET status=?,submission_error=? WHERE id=? AND user_id=? AND status='submitting'").bind(rejected ? "failed" : "submission_unknown",detail,applicationId,userId).run();
+      return false;
+    }
+    const bidId = String(result.data?.data?.id ?? "");
+    if (!/^\d+$/.test(bidId)) {
+      await env.DB.prepare("UPDATE applications SET status='submission_unknown',submission_error=? WHERE id=? AND user_id=? AND status='submitting'").bind("Freelancehunt returned no verifiable bid ID. Check the listing manually before retrying.",applicationId,userId).run();
+      return false;
+    }
+    await env.DB.prepare("UPDATE applications SET status='sent',submitted_at=datetime('now'),provider_submission_id=?,submission_error=NULL WHERE id=? AND user_id=? AND status='submitting'").bind(bidId,applicationId,userId).run();
+    return true;
+  } catch {
+    await env.DB.prepare("UPDATE applications SET status='submission_unknown',submission_error=? WHERE id=? AND user_id=? AND status='submitting'").bind("No response from Freelancehunt. Check the listing manually before retrying.",applicationId,userId).run();
+    return false;
+  }
+}
+
 async function autoDraftPendingProjects(env: Env, userId: string): Promise<number> {
   if (!env.AI_API_KEY || !env.AI_MODEL) return 0;
-  const settings = await env.DB.prepare("SELECT is_enabled,auto_draft,min_match_score FROM agent_settings WHERE user_id=?").bind(userId).first<any>();
+  const settings = await env.DB.prepare("SELECT is_enabled,auto_draft,auto_submit,daily_submission_limit,min_match_score FROM agent_settings WHERE user_id=?").bind(userId).first<any>();
   if (!settings || Number(settings.is_enabled) !== 1 || Number(settings.auto_draft) !== 1) return 0;
   const threshold = Math.max(0, Math.min(100, Number(settings.min_match_score ?? 60)));
-  const rows = await env.DB.prepare(`SELECT p.id,p.source,p.url,p.title,p.description,p.language,p.budget_min,p.budget_max,p.currency,p.payment_method
+  const rows = await env.DB.prepare(`SELECT p.id,p.source,p.source_project_id,p.url,p.title,p.description,p.language,p.budget_min,p.budget_max,p.currency,p.payment_method
     FROM projects p LEFT JOIN applications a ON a.user_id=p.user_id AND a.project_id=p.id
     WHERE p.user_id=? AND a.id IS NULL AND p.match_score>=?
       AND julianday(p.published_at) BETWEEN julianday('now','-7 days') AND julianday('now','+5 minutes')
@@ -566,7 +618,12 @@ async function autoDraftPendingProjects(env: Env, userId: string): Promise<numbe
       if (!draftText) throw new Error("AI provider returned an empty proposal");
       const saved = await env.DB.prepare("INSERT INTO applications (user_id,project_id,status,draft_text) VALUES (?,?,'draft',?) ON CONFLICT(user_id,project_id) DO NOTHING")
         .bind(userId, project.id, draftText).run();
-      return Number(saved.meta.changes ?? 0) > 0 ? 1 : 0;
+      if (Number(saved.meta.changes ?? 0) <= 0) return 0;
+      const application = await env.DB.prepare("SELECT id FROM applications WHERE user_id=? AND project_id=?").bind(userId,project.id).first<any>();
+      if (application?.id && String(project.source) === "freelancehunt") {
+        await autoSubmitFreelancehuntProposal(env,userId,Number(application.id),project,profile);
+      }
+      return 1;
     } catch (error) {
       console.warn("automatic_proposal_draft_failed", { userId, projectId: project.id, error: error instanceof Error ? error.message : "Unknown AI provider error" });
       return 0;
@@ -1203,18 +1260,20 @@ async function handle(request: Request, env: Env): Promise<Response> {
   if (path === "/agent/settings" && method === "GET") {
     const row = await env.DB.prepare("SELECT * FROM agent_settings WHERE user_id=?").bind(uid).first<any>();
     const link = await env.DB.prepare("SELECT telegram_user_id FROM telegram_links WHERE user_id=?").bind(uid).first<any>();
-    return response(request, row ? { ...row, enabled: Boolean(row.is_enabled), is_enabled: Boolean(row.is_enabled), auto_draft: Boolean(row.auto_draft), notify_new_projects: Boolean(row.notify_new_projects ?? 1), notify_application_updates: Boolean(row.notify_application_updates ?? 1), telegram_linked: Boolean(link?.telegram_user_id) } : { enabled: false, auto_draft: true, notify_new_projects: true, notify_application_updates: true, telegram_linked: Boolean(link?.telegram_user_id) });
+    return response(request, row ? { ...row, enabled: Boolean(row.is_enabled), is_enabled: Boolean(row.is_enabled), auto_draft: Boolean(row.auto_draft), auto_submit: Boolean(row.auto_submit ?? 1), daily_submission_limit: Number(row.daily_submission_limit ?? 10), notify_new_projects: Boolean(row.notify_new_projects ?? 1), notify_application_updates: Boolean(row.notify_application_updates ?? 1), telegram_linked: Boolean(link?.telegram_user_id) } : { enabled: false, auto_draft: true, auto_submit: true, daily_submission_limit: 10, notify_new_projects: true, notify_application_updates: true, telegram_linked: Boolean(link?.telegram_user_id) });
   }
   if (path === "/agent/settings" && (method === "PATCH" || method === "PUT")) {
     const input = await body(request);
     const old = await env.DB.prepare("SELECT * FROM agent_settings WHERE user_id=?").bind(uid).first<any>() ?? {};
     const enabled = input.enabled === undefined && input.is_enabled === undefined ? Number(old.is_enabled ?? 0) : (input.enabled ?? input.is_enabled) ? 1 : 0;
     const autoDraft = input.auto_draft === undefined ? Number(old.auto_draft ?? 1) : input.auto_draft ? 1 : 0;
+    const autoSubmit = input.auto_submit === undefined ? Number(old.auto_submit ?? 1) : input.auto_submit ? 1 : 0;
+    const dailySubmissionLimit = Math.max(1, Math.min(50, Math.round(Number(input.daily_submission_limit ?? old.daily_submission_limit ?? 10))));
     const notifyNewProjects = input.notify_new_projects === undefined ? Number(old.notify_new_projects ?? 1) : input.notify_new_projects ? 1 : 0;
     const notifyApplicationUpdates = input.notify_application_updates === undefined ? Number(old.notify_application_updates ?? 1) : input.notify_application_updates ? 1 : 0;
     const score = Math.max(0,Math.min(100,Math.round(Number(input.min_match_score ?? old.min_match_score ?? 60))));
-    await env.DB.prepare("UPDATE agent_settings SET is_enabled=?,auto_draft=?,min_match_score=?,notify_new_projects=?,notify_application_updates=?,updated_at=datetime('now') WHERE user_id=?").bind(enabled,autoDraft,score,notifyNewProjects,notifyApplicationUpdates,uid).run();
-    return response(request, { enabled: Boolean(enabled), is_enabled: Boolean(enabled), auto_draft: Boolean(autoDraft), notify_new_projects: Boolean(notifyNewProjects), notify_application_updates: Boolean(notifyApplicationUpdates), min_match_score: score });
+    await env.DB.prepare("UPDATE agent_settings SET is_enabled=?,auto_draft=?,auto_submit=?,daily_submission_limit=?,min_match_score=?,notify_new_projects=?,notify_application_updates=?,updated_at=datetime('now') WHERE user_id=?").bind(enabled,autoDraft,autoSubmit,dailySubmissionLimit,score,notifyNewProjects,notifyApplicationUpdates,uid).run();
+    return response(request, { enabled: Boolean(enabled), is_enabled: Boolean(enabled), auto_draft: Boolean(autoDraft), auto_submit: Boolean(autoSubmit), daily_submission_limit: dailySubmissionLimit, notify_new_projects: Boolean(notifyNewProjects), notify_application_updates: Boolean(notifyApplicationUpdates), min_match_score: score });
   }
   if (path === "/agent/scan" && method === "POST") {
     const recentScan = await env.DB.prepare("SELECT COUNT(*) AS total FROM sources WHERE user_id=? AND is_enabled=1 AND last_scan_at > datetime('now','-1 minute')").bind(uid).first<any>();
