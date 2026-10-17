@@ -290,3 +290,38 @@ test("security page logs out and returns to Telegram login", async ({ page }) =>
   await expect(page).toHaveURL(/\/login$/);
   expect(logoutCalled).toBe(true);
 });
+
+
+test("proposal draft can be edited and prepared for confirmation without claiming it was sent", async ({ page }) => {
+  await mockAuthenticatedAccount(page);
+  const application: Record<string, unknown> = {
+    id: 42,
+    project_id: 12,
+    status: "draft",
+    draft_text: "Hello, I can help with this project.",
+    created_at: "2026-10-17T09:00:00Z",
+    submitted_at: null,
+    replied_at: null,
+    project: { title: "Telegram bot lead collector", url: "https://t.me/job_for_bots/42", source: "telegram" }
+  };
+  await page.route("**/api/backend/applications**", async route => {
+    if (route.request().method() === "GET") {
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([application]) });
+      return;
+    }
+    Object.assign(application, route.request().postDataJSON() as Record<string, unknown>);
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(application) });
+  });
+
+  await page.goto("/applications");
+  const editor = page.getByLabel("Текст отклика");
+  await editor.fill("Hello, I can build the requested bot using the skills in my profile.");
+  await page.getByRole("button", { name: "Сохранить текст" }).click();
+  await expect(page.getByText("Черновик сохранён.")).toBeVisible();
+  await page.getByRole("button", { name: "Подготовить к подтверждению" }).click();
+  await expect(page.getByText("Черновик подготовлен к подтверждению. Отправка не выполнялась.")).toBeVisible();
+  await expect(page.getByText("Готов к подтверждению")).toBeVisible();
+  expect(application.status).toBe("awaiting_confirmation");
+  expect(application.draft_text).toContain("skills in my profile");
+  expect(application.status).not.toBe("sent");
+});
