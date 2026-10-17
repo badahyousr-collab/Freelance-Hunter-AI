@@ -945,3 +945,36 @@ test("scheduled scan sends an operational Telegram alert when a user scan fails"
     globalThis.fetch = originalFetch;
   }
 });
+
+
+test("disconnecting Freelancehunt removes its source subscription but keeps discovered projects", async () => {
+  const statements = [];
+  const DB = {
+    prepare(sql) {
+      let values = [];
+      return {
+        bind(...args) { values = args; return this; },
+        async first() {
+          if (sql.includes("FROM sessions s JOIN users")) return { id: "user-1", created_at: "2026-10-16 10:00:00" };
+          if (sql.includes("SELECT provider FROM integrations WHERE id=? AND user_id=?")) return { provider: "freelancehunt" };
+          return null;
+        },
+        async run() {
+          statements.push({ sql, values: [...values] });
+          return { meta: { changes: 1 } };
+        },
+        async all() { return { results: [] }; }
+      };
+    }
+  };
+  const response = await worker.fetch(new Request("https://api.example/integrations/7", {
+    method: "DELETE",
+    headers: { Cookie: "fh_session=test-session-token", "CF-Connecting-IP": "198.51.100.95" }
+  }), { DB });
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { ok: true });
+  assert.ok(statements.some(item => item.sql.includes("DELETE FROM integrations WHERE id=? AND user_id=?")));
+  const sourceDelete = statements.find(item => item.sql.includes("DELETE FROM sources WHERE user_id=? AND source='freelancehunt'"));
+  assert.ok(sourceDelete);
+  assert.deepEqual(sourceDelete.values, ["user-1"]);
+});
