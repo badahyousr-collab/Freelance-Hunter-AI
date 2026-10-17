@@ -1194,6 +1194,26 @@ async function handle(request: Request, env: Env): Promise<Response> {
     });
   }
 
+  if (path === "/agent/test-ai" && method === "POST") {
+    if (!env.AI_API_KEY || !env.AI_MODEL) return response(request, { ok: false, detail: "Set AI_API_KEY and AI_MODEL in Worker settings first." }, 503);
+    const apiBase = (env.AI_API_BASE_URL || "https://api.openai.com/v1").replace(/\\/+$/, "");
+    const endpoint = apiBase.endsWith("/chat/completions") ? apiBase : apiBase + "/chat/completions";
+    try {
+      const upstream = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Authorization": "Bearer " + env.AI_API_KEY, "Content-Type": "application/json" },
+        body: JSON.stringify({ model: env.AI_MODEL, temperature: 0, max_tokens: 8, messages: [{ role: "user", content: "Reply with OK only." }] }),
+        signal: AbortSignal.timeout(15000)
+      });
+      if (!upstream.ok) return response(request, { ok: false, detail: "AI provider returned HTTP " + upstream.status + ". Check the key, model and base URL." }, 502);
+      const data = await upstream.json<any>();
+      if (!String(data?.choices?.[0]?.message?.content ?? "").trim()) return response(request, { ok: false, detail: "AI provider responded but returned no text." }, 502);
+      return response(request, { ok: true, model: env.AI_MODEL, message: "AI provider responded successfully." });
+    } catch {
+      return response(request, { ok: false, detail: "Could not reach the AI provider. Check the base URL and Worker logs." }, 502);
+    }
+  }
+
   if (path === "/dashboard/summary" && method === "GET") {
     const row = await env.DB.prepare(`SELECT
       (SELECT COUNT(*) FROM projects WHERE user_id=?) AS projects_found,
