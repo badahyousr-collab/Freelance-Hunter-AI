@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import worker, { detectedBudget, evaluateProjectMatch } from "../.test-dist/src/index.js";
 
-function fakeDb({ scan = false, skills = ["python", "telegram"], telegramAuth = null, telegramCode = null, linkedAccount = null, application = null } = {}) {
+function fakeDb({ scan = false, skills = ["python", "telegram"], telegramAuth = null, telegramCode = null, linkedAccount = null, application = null, notificationTarget = null, insertChanges = 1 } = {}) {
   return {
     async batch(statements) { return statements.map(() => ({ meta: { changes: 1 } })); },
     prepare(sql) {
@@ -13,9 +13,10 @@ function fakeDb({ scan = false, skills = ["python", "telegram"], telegramAuth = 
           if (sql.includes("UPDATE applications SET draft_text=?,status=?")) {
             application = application ? { ...application, draft_text: values[0], status: values[1] } : application;
           }
-          return { meta: { changes: 1 } };
+          return { meta: { changes: sql.includes("INSERT INTO projects") ? insertChanges : 1 } };
         },
         async first() {
+          if (sql.includes("SELECT tl.telegram_user_id,a.notify_new_projects")) return notificationTarget;
           if (sql.includes("SELECT id,project_id,status,draft_text FROM applications WHERE id=? AND user_id=?")) return application;
           if (sql.includes("SELECT id,project_id,status,draft_text,created_at,submitted_at,replied_at FROM applications WHERE id=? AND user_id=?")) return application;
           if (sql.includes("SELECT attempts FROM auth_rate_limits")) return { attempts: 1 };
@@ -384,4 +385,66 @@ test("application review returns not found for records outside the current user'
     body: JSON.stringify({ draft_text: "Edited proposal" })
   }), { DB: fakeDb() });
   assert.equal(response.status, 404);
+});
+
+
+test("manual scan sends one Telegram message for newly inserted projects when notifications are enabled", async () => {
+  const originalFetch = globalThis.fetch;
+  const html = '<div class="tgme_widget_message_wrap" data-post="python_jobs/777"><div class="tgme_widget_message_text js-message_text" dir="auto">We need a Python developer to build a Telegram bot for a freelance project. Budget 500 USD.</div><time datetime="2026-10-17T10:00:00+00:00"></time></div>';
+  let sentPayload = null;
+  globalThis.fetch = async (input, init) => {
+    const url = String(input);
+    if (url.startsWith("https://t.me/s/python_jobs")) return new Response(html, { status: 200, headers: { "Content-Type": "text/html" } });
+    if (url.includes("api.telegram.org/botTEST_TOKEN/sendMessage")) {
+      sentPayload = JSON.parse(init.body);
+      return Response.json({ ok: true, result: { message_id: 1 } });
+    }
+    return originalFetch(input, init);
+  };
+  try {
+    const response = await worker.fetch(new Request("https://api.example/agent/scan", {
+      method: "POST",
+      headers: { Cookie: "fh_session=test-session-token", "Content-Type": "application/json" },
+      body: "{}"
+    }), {
+      DB: fakeDb({ scan: true, notificationTarget: { telegram_user_id: "12345", notify_new_projects: 1 } }),
+      TELEGRAM_BOT_TOKEN: "TEST_TOKEN"
+    });
+    assert.equal(response.status, 200);
+    assert.equal((await response.json()).newProjects, 1);
+    assert.equal(sentPayload.chat_id, 12345);
+    assert.match(sentPayload.text, /Новые проекты: 1/);
+    assert.match(sentPayload.text, /python_jobs\\/777/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("manual scan does not send notifications when the user opted out", async () => {
+  const originalFetch = globalThis.fetch;
+  const html = '<div class="tgme_widget_message_wrap" data-post="python_jobs/778"><div class="tgme_widget_message_text js-message_text" dir="auto">We need a Python developer to build a Telegram bot for a freelance project. Budget 500 USD.</div></div>';
+  let sendCount = 0;
+  globalThis.fetch = async (input, init) => {
+    const url = String(input);
+    if (url.startsWith("https://t.me/s/python_jobs")) return new Response(html, { status: 200, headers: { "Content-Type": "text/html" } });
+    if (url.includes("api.telegram.org/botTEST_TOKEN/sendMessage")) {
+      sendCount += 1;
+      return Response.json({ ok: true, result: { message_id: 1 } });
+    }
+    return originalFetch(input, init);
+  };
+  try {
+    const response = await worker.fetch(new Request("https://api.example/agent/scan", {
+      method: "POST",
+      headers: { Cookie: "fh_session=test-session-token", "Content-Type": "application/json" },
+      body: "{}"
+    }), {
+      DB: fakeDb({ scan: true, notificationTarget: { telegram_user_id: "12345", notify_new_projects: 0 } }),
+      TELEGRAM_BOT_TOKEN: "TEST_TOKEN"
+    });
+    assert.equal(response.status, 200);
+    assert.equal(sendCount, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
