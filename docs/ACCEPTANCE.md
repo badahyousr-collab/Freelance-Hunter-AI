@@ -39,7 +39,16 @@
 - [x] Mocked provider-contract tests cover Russian and English drafts, profile/listing payloads, safety instructions, and provider failures.
 - [ ] A real model provider is configured and proposal quality is evaluated against real anonymized listings in Russian and English.
 - [x] Labeled RU/EN test set covers matching quality, budget thresholds, language, excluded keywords, unpaid work, risk, and complexity; deterministic hard filters cannot be overridden by AI.
-- [x] No user-facing endpoint can mark a proposal as sent/replied without a provider-confirmed adapter; proposal editing and awaiting-confirmation workflow are available.
+- [x] No generic user-facing status update can mark a proposal as sent/replied. The Freelancehunt submit route marks it sent only after the official API returns a bid ID; the live route still needs a real-account test.
+
+## Marketplace integrations
+- [x] Freelancehunt API token is verified against the official profile endpoint and encrypted with AES-GCM before persistence.
+- [x] Open-project discovery normalizes records, applies matching, deduplicates by remote project ID, records source health, and is covered by mocked API tests.
+- [x] Bid submission requires an authenticated user, an owned Freelancehunt project, an application prepared for confirmation, and explicit budget/duration/payment details.
+- [x] A provider bid ID is required before an application is marked sent; network/server ambiguity becomes `submission_unknown` and blocks automatic retries.
+- [ ] Verify token connection, project ingestion, bid submission, and ambiguous-failure recovery against a real Freelancehunt account in the deployed Worker.
+- [ ] Implement and verify discovery/submission adapters for other providers where official API access is permitted.
+- [ ] Implement client-reply synchronization.
 
 ## Web and Telegram
 - [x] Dashboard numbers come from persisted API records.
