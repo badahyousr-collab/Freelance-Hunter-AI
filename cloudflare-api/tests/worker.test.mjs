@@ -627,3 +627,33 @@ test("proposal drafting reports missing provider configuration and upstream fail
     globalThis.fetch = originalFetch;
   }
 });
+
+
+test("scheduled scans continue for later users when one user's source query fails", async () => {
+  const visitedUsers = [];
+  const DB = {
+    prepare(sql) {
+      let values = [];
+      return {
+        bind(...args) { values = args; return this; },
+        async all() {
+          if (sql.includes("SELECT DISTINCT s.user_id FROM sources s JOIN agent_settings")) {
+            return { results: [{ user_id: "user-1" }, { user_id: "user-2" }] };
+          }
+          if (sql.includes("SELECT * FROM sources WHERE user_id=? AND is_enabled=1 AND source='telegram'")) {
+            visitedUsers.push(values[0]);
+            if (values[0] === "user-1") throw new Error("synthetic source query failure");
+            return { results: [] };
+          }
+          return { results: [] };
+        },
+        async run() { return { meta: { changes: 1 } }; },
+        async first() { return null; }
+      };
+    }
+  };
+  let scheduledTask;
+  await worker.scheduled({}, { DB }, { waitUntil(task) { scheduledTask = task; } });
+  await scheduledTask;
+  assert.deepEqual(visitedUsers, ["user-1", "user-2"]);
+});
