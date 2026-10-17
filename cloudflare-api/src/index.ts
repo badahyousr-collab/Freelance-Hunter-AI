@@ -1423,8 +1423,14 @@ async function handle(request: Request, env: Env): Promise<Response> {
   }
   const integrationMatch = path.match(/^\/integrations\/(\d+)$/);
   if (integrationMatch && method === "DELETE") {
-    const result = await env.DB.prepare("DELETE FROM integrations WHERE id=? AND user_id=?").bind(Number(integrationMatch[1]),uid).run();
+    const integrationId = Number(integrationMatch[1]);
+    const existing = await env.DB.prepare("SELECT provider FROM integrations WHERE id=? AND user_id=?").bind(integrationId,uid).first<any>();
+    if (!existing) return response(request, { detail: "Integration not found." }, 404);
+    const result = await env.DB.prepare("DELETE FROM integrations WHERE id=? AND user_id=?").bind(integrationId,uid).run();
     if (!result.meta.changes) return response(request, { detail: "Integration not found." }, 404);
+    if (existing.provider === "freelancehunt") {
+      await env.DB.prepare("DELETE FROM sources WHERE user_id=? AND source='freelancehunt'").bind(uid).run();
+    }
     return response(request, { ok: true });
   }
 
