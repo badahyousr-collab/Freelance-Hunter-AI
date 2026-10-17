@@ -37,7 +37,8 @@
 - [x] Authenticated user-scoped manual scan endpoint.
 - [x] Build a curated catalog of six public Telegram job channels, with URLs, languages, and focus areas.
 - [ ] Configure and test a real scan against several public channels and verify newly stored projects.
-- [ ] Implement and verify provider-specific marketplace discovery adapters where access is permitted.
+- [x] Implement the Freelancehunt official API discovery adapter with token validation, encrypted storage, project normalization, and deduplication.
+- [ ] Implement and verify additional provider-specific marketplace discovery adapters where access is permitted.
 - [ ] Add operational monitoring for source failures, scan duration, and new-project counts.
 
 ## Phase 5 - Matching and proposal drafting
@@ -52,10 +53,11 @@
 ## Phase 6 - Marketplace integrations and application tracking
 - [x] Per-user integration records with encrypted-credential design and API responses that do not expose secrets.
 - [ ] Implement provider-specific official OAuth/API authorization and verify connection status.
-- [ ] Implement proposal submission only for providers with a verified supported capability.
+- [x] Implement explicit, provider-confirmed bid submission through the Freelancehunt official API, with a concurrency guard and no automatic retry after ambiguous provider failures.
 - [x] Add editable proposal drafts and an awaiting-confirmation/closed review workflow that cannot falsely mark a proposal as sent.
-- [ ] Implement reliable reply/status synchronization and submission idempotency.
-- [x] Show clear states for draft and awaiting confirmation; submission-only states remain unavailable until a provider-confirmed adapter exists.
+- [x] Prevent duplicate Freelancehunt submissions with a status claim and require a provider bid ID before marking an application sent.
+- [ ] Implement reliable client-reply/status synchronization.
+- [x] Show draft, awaiting confirmation, submitting, sent, failed, and submission-unknown states for Freelancehunt; other providers remain unavailable until verified adapters exist.
 
 ## Phase 7 - Telegram companion
 - [x] One-time expiring website-to-Telegram account linking.
