@@ -2,8 +2,13 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import worker, { detectedBudget, evaluateProjectMatch } from "../.test-dist/src/index.js";
 
-function fakeDb({ scan = false, skills = ["python", "telegram"], telegramAuth = null, telegramCode = null, linkedAccount = null, application = null, project = null, profile = null, notificationTarget = null, insertChanges = 1, telegramIdentitySchema = true, notificationsSchema = true } = {}) {
+function fakeDb({ scan = false, freelancehuntScan = false, skills = ["python", "telegram"], telegramAuth = null, telegramCode = null, linkedAccount = null, application = null, project = null, profile = null, integration = null, notificationTarget = null, insertChanges = 1, projectInserts = [], telegramIdentitySchema = true, notificationsSchema = true, submissionSchema = true } = {}) {
   return {
+    get storedIntegration() { return integration; },
+    set storedIntegration(value) { integration = value; },
+    get applicationRecord() { return application; },
+    set applicationRecord(value) { application = value; },
+    get insertedProjects() { return projectInserts; },
     async batch(statements) { return statements.map(() => ({ meta: { changes: 1 } })); },
     prepare(sql) {
       let values = [];
@@ -16,13 +21,35 @@ function fakeDb({ scan = false, skills = ["python", "telegram"], telegramAuth = 
           if (sql.includes("INSERT INTO applications (user_id,project_id,status,draft_text)")) {
             application = { id: 42, project_id: values[1], status: "draft", draft_text: values[2], created_at: "2026-10-17 10:00:00", submitted_at: null, replied_at: null };
           }
+          if (sql.includes("UPDATE applications SET status='submitting'")) {
+            application = application ? { ...application, status: "submitting", submission_error: null } : application;
+          }
+          if (sql.includes("UPDATE applications SET status='sent'")) {
+            application = application ? { ...application, status: "sent", submitted_at: "2026-10-17 10:30:00", provider_submission_id: values[0], submission_error: null } : application;
+          }
+          if (sql.includes("UPDATE applications SET status=?,submission_error=?")) {
+            application = application ? { ...application, status: values[0], submission_error: values[1] } : application;
+          }
+          if (sql.includes("UPDATE applications SET submission_error=NULL")) {
+            application = application ? { ...application, submission_error: null } : application;
+          }
+          if (sql.includes("UPDATE integrations SET status='reauth_required'")) {
+            integration = integration ? { ...integration, status: "reauth_required" } : integration;
+          }
+          if (sql.includes("INSERT INTO integrations")) {
+            integration = { id: 1, user_id: "user-1", provider: values[1], label: values[2], status: values[3], credentials_json: values[4] ?? "{}", created_at: "2026-10-17 10:00:00" };
+          }
+          if (sql.includes("INSERT INTO projects")) projectInserts.push({ sql, values: [...values] });
           return { meta: { changes: sql.includes("INSERT INTO projects") ? insertChanges : 1 } };
         },
         async first() {
           if (sql.includes("SELECT tl.telegram_user_id,a.notify_new_projects")) return notificationTarget;
+          if (sql.includes("SELECT credentials_json FROM integrations WHERE user_id=? AND provider='freelancehunt'")) return integration?.status === "connected" ? integration : null;
+          if (sql.includes("SELECT id,provider,label,status,created_at FROM integrations WHERE user_id=? AND provider=?")) return integration ? { id: integration.id, provider: integration.provider, label: integration.label, status: integration.status, created_at: integration.created_at } : null;
+          if (sql.includes("SELECT a.id,a.project_id,a.status,a.draft_text,p.source,p.source_project_id,p.url FROM applications a JOIN projects")) return application;
+          if (sql.includes("SELECT id,project_id,status,draft_text,created_at,submitted_at,replied_at,provider_submission_id,submission_error FROM applications WHERE id=? AND user_id=?")) return application;
           if (sql.includes("SELECT id,project_id,status,draft_text FROM applications WHERE id=? AND user_id=?")) return application;
           if (sql.includes("SELECT id,project_id,status,draft_text,created_at,submitted_at,replied_at FROM applications WHERE id=? AND user_id=?")) return application;
-          if (sql.includes("SELECT id,status FROM applications WHERE user_id=? AND project_id=?")) return application;
           if (sql.includes("SELECT id,project_id,status,draft_text,created_at,submitted_at,replied_at FROM applications WHERE user_id=? AND project_id=?")) return application;
           if (sql.includes("SELECT id,source,url,title,description,language,budget_min,budget_max,currency,payment_method FROM projects WHERE id=? AND user_id=?")) return project;
           if (sql.includes("SELECT display_name,skills,languages,payment_preferences,min_budget,currency FROM profiles WHERE user_id=?")) return profile;
@@ -32,6 +59,7 @@ function fakeDb({ scan = false, skills = ["python", "telegram"], telegramAuth = 
           if (sql.includes("SELECT user_id FROM telegram_links WHERE telegram_user_id=?")) return linkedAccount;
           if (sql.includes("FROM sessions s JOIN users")) return { id: "user-1", created_at: "2026-10-16 10:00:00" };
           if (sql.includes("SELECT COUNT(*) AS total FROM sources")) return { total: 0 };
+          if (sql.includes("SELECT skills,languages,payment_preferences,min_budget,currency,excluded_keywords")) return { skills: JSON.stringify(skills), languages: '["ru","en"]', payment_preferences: "[]", min_budget: null, currency: "RUB", excluded_keywords: "[]" };
           if (sql.includes("SELECT skills, min_budget, currency, excluded_keywords")) return { skills: JSON.stringify(skills), min_budget: null, currency: "USD", excluded_keywords: "[]" };
           if (sql.includes("SELECT min_match_score FROM agent_settings")) return { min_match_score: 60 };
           if (sql.includes("SELECT 1 AS ok")) return { ok: 1 };
@@ -40,11 +68,13 @@ function fakeDb({ scan = false, skills = ["python", "telegram"], telegramAuth = 
         async all() {
           if (sql.includes("SELECT telegram_identity,identity_provider,telegram_verified FROM users LIMIT 0") && !telegramIdentitySchema) throw new Error("no such column: telegram_identity");
           if (sql.includes("SELECT notify_new_projects FROM agent_settings LIMIT 0") && !notificationsSchema) throw new Error("no such column: notify_new_projects");
+          if (sql.includes("SELECT provider_submission_id,submission_error FROM applications LIMIT 0") && !submissionSchema) throw new Error("no such column: provider_submission_id");
           if (sql.includes("sqlite_master") && sql.includes("auth_rate_limits")) {
             return { results: ["users", "sessions", "telegram_auth_codes", "auth_rate_limits", "profiles", "agent_settings", "sources", "projects", "applications", "integrations", "telegram_links"].map(name => ({ name })) };
           }
-          if (scan && sql.includes("SELECT * FROM sources WHERE user_id=? AND is_enabled=1 AND source='telegram'")) {
-            return { results: [{ id: 7, user_id: "user-1", source: "telegram", identifier: "@python_jobs", is_enabled: 1 }] };
+          if (sql.includes("SELECT * FROM sources WHERE user_id=? AND is_enabled=1")) {
+            if (freelancehuntScan) return { results: [{ id: 8, user_id: "user-1", source: "freelancehunt", identifier: "", is_enabled: 1 }] };
+            if (scan) return { results: [{ id: 7, user_id: "user-1", source: "telegram", identifier: "@python_jobs", is_enabled: 1 }] };
           }
           return { results: [] };
         }
@@ -60,12 +90,12 @@ test("health endpoint confirms a reachable D1 binding and required schema", asyn
 });
 
 test("health endpoint reports missing Telegram identity and notification migrations", async () => {
-  const response = await worker.fetch(new Request("https://api.example/health"), { DB: fakeDb({ telegramIdentitySchema: false, notificationsSchema: false }) });
+  const response = await worker.fetch(new Request("https://api.example/health"), { DB: fakeDb({ telegramIdentitySchema: false, notificationsSchema: false, submissionSchema: false }) });
   assert.equal(response.status, 200);
   const data = await response.json();
   assert.equal(data.status, "degraded");
   assert.equal(data.schema, "incomplete");
-  assert.deepEqual(data.missing_migrations, ["0007_telegram_only_identity.sql", "0008_new_project_notifications.sql"]);
+  assert.deepEqual(data.missing_migrations, ["0007_telegram_only_identity.sql", "0008_new_project_notifications.sql", "0009_provider_submission_tracking.sql"]);
 });
 
 test("Telegram webhook rejects requests when webhook secrets are not configured", async () => {
@@ -548,6 +578,227 @@ test("protected project data is not returned without a session", async () => {
 });
 
 
+test("Freelancehunt token is validated, encrypted, and used to ingest official API projects", async () => {
+  const originalFetch = globalThis.fetch;
+  const token = "test-freelancehunt-token";
+  const encryptionKey = "test-integration-encryption-key-0123456789";
+  const db = fakeDb({ freelancehuntScan: true, skills: ["python", "telegram"] });
+  const requests = [];
+  globalThis.fetch = async (input, init) => {
+    const url = String(input);
+    requests.push({ url, headers: init?.headers, body: init?.body });
+    if (url === "https://api.freelancehunt.com/v2/my/profile") {
+      assert.equal(new Headers(init.headers).get("Authorization"), "Bearer " + token);
+      return Response.json({ data: { attributes: { login: "test_freelancer" } } });
+    }
+    if (url === "https://api.freelancehunt.com/v2/projects") {
+      assert.equal(new Headers(init.headers).get("Authorization"), "Bearer " + token);
+      return Response.json({ data: [{
+        id: 299172,
+        type: "project",
+        attributes: {
+          name: "Python Telegram bot",
+          description_html: "<p>Need a Python developer to build a Telegram bot.</p>",
+          budget: { amount: 5000, currency: "RUB" },
+          safe_type: "employer",
+          published_at: "2026-10-17T09:00:00+00:00",
+          self: { web: "https://freelancehunt.com/project/python-telegram-bot/299172.html" }
+        }
+      }] });
+    }
+    return originalFetch(input, init);
+  };
+  try {
+    const connectResponse = await worker.fetch(new Request("https://api.example/integrations", {
+      method: "POST",
+      headers: { Cookie: "fh_session=test-session-token", "Content-Type": "application/json" },
+      body: JSON.stringify({ provider: "freelancehunt", secret: token })
+    }), { DB: db, INTEGRATION_ENCRYPTION_KEY: encryptionKey });
+    assert.equal(connectResponse.status, 201);
+    const connected = await connectResponse.json();
+    assert.equal(connected.status, "connected");
+    assert.equal(connected.label, "Freelancehunt · test_freelancer");
+    assert.equal(JSON.stringify(connected).includes(token), false);
+    assert.ok(db.storedIntegration.credentials_json.includes("ciphertext"));
+    assert.equal(db.storedIntegration.credentials_json.includes(token), false);
+
+    const scanResponse = await worker.fetch(new Request("https://api.example/agent/scan", {
+      method: "POST",
+      headers: { Cookie: "fh_session=test-session-token", "Content-Type": "application/json" },
+      body: "{}"
+    }), { DB: db, INTEGRATION_ENCRYPTION_KEY: encryptionKey });
+    assert.equal(scanResponse.status, 200);
+    const result = await scanResponse.json();
+    assert.equal(result.scannedSources, 1);
+    assert.equal(result.newProjects, 1);
+    assert.deepEqual(result.errors, []);
+    assert.equal(db.insertedProjects.length, 1);
+    assert.equal(db.insertedProjects[0].values[1], "299172");
+    assert.equal(db.insertedProjects[0].values[2], "https://freelancehunt.com/project/python-telegram-bot/299172.html");
+    assert.equal(db.insertedProjects[0].values[6], 5000);
+    assert.ok(requests.some(item => item.url === "https://api.freelancehunt.com/v2/projects"));
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("Freelancehunt invalid tokens are rejected without saving credentials", async () => {
+  const originalFetch = globalThis.fetch;
+  let saved = false;
+  const db = fakeDb();
+  const originalPrepare = db.prepare.bind(db);
+  db.prepare = sql => {
+    const prepared = originalPrepare(sql);
+    if (sql.includes("INSERT INTO integrations")) {
+      const originalRun = prepared.run.bind(prepared);
+      prepared.run = async (...args) => { saved = true; return originalRun(...args); };
+    }
+    return prepared;
+  };
+  globalThis.fetch = async input => {
+    if (String(input) === "https://api.freelancehunt.com/v2/my/profile") return Response.json({ error: { title: "Unauthorized" } }, { status: 401 });
+    return originalFetch(input);
+  };
+  try {
+    const response = await worker.fetch(new Request("https://api.example/integrations", {
+      method: "POST",
+      headers: { Cookie: "fh_session=test-session-token", "Content-Type": "application/json" },
+      body: JSON.stringify({ provider: "freelancehunt", secret: "invalid-token" })
+    }), { DB: db, INTEGRATION_ENCRYPTION_KEY: "test-integration-encryption-key-0123456789" });
+    assert.equal(response.status, 401);
+    assert.equal(saved, false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+
+test("Freelancehunt bid submission requires confirmation and records only provider-confirmed success", async () => {
+  const originalFetch = globalThis.fetch;
+  const token = "test-freelancehunt-token-for-bid";
+  const encryptionKey = "test-integration-encryption-key-0123456789";
+  const db = fakeDb();
+  let bidRequests = 0;
+  globalThis.fetch = async (input, init) => {
+    const url = String(input);
+    if (url === "https://api.freelancehunt.com/v2/my/profile") {
+      return Response.json({ data: { attributes: { login: "test_freelancer" } } });
+    }
+    if (url === "https://api.freelancehunt.com/v2/projects/299172/bids") {
+      bidRequests += 1;
+      assert.equal(init.method, "POST");
+      assert.equal(new Headers(init.headers).get("Authorization"), "Bearer " + token);
+      assert.deepEqual(JSON.parse(init.body), {
+        days: 5,
+        budget: { amount: 4500, currency: "RUB" },
+        safe_type: "employer",
+        comment: "I can build the requested Telegram bot."
+      });
+      return Response.json({ data: { id: 3119168 } }, { status: 201 });
+    }
+    return originalFetch(input, init);
+  };
+  try {
+    const connect = await worker.fetch(new Request("https://api.example/integrations", {
+      method: "POST",
+      headers: { Cookie: "fh_session=test-session-token", "Content-Type": "application/json" },
+      body: JSON.stringify({ provider: "freelancehunt", secret: token })
+    }), { DB: db, INTEGRATION_ENCRYPTION_KEY: encryptionKey });
+    assert.equal(connect.status, 201);
+    db.applicationRecord = {
+      id: 5, project_id: 299172, status: "awaiting_confirmation",
+      draft_text: "I can build the requested Telegram bot.",
+      source: "freelancehunt", source_project_id: "299172",
+      url: "https://freelancehunt.com/project/python-telegram-bot/299172.html",
+      created_at: "2026-10-17 10:00:00", submitted_at: null, replied_at: null,
+      provider_submission_id: null, submission_error: null
+    };
+
+    const response = await worker.fetch(new Request("https://api.example/applications/5/submit", {
+      method: "POST",
+      headers: { Cookie: "fh_session=test-session-token", "Content-Type": "application/json" },
+      body: JSON.stringify({ days: 5, budget_amount: 4500, currency: "RUB", safe_type: "employer" })
+    }), { DB: db, INTEGRATION_ENCRYPTION_KEY: encryptionKey });
+    assert.equal(response.status, 200);
+    const result = await response.json();
+    assert.equal(result.status, "sent");
+    assert.equal(result.provider_submission_id, "3119168");
+    assert.ok(result.submitted_at);
+    assert.equal(bidRequests, 1);
+
+    const duplicate = await worker.fetch(new Request("https://api.example/applications/5/submit", {
+      method: "POST",
+      headers: { Cookie: "fh_session=test-session-token", "Content-Type": "application/json" },
+      body: JSON.stringify({ days: 5, budget_amount: 4500, currency: "RUB", safe_type: "employer" })
+    }), { DB: db, INTEGRATION_ENCRYPTION_KEY: encryptionKey });
+    assert.equal(duplicate.status, 409);
+    assert.equal(bidRequests, 1);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("Freelancehunt submission rejects drafts that were not prepared for confirmation", async () => {
+  const response = await worker.fetch(new Request("https://api.example/applications/5/submit", {
+    method: "POST",
+    headers: { Cookie: "fh_session=test-session-token", "Content-Type": "application/json" },
+    body: JSON.stringify({ days: 5, budget_amount: 4500, currency: "RUB", safe_type: "employer" })
+  }), {
+    DB: fakeDb({ application: {
+      id: 5, project_id: 299172, status: "draft", draft_text: "Proposal",
+      source: "freelancehunt", source_project_id: "299172", url: "https://freelancehunt.com/"
+    } }),
+    INTEGRATION_ENCRYPTION_KEY: "test-integration-encryption-key-0123456789"
+  });
+  assert.equal(response.status, 409);
+});
+
+
+test("Freelancehunt ambiguous server failures block automatic resubmission", async () => {
+  const originalFetch = globalThis.fetch;
+  const token = "test-freelancehunt-token-timeout";
+  const encryptionKey = "test-integration-encryption-key-0123456789";
+  const db = fakeDb();
+  let bidRequests = 0;
+  globalThis.fetch = async input => {
+    const url = String(input);
+    if (url === "https://api.freelancehunt.com/v2/my/profile") return Response.json({ data: { attributes: { login: "test_freelancer" } } });
+    if (url === "https://api.freelancehunt.com/v2/projects/299172/bids") {
+      bidRequests += 1;
+      return Response.json({ error: { title: "Temporary error" } }, { status: 500 });
+    }
+    return originalFetch(input);
+  };
+  try {
+    await worker.fetch(new Request("https://api.example/integrations", {
+      method: "POST",
+      headers: { Cookie: "fh_session=test-session-token", "Content-Type": "application/json" },
+      body: JSON.stringify({ provider: "freelancehunt", secret: token })
+    }), { DB: db, INTEGRATION_ENCRYPTION_KEY: encryptionKey });
+    db.applicationRecord = {
+      id: 6, project_id: 299172, status: "awaiting_confirmation", draft_text: "I can build this bot.",
+      source: "freelancehunt", source_project_id: "299172", url: "https://freelancehunt.com/project/299172.html",
+      created_at: "2026-10-17 10:00:00", submitted_at: null, replied_at: null,
+      provider_submission_id: null, submission_error: null
+    };
+    const request = () => new Request("https://api.example/applications/6/submit", {
+      method: "POST",
+      headers: { Cookie: "fh_session=test-session-token", "Content-Type": "application/json" },
+      body: JSON.stringify({ days: 3, budget_amount: 1000, currency: "RUB", safe_type: "employer" })
+    });
+    const response = await worker.fetch(request(), { DB: db, INTEGRATION_ENCRYPTION_KEY: encryptionKey });
+    assert.equal(response.status, 502);
+    const result = await response.json();
+    assert.equal(result.application.status, "submission_unknown");
+    const duplicate = await worker.fetch(request(), { DB: db, INTEGRATION_ENCRYPTION_KEY: encryptionKey });
+    assert.equal(duplicate.status, 409);
+    assert.equal(bidRequests, 1);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+
 test("proposal drafting creates Russian and English drafts from profile-grounded listing facts", async () => {
   const originalFetch = globalThis.fetch;
   const scenarios = [
@@ -572,9 +823,9 @@ test("proposal drafting creates Russian and English drafts from profile-grounded
   };
   try {
     for (const scenario of scenarios) {
-      const response = await worker.fetch(new Request(`https://api.example/applications/${scenario.project.id}/draft`, {
+      const response = await worker.fetch(new Request("https://api.example/applications/" + scenario.project.id + "/draft", {
         method: "POST",
-        headers: { Cookie: "fh_session=test-session-token", "CF-Connecting-IP": "198.51.100.80" }
+        headers: { Cookie: "fh_session=test-session-token", "CF-Connecting-IP": scenario.language === "ru" ? "198.51.100.80" : "198.51.100.81" }
       }), {
         DB: fakeDb({
           project: scenario.project,
@@ -610,7 +861,7 @@ test("proposal drafting reports missing provider configuration and upstream fail
   const project = { id: 19, source: "telegram", url: "https://t.me/example/19", title: "Python bot", description: "Build a Python Telegram bot", language: "en", budget_min: 200, budget_max: 200, currency: "USD", payment_method: "fixed" };
   const profile = { display_name: null, skills: JSON.stringify(["Python"]), languages: JSON.stringify(["en"]), payment_preferences: "[]", min_budget: 100, currency: "USD" };
   const noConfig = await worker.fetch(new Request("https://api.example/applications/19/draft", {
-    method: "POST", headers: { Cookie: "fh_session=test-session-token", "CF-Connecting-IP": "198.51.100.81" }
+    method: "POST", headers: { Cookie: "fh_session=test-session-token", "CF-Connecting-IP": "198.51.100.82" }
   }), { DB: fakeDb({ project, profile }) });
   assert.equal(noConfig.status, 503);
   assert.match((await noConfig.json()).detail, /AI drafting is not configured/i);
@@ -619,7 +870,7 @@ test("proposal drafting reports missing provider configuration and upstream fail
   globalThis.fetch = async () => Response.json({ error: { message: "quota exceeded" } }, { status: 429 });
   try {
     const failed = await worker.fetch(new Request("https://api.example/applications/19/draft", {
-      method: "POST", headers: { Cookie: "fh_session=test-session-token", "CF-Connecting-IP": "198.51.100.82" }
+      method: "POST", headers: { Cookie: "fh_session=test-session-token", "CF-Connecting-IP": "198.51.100.83" }
     }), { DB: fakeDb({ project, profile }), AI_API_KEY: "test-key", AI_MODEL: "test-model" });
     assert.equal(failed.status, 502);
     assert.match((await failed.json()).detail, /AI provider request failed/i);
@@ -640,7 +891,7 @@ test("scheduled scans continue for later users when one user's source query fail
           if (sql.includes("SELECT DISTINCT s.user_id FROM sources s JOIN agent_settings")) {
             return { results: [{ user_id: "user-1" }, { user_id: "user-2" }] };
           }
-          if (sql.includes("SELECT * FROM sources WHERE user_id=? AND is_enabled=1 AND source='telegram'")) {
+          if (sql.includes("SELECT * FROM sources WHERE user_id=? AND is_enabled=1")) {
             visitedUsers.push(values[0]);
             if (values[0] === "user-1") throw new Error("synthetic source query failure");
             return { results: [] };
