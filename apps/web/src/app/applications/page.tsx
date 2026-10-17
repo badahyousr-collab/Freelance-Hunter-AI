@@ -6,7 +6,7 @@ import { Check, FileText, Save, Send, X } from "lucide-react";
 import WorkspacePage from "@/components/WorkspacePage";
 
 const API = "/api/backend";
-type Application = { id:number; project_id:number; status:string; draft_text:string|null; created_at:string; submitted_at:string|null; replied_at:string|null; provider_submission_id?:string|null; submission_error?:string|null; project:{title:string;url:string;source:string;budget_max:number|null;currency:string|null}|null };
+type Application = { id:number; project_id:number; status:string; draft_text:string|null; created_at:string; submitted_at:string|null; replied_at:string|null; provider_submission_id?:string|null; submission_error?:string|null; provider_status?:string|null; provider_is_winner?:number|boolean; provider_status_synced_at?:string|null; project:{title:string;url:string;source:string;budget_max:number|null;currency:string|null}|null };
 type SubmissionInput = { budget_amount:string; currency:string; days:string; safe_type:string };
 
 function statusLabel(status: string) {
@@ -32,6 +32,7 @@ export default function ApplicationsPage() {
   const [error,setError] = useState("");
   const [message,setMessage] = useState("");
   const [submissionInputs,setSubmissionInputs] = useState<Record<number,SubmissionInput>>({});
+  const [statusSyncing,setStatusSyncing] = useState(false);
 
   async function load() {
     setLoading(true);
@@ -75,6 +76,19 @@ export default function ApplicationsPage() {
     } finally { setter(null); }
   }
 
+  async function syncProviderStatuses() {
+    setStatusSyncing(true); setError(""); setMessage("");
+    try {
+      const response = await fetch(API + "/agent/sync-status", { method: "POST", credentials: "include" });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail ?? "Не удалось синхронизировать статусы откликов");
+      await load();
+      setMessage(data.message ?? "Статусы откликов синхронизированы.");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Не удалось синхронизировать статусы откликов");
+    } finally { setStatusSyncing(false); }
+  }
+
   async function submitFreelancehunt(item: Application) {
     if (!window.confirm("Отправить этот отклик через Freelancehunt? Будет создана реальная заявка на площадке.")) return;
     const input = submissionInputs[item.id];
@@ -106,8 +120,7 @@ export default function ApplicationsPage() {
     {error && <div className="sub-alert error" role="alert">{error}</div>}
     {message && <div className="sub-alert" role="status">{message}</div>}
     <section className="content-card">
-      <h2>История откликов</h2>
-      <p>Статус «Отправлен» устанавливается только после успешного ответа биржи. Перед реальной отправкой сайт покажет подтверждение и потребует бюджет, срок и тип оплаты.</p>
+      <div className="panel-heading"><div><h2>История откликов</h2><p>Статус «Отправлен» устанавливается только после успешного ответа биржи. Перед реальной отправкой сайт покажет подтверждение и потребует бюджет, срок и тип оплаты.</p></div>{items.some(item => item.project?.source === "freelancehunt" && item.provider_submission_id) && <button className="sub-button" type="button" disabled={statusSyncing} onClick={() => void syncProviderStatuses()}>{statusSyncing ? "Синхронизируем…" : "Синхронизировать статусы"}</button>}</div>
       {loading ? <div className="sub-empty">Загружаем историю откликов…</div> : items.length===0 ? <div className="sub-empty"><FileText size={25}/><strong>Откликов пока нет</strong><span>Создай черновик на странице проектов, чтобы он появился здесь.</span><Link href="/projects" className="sub-button">Перейти к проектам</Link></div> :
       <div className="sub-list">{items.map(item => {
         const editable = ["draft","awaiting_confirmation","failed"].includes(item.status);
@@ -116,7 +129,10 @@ export default function ApplicationsPage() {
             <strong>{item.project?.title ?? ("Проект #" + item.project_id)}</strong>
             <span>{(item.project?.source ?? "Источник неизвестен") + " · Создан " + new Date(item.created_at).toLocaleString()}</span>
             <span className="sub-badge">{statusLabel(item.status)}</span>
-            {item.submission_error && <span className="sub-alert error" role="status">{item.submission_error}</span>}
+            {item.provider_status && <span>Статус Freelancehunt: {({ active: "активен", rejected: "отклонён", revoked: "отозван" } as Record<string,string>)[item.provider_status] ?? item.provider_status}</span>}
+            {Boolean(item.provider_is_winner) && <span className="sub-badge">Заказчик выбрал вас исполнителем</span>}
+            {item.provider_status_synced_at && <span>Статус проверен: {new Date(item.provider_status_synced_at).toLocaleString()}</span>}
+            {item.submission_error && <span className="sub-alert error" role="status">{item.submission_error}</span>
             {item.status === "submission_unknown" && <span>Не отправляй повторно, пока вручную не проверишь статус заявки на Freelancehunt.</span>}
             {editable && <>
               <label htmlFor={"proposal-" + item.id}>Текст отклика</label>
