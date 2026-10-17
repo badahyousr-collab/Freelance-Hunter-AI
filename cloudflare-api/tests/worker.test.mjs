@@ -1232,7 +1232,7 @@ test("agent settings can opt out of client response notifications", async () => 
 });
 
 
-test("user-scoped read, create, and Telegram link endpoints bind the authenticated owner", async () => {
+test("user-scoped read, draft, and Telegram link endpoints bind the authenticated owner", async () => {
   const statements = [];
   const DB = {
     prepare(sql) {
@@ -1256,7 +1256,7 @@ test("user-scoped read, create, and Telegram link endpoints bind the authenticat
     { path: "/integrations", method: "GET", status: 200, sql: "FROM integrations WHERE user_id=?", ownerPosition: 0 },
     { path: "/profile", method: "GET", status: 200, sql: "FROM profiles WHERE user_id=?", ownerPosition: 0 },
     { path: "/agent/settings", method: "GET", status: 200, sql: "SELECT * FROM agent_settings WHERE user_id=?", ownerPosition: 0 },
-    { path: "/applications", method: "POST", body: { project_id: 999 }, status: 404, sql: "FROM projects WHERE id=? AND user_id=?", ownerPosition: 1 },
+    { path: "/applications/999/draft", method: "POST", body: {}, status: 404, sql: "FROM projects WHERE id=? AND user_id=?", ownerPosition: 1 },
     { path: "/telegram/link-code", method: "POST", body: {}, status: 200, sql: "UPDATE telegram_links SET link_code_hash=?", ownerPosition: 1 },
     { path: "/telegram/link", method: "DELETE", status: 200, sql: "UPDATE telegram_links SET link_code_hash=NULL", ownerPosition: 0 }
   ];
