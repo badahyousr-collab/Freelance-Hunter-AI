@@ -6,7 +6,7 @@ import { Check, FileText, Save, Send, X } from "lucide-react";
 import WorkspacePage from "@/components/WorkspacePage";
 
 const API = "/api/backend";
-type Application = { id:number; project_id:number; status:string; draft_text:string|null; created_at:string; submitted_at:string|null; replied_at:string|null; provider_submission_id?:string|null; submission_error?:string|null; project:{title:string;url:string;source:string;budget_max:number|null;currency:string|null}|null };
+type Application = { id:number; project_id:number; status:string; draft_text:string|null; created_at:string; submitted_at:string|null; replied_at:string|null; provider_submission_id?:string|null; provider_status?:string|null; submission_error?:string|null; project:{title:string;url:string;source:string;budget_max:number|null;currency:string|null}|null };
 type SubmissionInput = { budget_amount:string; currency:string; days:string; safe_type:string };
 
 function statusLabel(status: string) {
@@ -32,6 +32,7 @@ export default function ApplicationsPage() {
   const [error,setError] = useState("");
   const [message,setMessage] = useState("");
   const [submissionInputs,setSubmissionInputs] = useState<Record<number,SubmissionInput>>({});
+  const [syncingStatuses,setSyncingStatuses] = useState(false);
 
   async function load() {
     setLoading(true);
@@ -75,6 +76,23 @@ export default function ApplicationsPage() {
     } finally { setter(null); }
   }
 
+  async function syncFreelancehuntStatuses() {
+    setSyncingStatuses(true); setError(""); setMessage("");
+    try {
+      const response = await fetch(API + "/integrations/freelancehunt/sync", {
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        credentials:"include"
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail ?? "Не удалось синхронизировать статусы Freelancehunt");
+      setMessage("Проверено откликов: " + data.checked + ". Обновлено ответов: " + data.updated + ". Ошибок: " + data.errors + ".");
+      await load();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Не удалось синхронизировать статусы");
+    } finally { setSyncingStatuses(false); }
+  }
+
   async function submitFreelancehunt(item: Application) {
     if (!window.confirm("Отправить этот отклик через Freelancehunt? Будет создана реальная заявка на площадке.")) return;
     const input = submissionInputs[item.id];
@@ -108,6 +126,13 @@ export default function ApplicationsPage() {
     <section className="content-card">
       <h2>История откликов</h2>
       <p>Статус «Отправлен» устанавливается только после успешного ответа биржи. Перед реальной отправкой сайт покажет подтверждение и потребует бюджет, срок и тип оплаты.</p>
+      {items.some(item => item.project?.source === "freelancehunt" && item.status === "sent") && (
+        <div className="sub-actions">
+          <button className="sub-button" type="button" disabled={syncingStatuses || loading} onClick={() => void syncFreelancehuntStatuses()}>
+            {syncingStatuses ? "Проверяем статусы…" : "Синхронизировать статусы Freelancehunt"}
+          </button>
+        </div>
+      )}
       {loading ? <div className="sub-empty">Загружаем историю откликов…</div> : items.length===0 ? <div className="sub-empty"><FileText size={25}/><strong>Откликов пока нет</strong><span>Создай черновик на странице проектов, чтобы он появился здесь.</span><Link href="/projects" className="sub-button">Перейти к проектам</Link></div> :
       <div className="sub-list">{items.map(item => {
         const editable = ["draft","awaiting_confirmation","failed"].includes(item.status);
@@ -143,6 +168,7 @@ export default function ApplicationsPage() {
             </>}
             {item.submitted_at && <span>Подтверждено как отправленное: {new Date(item.submitted_at).toLocaleString()}</span>}
             {item.provider_submission_id && <span>ID отклика Freelancehunt: {item.provider_submission_id}</span>}
+            {item.provider_status && <span>Статус на бирже: {({active:"активен",revoked:"отозван",rejected:"отклонён"} as Record<string,string>)[item.provider_status] ?? item.provider_status}</span>}
             {item.replied_at && <span>Ответ клиента: {new Date(item.replied_at).toLocaleString()}</span>}
           </div>
           {item.project?.url && <a className="sub-button" href={item.project.url} target="_blank" rel="noreferrer"><Send size={14}/>Открыть заказ</a>}
