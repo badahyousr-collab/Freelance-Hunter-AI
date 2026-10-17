@@ -978,3 +978,61 @@ test("disconnecting Freelancehunt removes its source subscription but keeps disc
   assert.ok(sourceDelete);
   assert.deepEqual(sourceDelete.values, ["user-1"]);
 });
+
+
+test("user-scoped mutation endpoints constrain reads and writes to the authenticated owner", async () => {
+  const statements = [];
+  const db = {
+    prepare(sql) {
+      let values = [];
+      const record = () => statements.push({ sql, values: [...values] });
+      return {
+        bind(...args) { values = args; return this; },
+        async first() {
+          record();
+          if (sql.includes("FROM sessions s JOIN users")) return { id: "user-1", created_at: "2026-10-16 10:00:00" };
+          return null;
+        },
+        async all() { record(); return { results: [] }; },
+        async run() { record(); return { meta: { changes: 0 } }; }
+      };
+    }
+  };
+  const cases = [
+    { path: "/sources/999", method: "PATCH", body: { is_enabled: false }, expectedStatus: 404, sql: "UPDATE sources SET is_enabled=?", ownerPosition: 3 },
+    { path: "/applications/999", method: "PATCH", body: { draft_text: "edited" }, expectedStatus: 404, sql: "SELECT id,project_id,status,draft_text FROM applications WHERE id=? AND user_id=?", ownerPosition: 1 },
+    { path: "/applications/999/draft", method: "POST", body: {}, expectedStatus: 404, sql: "SELECT id,source,url,title,description,language,budget_min,budget_max,currency,payment_method FROM projects WHERE id=? AND user_id=?", ownerPosition: 1 },
+    { path: "/integrations/999", method: "DELETE", expectedStatus: 404, sql: "SELECT provider FROM integrations WHERE id=? AND user_id=?", ownerPosition: 1 }
+  ];
+  for (const item of cases) {
+    const response = await worker.fetch(new Request("https://api.example" + item.path, {
+      method: item.method,
+      headers: { Cookie: "fh_session=test-session-token", ...(item.body ? { "Content-Type": "application/json" } : {}) },
+      ...(item.body ? { body: JSON.stringify(item.body) } : {})
+    }), { DB: db, AI_API_KEY: "test-key", AI_MODEL: "test-model" });
+    assert.equal(response.status, item.expectedStatus, item.path);
+    const statement = statements.findLast(entry => entry.sql.includes(item.sql));
+    assert.ok(statement, "Expected scoped SQL for " + item.path);
+    assert.equal(statement.values[item.ownerPosition], "user-1", "Authenticated user ID must be bound for " + item.path);
+  }
+
+  const profileResponse = await worker.fetch(new Request("https://api.example/profile", {
+    method: "PATCH",
+    headers: { Cookie: "fh_session=test-session-token", "Content-Type": "application/json" },
+    body: JSON.stringify({ display_name: "Test" })
+  }), { DB: db });
+  assert.equal(profileResponse.status, 200);
+  const profileWrite = statements.findLast(entry => entry.sql.includes("UPDATE profiles SET display_name=?"));
+  assert.ok(profileWrite);
+  assert.equal(profileWrite.values.at(-1), "user-1");
+
+  const settingsResponse = await worker.fetch(new Request("https://api.example/agent/settings", {
+    method: "PATCH",
+    headers: { Cookie: "fh_session=test-session-token", "Content-Type": "application/json" },
+    body: JSON.stringify({ enabled: false })
+  }), { DB: db });
+  assert.equal(settingsResponse.status, 200);
+  const settingsWrite = statements.findLast(entry => entry.sql.includes("UPDATE agent_settings SET is_enabled=?"));
+  assert.ok(settingsWrite);
+  assert.equal(settingsWrite.values.at(-1), "user-1");
+});
