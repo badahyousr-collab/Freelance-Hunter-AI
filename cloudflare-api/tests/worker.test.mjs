@@ -1150,3 +1150,36 @@ test("Freelancehunt status sync records provider-confirmed client responses only
     globalThis.fetch = originalFetch;
   }
 });
+
+
+test("agent settings can opt out of client response notifications", async () => {
+  const writes = [];
+  const DB = {
+    prepare(sql) {
+      let values = [];
+      return {
+        bind(...args) { values = args; return this; },
+        async first() {
+          if (sql.includes("FROM sessions s JOIN users")) return { id: "user-1", created_at: "2026-10-16 10:00:00" };
+          if (sql.includes("SELECT * FROM agent_settings WHERE user_id=?")) return { is_enabled: 1, auto_draft: 1, min_match_score: 60, notify_new_projects: 1, notify_application_updates: 1 };
+          return null;
+        },
+        async run() { writes.push({ sql, values: [...values] }); return { meta: { changes: 1 } }; },
+        async all() { return { results: [] }; }
+      };
+    }
+  };
+  const response = await worker.fetch(new Request("https://api.example/agent/settings", {
+    method: "PATCH",
+    headers: { Cookie: "fh_session=test-session-token", "Content-Type": "application/json" },
+    body: JSON.stringify({ notify_application_updates: false })
+  }), { DB });
+  assert.equal(response.status, 200);
+  const data = await response.json();
+  assert.equal(data.notify_application_updates, false);
+  const update = writes.find(item => item.sql.includes("UPDATE agent_settings SET is_enabled=?"));
+  assert.ok(update);
+  assert.match(update.sql, /notify_application_updates=\?/);
+  assert.equal(update.values[4], 0);
+  assert.equal(update.values[5], "user-1");
+});
