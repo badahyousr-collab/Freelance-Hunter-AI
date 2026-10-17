@@ -404,7 +404,7 @@ async function notifyNewProjects(env: Env, userId: string, added: number, posts:
 function safeFreelancehuntProjectUrl(value: unknown): string | null {
   try {
     const parsed = new URL(String(value ?? ""));
-    if (parsed.hostname !== "freelancehunt.com" && !parsed.hostname.endsWith(".freelancehunt.com")) return null;
+    if (!["freelancehunt.com", "www.freelancehunt.com"].includes(parsed.hostname) || parsed.username || parsed.password) return null;
     parsed.protocol = "https:";
     return parsed.toString();
   } catch {
