@@ -44,6 +44,7 @@
 - [x] Deterministic hard filters for unsupported languages, minimum budget when currencies match, excluded keywords, and explicit unpaid-work signals; currency mismatches are not compared without an exchange rate.
 - [x] Explainable baseline score and reasons.
 - [x] OpenAI-compatible proposal drafting endpoint with profile-grounded, prompt-injection-aware instructions.
+- [x] Mocked provider-contract tests for Russian and English drafts, payload facts, safety instructions, missing configuration, and upstream failures.
 - [ ] Configure and test an AI provider in the deployment environment.
 - [x] Improve multilingual budget and currency parsing with regression tests for RU/EN currency formats, thousands separators, and `k`/`тыс.` multipliers.
 - [x] Add a labeled RU/EN matching evaluation set covering relevant and unrelated listings, budget thresholds, excluded keywords, unpaid work, language filters, risk signals, and complexity scoring.
@@ -76,14 +77,16 @@
 - [x] Add scheduled CodeQL analysis and weekly Dependabot checks for Python, Node, and GitHub Actions dependencies.
 - [x] Expand Worker health diagnostics to detect missing Telegram-only identity and notification migrations.
 - [x] Add user-scope regression tests for core dashboard reads and proposal mutations.
-- [x] Document free-plan-compatible D1 export, migration, and separate-test-database restore procedures.\n- [ ] Execute and verify a D1 backup/restore drill against a non-production database.
+- [x] Document free-plan-compatible D1 export, migration, and separate-test-database restore procedures.
+- [ ] Execute and verify a D1 backup/restore drill against a non-production database.
 - [ ] Add production alerting for Worker errors, scheduled scans, and notification failures.
 - [ ] Complete authorization/data-isolation coverage for every user-scoped endpoint.
 
 ## Phase 9 - Portfolio
-- [x] README, architecture, roadmap, acceptance checklist, setup guides, operations runbook, and code-verified case study.\n- [x] Add mocked provider-contract tests for Russian and English proposal drafting, configuration absence, and upstream failures.
+- [x] README, architecture, roadmap, acceptance checklist, setup guides, operations runbook, and code-verified case study.
 - [ ] Capture real screenshots and a demo recording after the app is configured.
-- [x] Publish a code-verified case study with explicit deployment limitations.\n- [ ] Add verified runtime measurements after a live deployment test.
+- [x] Publish a code-verified case study with explicit deployment limitations.
+- [ ] Add verified runtime measurements after a live deployment test.
 
 ## Working rules
 
