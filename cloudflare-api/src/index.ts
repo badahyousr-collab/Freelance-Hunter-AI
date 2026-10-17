@@ -216,6 +216,120 @@ export function detectedBudget(text: string): { amount: number; currency: string
   return { amount: Math.round(amount * 100) / 100, currency };
 }
 
+export type MatchProfile = {
+  skills?: unknown;
+  languages?: unknown;
+  min_budget?: unknown;
+  currency?: unknown;
+  excluded_keywords?: unknown;
+  payment_preferences?: unknown;
+};
+
+export type MatchEvaluation = {
+  score: number;
+  reasons: string[];
+  excluded: boolean;
+  complexity: "low" | "medium" | "high";
+};
+
+export function evaluateProjectMatch(input: {
+  title: string;
+  description: string;
+  language?: string | null;
+  budget?: { amount: number; currency: string } | null;
+  profile?: MatchProfile | null;
+}): MatchEvaluation {
+  const profile = input.profile ?? {};
+  const title = String(input.title ?? "").toLocaleLowerCase();
+  const description = String(input.description ?? "").toLocaleLowerCase();
+  const text = (title + "\n" + description).normalize("NFKC");
+  const lang = String(input.language ?? "").toLowerCase();
+  const profileLanguages = (Array.isArray(profile.languages) ? profile.languages : ["ru", "en"])
+    .map((value) => String(value).toLowerCase().trim()).filter(Boolean);
+  const skills = (Array.isArray(profile.skills) ? profile.skills : [])
+    .map((value) => String(value).toLocaleLowerCase().trim()).filter((value) => value.length > 1);
+  const excludedKeywords = (Array.isArray(profile.excluded_keywords) ? profile.excluded_keywords : [])
+    .map((value) => String(value).toLocaleLowerCase().trim()).filter((value) => value.length > 0);
+  const reasons: string[] = [];
+  const matchedSkills = [...new Set(skills.filter((skill) => text.includes(skill)))];
+  let score = 15;
+  let excluded = false;
+
+  const matchedExclusions = excludedKeywords.filter((keyword) => text.includes(keyword));
+  if (matchedExclusions.length) {
+    excluded = true;
+    reasons.push("Исключено по ключевым словам: " + matchedExclusions.join(", "));
+  }
+  if (lang && profileLanguages.length && !profileLanguages.includes(lang)) {
+    excluded = true;
+    reasons.push("Язык заказа не входит в языки профиля");
+  }
+
+  if (matchedSkills.length) {
+    score += Math.min(54, matchedSkills.length * 18);
+    reasons.push("Совпавшие навыки: " + matchedSkills.join(", "));
+  } else {
+    reasons.push("Совпадения с указанными навыками не найдены");
+  }
+
+  const projectSignals = /ищу|ищем|нужен|нужна|требуется|заказ|разработ|создать|сделать|интеграц|бот|сайт|приложен|looking for|hiring|need a|build|develop|create|integration|telegram bot|website|web app|freelance/i.test(text);
+  if (projectSignals) {
+    score += 10;
+    reasons.push("Описание похоже на конкретный проект или заказ");
+  }
+
+  const minBudget = Number(profile.min_budget);
+  const preferredCurrency = String(profile.currency ?? "USD").toUpperCase();
+  if (Number.isFinite(minBudget) && minBudget > 0) {
+    if (!input.budget) {
+      reasons.push("Бюджет не указан, минимальное требование проверить нельзя");
+      score -= 4;
+    } else if (String(input.budget.currency).toUpperCase() === preferredCurrency) {
+      if (input.budget.amount < minBudget) {
+        excluded = true;
+        reasons.push("Бюджет ниже установленного минимума");
+      } else {
+        score += 12;
+        reasons.push("Бюджет соответствует минимальному требованию");
+      }
+    } else {
+      score -= 6;
+      reasons.push("Валюта бюджета отличается от предпочтительной, сравнение суммы пропущено");
+    }
+  } else if (input.budget) {
+    score += 4;
+    reasons.push("В объявлении указан бюджет");
+  }
+
+  const unpaid = /без оплаты|неоплачиваем(?:ое|ый|ая|ые)?\s+(?:тестов(?:ое|ый)|работ|стажиров)|бесплатн(?:о|ая|ый|ое)\s+(?:работ|разработ|тестов)|unpaid\s+(?:test|trial|work|internship)|work\s+for\s+free|no\s+payment/i.test(text);
+  if (unpaid) {
+    excluded = true;
+    reasons.push("Есть явный признак неоплачиваемой работы");
+  }
+
+  const riskTerms = /оплата после результата|оплата только после|гарантия результата|payment after results|pay only after|urgent|срочно|неоплачиваемое тестовое|unlimited revisions|безлимитн(?:ые|ых)\s+правк/i;
+  const riskFound = riskTerms.test(text);
+  if (riskFound) {
+    score -= 12;
+    reasons.push("Есть условия, требующие дополнительной проверки");
+  }
+
+  const complexityTerms = /real[- ]?time|в реальном времени|high[- ]load|высоконагруж|масштабируем|architecture|архитектур|multi[- ]tenant|микросервис|microservice|интеграци|integration|платформ|platform|полный цикл|end[- ]to[- ]end/i;
+  const complexitySignals = (text.match(new RegExp(complexityTerms.source, "gi")) ?? []).length;
+  const complexity = complexitySignals >= 3 ? "high" : complexitySignals >= 1 ? "medium" : "low";
+  if (complexity === "high") {
+    score -= 8;
+    reasons.push("Повышенная техническая сложность по описанию");
+  } else if (complexity === "medium") {
+    score -= 3;
+    reasons.push("Есть признаки задачи средней технической сложности");
+  }
+
+  if (excluded) score = 0;
+  score = Math.max(0, Math.min(100, Math.round(score)));
+  return { score, reasons, excluded, complexity };
+}
+
 async function scanTelegramSource(env: Env, userId: string, source: any): Promise<{ added: number; error?: string }> {
   const channel = String(source.identifier ?? "").replace(/^@/, "").trim();
   if (!/^[a-zA-Z0-9_]{5,}$/.test(channel)) return { added: 0, error: "Invalid public Telegram channel username." };
@@ -226,21 +340,26 @@ async function scanTelegramSource(env: Env, userId: string, source: any): Promis
     });
     if (!upstream.ok) throw new Error(`Telegram preview returned HTTP ${upstream.status}`);
     const posts = parseTelegramPreview(await upstream.text(), channel);
-    const profile = await env.DB.prepare("SELECT skills FROM profiles WHERE user_id=?").bind(userId).first<any>();
-    const skills = safeJson(profile?.skills, []).map((x: unknown) => String(x).toLowerCase()).filter(Boolean);
+    const profileRow = await env.DB.prepare("SELECT skills,languages,payment_preferences,min_budget,currency,excluded_keywords FROM profiles WHERE user_id=?").bind(userId).first<any>() ?? {};
+    const profile: MatchProfile = {
+      skills: safeJson(profileRow.skills, []),
+      languages: safeJson(profileRow.languages, ["ru", "en"]),
+      payment_preferences: safeJson(profileRow.payment_preferences, []),
+      min_budget: profileRow.min_budget,
+      currency: profileRow.currency ?? "USD",
+      excluded_keywords: safeJson(profileRow.excluded_keywords, [])
+    };
     let added = 0;
     for (const post of posts) {
-      const text = post.description.toLowerCase();
       const budget = detectedBudget(post.description);
-      const matchedSkills = skills.filter((skill: string) => skill.length > 1 && text.includes(skill));
-      const score = Math.max(0, Math.min(100, 35 + Math.min(45, matchedSkills.length * 15)));
-      const reasons = matchedSkills.map((skill: string) => `Упоминание навыка: ${skill}`);
+      const language = /[а-яё]/i.test(post.description) ? "ru" : "en";
+      const evaluation = evaluateProjectMatch({ title: post.title, description: post.description, language, budget, profile });
       const result = await env.DB.prepare(`INSERT INTO projects
         (user_id,source,source_project_id,url,title,description,language,budget_min,budget_max,currency,published_at,match_score,match_reasons)
         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(user_id,source,source_project_id) DO NOTHING`)
         .bind(userId, "telegram", `${channel}:${post.postId}`, post.url, post.title, post.description,
-          /[а-яё]/i.test(post.description) ? "ru" : "en", budget?.amount ?? null, budget?.amount ?? null,
-          budget?.currency ?? null, post.publishedAt, score, JSON.stringify(reasons)).run();
+          language, budget?.amount ?? null, budget?.amount ?? null,
+          budget?.currency ?? null, post.publishedAt, evaluation.score, JSON.stringify(evaluation.reasons)).run();
       added += Number(result.meta.changes ?? 0);
     }
     await env.DB.prepare("UPDATE sources SET status='active',last_scan_at=datetime('now'),last_error=NULL,last_discovered_count=? WHERE id=? AND user_id=?")
