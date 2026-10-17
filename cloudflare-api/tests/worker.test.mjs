@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import worker, { detectedBudget, evaluateProjectMatch } from "../.test-dist/src/index.js";
 
-function fakeDb({ scan = false, freelancehuntScan = false, skills = ["python", "telegram"], telegramAuth = null, telegramCode = null, linkedAccount = null, application = null, project = null, profile = null, integration = null, notificationTarget = null, insertChanges = 1, projectInserts = [], telegramIdentitySchema = true, notificationsSchema = true, submissionSchema = true, providerStatusSchema = true, applicationUpdateNotificationsSchema = true } = {}) {
+function fakeDb({ scan = false, freelancehuntScan = false, skills = ["python", "telegram"], telegramAuth = null, telegramCode = null, linkedAccount = null, application = null, project = null, profile = null, integration = null, notificationTarget = null, insertChanges = 1, projectInserts = [], telegramIdentitySchema = true, notificationsSchema = true, submissionSchema = true, providerStatusSchema = true, applicationUpdateNotificationsSchema = true, applicationMessageSchema = true } = {}) {
   return {
     get storedIntegration() { return integration; },
     set storedIntegration(value) { integration = value; },
@@ -71,6 +71,8 @@ function fakeDb({ scan = false, freelancehuntScan = false, skills = ["python", "
           if (sql.includes("SELECT provider_submission_id,submission_error FROM applications LIMIT 0") && !submissionSchema) throw new Error("no such column: provider_submission_id");
           if (sql.includes("SELECT provider_status FROM applications LIMIT 0") && !providerStatusSchema) throw new Error("no such column: provider_status");
           if (sql.includes("SELECT notify_application_updates FROM agent_settings LIMIT 0") && !applicationUpdateNotificationsSchema) throw new Error("no such column: notify_application_updates");
+          if (sql.includes("SELECT provider_thread_id FROM applications LIMIT 0") && !applicationMessageSchema) throw new Error("no such column: provider_thread_id");
+          if (sql.includes("SELECT provider_message_id FROM application_messages LIMIT 0") && !applicationMessageSchema) throw new Error("no such table: application_messages");
           if (sql.includes("sqlite_master") && sql.includes("auth_rate_limits")) {
             return { results: ["users", "sessions", "telegram_auth_codes", "auth_rate_limits", "profiles", "agent_settings", "sources", "projects", "applications", "integrations", "telegram_links"].map(name => ({ name })) };
           }
@@ -92,12 +94,12 @@ test("health endpoint confirms a reachable D1 binding and required schema", asyn
 });
 
 test("health endpoint reports missing Telegram identity and notification migrations", async () => {
-  const response = await worker.fetch(new Request("https://api.example/health"), { DB: fakeDb({ telegramIdentitySchema: false, notificationsSchema: false, submissionSchema: false, providerStatusSchema: false, applicationUpdateNotificationsSchema: false }) });
+  const response = await worker.fetch(new Request("https://api.example/health"), { DB: fakeDb({ telegramIdentitySchema: false, notificationsSchema: false, submissionSchema: false, providerStatusSchema: false, applicationUpdateNotificationsSchema: false, applicationMessageSchema: false }) });
   assert.equal(response.status, 200);
   const data = await response.json();
   assert.equal(data.status, "degraded");
   assert.equal(data.schema, "incomplete");
-  assert.deepEqual(data.missing_migrations, ["0007_telegram_only_identity.sql", "0008_new_project_notifications.sql", "0009_provider_submission_tracking.sql", "0010_freelancehunt_status_sync.sql", "0011_application_update_notifications.sql"]);
+  assert.deepEqual(data.missing_migrations, ["0007_telegram_only_identity.sql", "0008_new_project_notifications.sql", "0009_provider_submission_tracking.sql", "0010_freelancehunt_status_sync.sql", "0011_application_update_notifications.sql", "0012_application_message_sync.sql"]);
 });
 
 test("Telegram webhook rejects requests when webhook secrets are not configured", async () => {
@@ -1073,9 +1075,11 @@ test("user-scoped mutation endpoints constrain reads and writes to the authentic
   assert.equal(settingsWrite.values.at(-1), "user-1");
 });
 
-test("Freelancehunt status sync records provider-confirmed client responses only", async () => {
+test("Freelancehunt sync stores provider messages, deduplicates them, and exposes them only to the owner", async () => {
   const key = "test-integration-encryption-key-0123456789";
   let integration = null;
+  let application = { id: 12, project_id: 123, status: "sent", provider_submission_id: "321", provider_status: "active", provider_thread_id: null, replied_at: null };
+  const storedMessages = [];
   const statements = [];
   const DB = {
     prepare(sql) {
@@ -1085,7 +1089,17 @@ test("Freelancehunt status sync records provider-confirmed client responses only
         async run() {
           statements.push({ sql, values: [...values] });
           if (sql.includes("INSERT INTO integrations")) integration = { id: 3, user_id: "user-1", provider: values[1], label: values[2], status: values[3], credentials_json: values[4], created_at: "2026-10-17 10:00:00" };
-          if (sql.includes("UPDATE applications SET status='replied'")) return { meta: { changes: 1 } };
+          if (sql.includes("UPDATE applications SET provider_status=?")) application.provider_status = values[0];
+          if (sql.includes("UPDATE applications SET provider_thread_id=?")) application.provider_thread_id = values[0];
+          if (sql.includes("UPDATE applications SET status='replied'")) {
+            application.status = "replied";
+            application.replied_at = "2026-10-17 12:00:00";
+          }
+          if (sql.includes("INSERT OR IGNORE INTO application_messages")) {
+            const exists = storedMessages.some(message => message.provider_message_id === values[2]);
+            if (!exists) storedMessages.push({ provider_message_id: values[2], thread_id: values[3], sender_type: values[4], message_text: values[5], posted_at: values[6], application_id: values[1], user_id: values[0] });
+            return { meta: { changes: exists ? 0 : 1 } };
+          }
           return { meta: { changes: 1 } };
         },
         async first() {
@@ -1094,11 +1108,15 @@ test("Freelancehunt status sync records provider-confirmed client responses only
           if (sql.includes("SELECT id,provider,label,status,created_at FROM integrations WHERE user_id=? AND provider=?")) return integration ? { id: integration.id, provider: integration.provider, label: integration.label, status: integration.status, created_at: integration.created_at } : null;
           if (sql.includes("SELECT credentials_json FROM integrations WHERE user_id=? AND provider='freelancehunt'")) return integration?.status === "connected" ? { credentials_json: integration.credentials_json } : null;
           if (sql.includes("SELECT tl.telegram_user_id,COALESCE(a.notify_application_updates,1)")) return { telegram_user_id: "12345", notify_application_updates: 1 };
+          if (sql.includes("SELECT id FROM applications WHERE id=? AND user_id=?")) return values[0] === application.id ? application : null;
           return null;
         },
         async all() {
-          if (sql.includes("SELECT a.id,a.provider_submission_id,a.provider_status,p.source_project_id,p.title,p.url FROM applications")) {
-            return { results: [{ id: 12, provider_submission_id: "321", source_project_id: "123", title: "Test project", url: "https://freelancehunt.com/project/123" }] };
+          if (sql.includes("SELECT a.id,a.provider_submission_id,a.provider_status,a.provider_thread_id,p.source_project_id,p.title,p.url FROM applications")) {
+            return { results: [{ ...application, source_project_id: "123", title: "Test project", url: "https://freelancehunt.com/project/123" }] };
+          }
+          if (sql.includes("SELECT provider_message_id,sender_type,message_text,posted_at FROM application_messages WHERE application_id=? AND user_id=?")) {
+            return { results: storedMessages.filter(message => message.application_id === values[0] && message.user_id === values[1]) };
           }
           return { results: [] };
         }
@@ -1113,7 +1131,17 @@ test("Freelancehunt status sync records provider-confirmed client responses only
     requests.push({ url, init });
     if (url.endsWith("/my/profile")) return Response.json({ data: { attributes: { login: "test-user" } } });
     if (url.includes("/my/bids?filter[project_id]=123")) {
-      return Response.json({ data: [{ id: 321, attributes: { status: "rejected", is_winner: false } }] });
+      return Response.json({ data: [{
+        id: 321,
+        attributes: { status: "rejected", is_winner: false },
+        links: { thread: "https://api.freelancehunt.com/v2/threads/7788" }
+      }] });
+    }
+    if (url === "https://api.freelancehunt.com/v2/threads/7788?page[number]=1") {
+      return Response.json({ data: [
+        { id: 555, attributes: { message: "Could you share a timeline?", posted_at: "2026-10-17T11:00:00Z", participants: { from: { type: "employer" } } } },
+        { id: 556, attributes: { message: "I can deliver by Friday.", posted_at: "2026-10-17T11:01:00Z", participants: { from: { type: "freelancer" } } } }
+      ], links: { self: "https://api.freelancehunt.com/v2/threads/7788?page[number]=1" } });
     }
     if (url === "https://api.telegram.org/botnotification-test-token/sendMessage") {
       telegramPayload = JSON.parse(init.body);
@@ -1136,16 +1164,31 @@ test("Freelancehunt status sync records provider-confirmed client responses only
     assert.deepEqual(await response.json(), {
       checked: 1,
       updated: 1,
+      new_messages: 1,
       errors: 0,
-      message: "Status sync completed; provider-confirmed replies were recorded."
+      message: "Status and message sync completed; new provider updates were recorded."
     });
     assert.ok(requests.some(item => item.url.includes("/my/bids?filter[project_id]=123")));
+    assert.ok(requests.some(item => item.url === "https://api.freelancehunt.com/v2/threads/7788?page[number]=1"));
     assert.equal(telegramPayload.chat_id, "12345");
     assert.match(telegramPayload.text, /Test project/);
     assert.match(telegramPayload.text, /https:\/\/freelancehunt\.com\/project\/123/);
-    const write = statements.find(item => item.sql.includes("UPDATE applications SET status='replied'"));
-    assert.ok(write);
-    assert.deepEqual(write.values, [12, "user-1"]);
+    assert.equal(application.provider_thread_id, "7788");
+    assert.equal(storedMessages.length, 2);
+    assert.equal(storedMessages[0].sender_type, "client");
+    assert.equal(storedMessages[1].sender_type, "freelancer");
+
+    const messagesResponse = await worker.fetch(new Request("https://api.example/applications/12/messages", {
+      headers: { Cookie: "fh_session=test-session-token" }
+    }), { DB });
+    assert.equal(messagesResponse.status, 200);
+    const messages = await messagesResponse.json();
+    assert.equal(messages.length, 2);
+    assert.equal(messages[0].message, "Could you share a timeline?");
+    assert.equal(messages[1].message, "I can deliver by Friday.");
+    const messageQuery = statements.find(entry => entry.sql.includes("SELECT provider_message_id,sender_type,message_text,posted_at FROM application_messages"));
+    assert.ok(messageQuery);
+    assert.deepEqual(messageQuery.values, [12, "user-1"]);
   } finally {
     globalThis.fetch = originalFetch;
   }
