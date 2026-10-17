@@ -82,7 +82,8 @@
 - [x] Add user-scope regression tests for core dashboard reads and proposal mutations.
 - [x] Document free-plan-compatible D1 export, migration, and separate-test-database restore procedures.
 - [ ] Execute and verify a D1 backup/restore drill against a non-production database.
-- [ ] Add production alerting for Worker errors, scheduled scans, and notification failures.
+- [x] Add optional Telegram operations alerts for scheduled scan and new-project notification failures, with a readiness indicator.
+- [ ] Configure the private alert chat and verify real alert delivery in the deployed Worker.
 - [ ] Complete authorization/data-isolation coverage for every user-scoped endpoint.
 
 ## Phase 9 - Portfolio
