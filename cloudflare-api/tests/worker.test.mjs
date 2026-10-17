@@ -13,12 +13,19 @@ function fakeDb({ scan = false, skills = ["python", "telegram"], telegramAuth = 
           if (sql.includes("UPDATE applications SET draft_text=?,status=?")) {
             application = application ? { ...application, draft_text: values[0], status: values[1] } : application;
           }
+          if (sql.includes("INSERT INTO applications (user_id,project_id,status,draft_text)")) {
+            application = { id: 42, project_id: values[1], status: "draft", draft_text: values[2], created_at: "2026-10-17 10:00:00", submitted_at: null, replied_at: null };
+          }
           return { meta: { changes: sql.includes("INSERT INTO projects") ? insertChanges : 1 } };
         },
         async first() {
           if (sql.includes("SELECT tl.telegram_user_id,a.notify_new_projects")) return notificationTarget;
           if (sql.includes("SELECT id,project_id,status,draft_text FROM applications WHERE id=? AND user_id=?")) return application;
-          if (sql.includes("SELECT id,project_id,status,draft_text,created_at,submitted_at,replied_at FROM applications WHERE id=? AND user_id=?")) return application;\n          if (sql.includes("SELECT id,status FROM applications WHERE user_id=? AND project_id=?")) return application;\n          if (sql.includes("SELECT id,project_id,status,draft_text,created_at,submitted_at,replied_at FROM applications WHERE user_id=? AND project_id=?")) return application;\n          if (sql.includes("SELECT id,source,url,title,description,language,budget_min,budget_max,currency,payment_method FROM projects WHERE id=? AND user_id=?")) return project;\n          if (sql.includes("SELECT display_name,skills,languages,payment_preferences,min_budget,currency FROM profiles WHERE user_id=?")) return profile;
+          if (sql.includes("SELECT id,project_id,status,draft_text,created_at,submitted_at,replied_at FROM applications WHERE id=? AND user_id=?")) return application;
+          if (sql.includes("SELECT id,status FROM applications WHERE user_id=? AND project_id=?")) return application;
+          if (sql.includes("SELECT id,project_id,status,draft_text,created_at,submitted_at,replied_at FROM applications WHERE user_id=? AND project_id=?")) return application;
+          if (sql.includes("SELECT id,source,url,title,description,language,budget_min,budget_max,currency,payment_method FROM projects WHERE id=? AND user_id=?")) return project;
+          if (sql.includes("SELECT display_name,skills,languages,payment_preferences,min_budget,currency FROM profiles WHERE user_id=?")) return profile;
           if (sql.includes("SELECT attempts FROM auth_rate_limits")) return { attempts: 1 };
           if (sql.includes("SELECT user_id,authenticated_at,session_issued_at,error_message FROM telegram_auth_codes")) return telegramAuth;
           if (sql.includes("SELECT code_hash,auth_mode FROM telegram_auth_codes")) return telegramCode;
