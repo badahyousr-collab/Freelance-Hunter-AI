@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import worker, { detectedBudget, evaluateProjectMatch } from "../.test-dist/src/index.js";
 
-function fakeDb({ scan = false, skills = ["python", "telegram"], telegramAuth = null, telegramCode = null, linkedAccount = null, application = null, notificationTarget = null, insertChanges = 1 } = {}) {
+function fakeDb({ scan = false, skills = ["python", "telegram"], telegramAuth = null, telegramCode = null, linkedAccount = null, application = null, notificationTarget = null, insertChanges = 1, telegramIdentitySchema = true, notificationsSchema = true } = {}) {
   return {
     async batch(statements) { return statements.map(() => ({ meta: { changes: 1 } })); },
     prepare(sql) {
@@ -31,8 +31,10 @@ function fakeDb({ scan = false, skills = ["python", "telegram"], telegramAuth = 
           return null;
         },
         async all() {
+          if (sql.includes("SELECT telegram_identity,identity_provider,telegram_verified FROM users LIMIT 0") && !telegramIdentitySchema) throw new Error("no such column: telegram_identity");
+          if (sql.includes("SELECT notify_new_projects FROM agent_settings LIMIT 0") && !notificationsSchema) throw new Error("no such column: notify_new_projects");
           if (sql.includes("sqlite_master") && sql.includes("auth_rate_limits")) {
-            return { results: ["users", "sessions", "telegram_auth_codes", "auth_rate_limits"].map(name => ({ name })) };
+            return { results: ["users", "sessions", "telegram_auth_codes", "auth_rate_limits", "profiles", "agent_settings", "sources", "projects", "applications", "integrations", "telegram_links"].map(name => ({ name })) };
           }
           if (scan && sql.includes("SELECT * FROM sources WHERE user_id=? AND is_enabled=1 AND source='telegram'")) {
             return { results: [{ id: 7, user_id: "user-1", source: "telegram", identifier: "@python_jobs", is_enabled: 1 }] };
@@ -44,10 +46,19 @@ function fakeDb({ scan = false, skills = ["python", "telegram"], telegramAuth = 
   };
 }
 
-test("health endpoint confirms a reachable D1 binding", async () => {
+test("health endpoint confirms a reachable D1 binding and required schema", async () => {
   const response = await worker.fetch(new Request("https://api.example/health"), { DB: fakeDb() });
   assert.equal(response.status, 200);
   assert.deepEqual(await response.json(), { status: "ok", database: "connected", schema: "ready", service: "freelance-hunter-api" });
+});
+
+test("health endpoint reports missing Telegram identity and notification migrations", async () => {
+  const response = await worker.fetch(new Request("https://api.example/health"), { DB: fakeDb({ telegramIdentitySchema: false, notificationsSchema: false }) });
+  assert.equal(response.status, 200);
+  const data = await response.json();
+  assert.equal(data.status, "degraded");
+  assert.equal(data.schema, "incomplete");
+  assert.deepEqual(data.missing_migrations, ["0007_telegram_only_identity.sql", "0008_new_project_notifications.sql"]);
 });
 
 test("Telegram webhook rejects requests when webhook secrets are not configured", async () => {
