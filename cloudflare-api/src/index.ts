@@ -350,6 +350,7 @@ async function scanTelegramSource(env: Env, userId: string, source: any): Promis
       excluded_keywords: safeJson(profileRow.excluded_keywords, [])
     };
     let added = 0;
+    const newlyAddedPosts: TelegramPost[] = [];
     for (const post of posts) {
       const budget = detectedBudget(post.description);
       const language = /[а-яё]/i.test(post.description) ? "ru" : "en";
@@ -360,10 +361,35 @@ async function scanTelegramSource(env: Env, userId: string, source: any): Promis
         .bind(userId, "telegram", `${channel}:${post.postId}`, post.url, post.title, post.description,
           language, budget?.amount ?? null, budget?.amount ?? null,
           budget?.currency ?? null, post.publishedAt, evaluation.score, JSON.stringify(evaluation.reasons)).run();
-      added += Number(result.meta.changes ?? 0);
+      const inserted = Number(result.meta.changes ?? 0);
+      added += inserted;
+      if (inserted > 0) newlyAddedPosts.push(post);
     }
     await env.DB.prepare("UPDATE sources SET status='active',last_scan_at=datetime('now'),last_error=NULL,last_discovered_count=? WHERE id=? AND user_id=?")
       .bind(added, source.id, userId).run();
+
+    // Notify once per scan and only for genuinely new rows, never for duplicates.
+    // Notification failures do not turn a successful ingestion into a source failure.
+    if (added > 0 && newlyAddedPosts.length > 0 && env.TELEGRAM_BOT_TOKEN) {
+      try {
+        const target = await env.DB.prepare("SELECT tl.telegram_user_id,a.notify_new_projects FROM telegram_links tl JOIN agent_settings a ON a.user_id=tl.user_id WHERE tl.user_id=? AND tl.telegram_user_id IS NOT NULL")
+          .bind(userId).first<any>();
+        if (target?.telegram_user_id && Number(target.notify_new_projects ?? 1) === 1) {
+          const items = newlyAddedPosts.slice(0, 3).map(post => {
+            const href = safeTelegramUrl(post.url);
+            const title = escapeTelegramHtml(post.title.slice(0, 180));
+            return href ? `• <a href="${escapeTelegramHtml(href)}">${title}</a>` : `• ${title}`;
+          }).join("\n");
+          const remainder = added > 3 ? `\n\nЕщё новых заказов: ${added - 3}` : "";
+          await telegramReply(env, Number(target.telegram_user_id), `<b>Новые проекты: ${added}</b>\n\n${items}${remainder}`);
+        }
+      } catch (notificationError) {
+        console.warn("new_project_notification_failed", {
+          userId,
+          error: notificationError instanceof Error ? notificationError.message : "Unknown notification error"
+        });
+      }
+    }
     return { added };
   } catch (error) {
     const message = error instanceof Error ? error.message.slice(0, 500) : "Source scan failed";
@@ -922,16 +948,17 @@ async function handle(request: Request, env: Env): Promise<Response> {
   if (path === "/agent/settings" && method === "GET") {
     const row = await env.DB.prepare("SELECT * FROM agent_settings WHERE user_id=?").bind(uid).first<any>();
     const link = await env.DB.prepare("SELECT telegram_user_id FROM telegram_links WHERE user_id=?").bind(uid).first<any>();
-    return response(request, row ? { ...row, enabled: Boolean(row.is_enabled), is_enabled: Boolean(row.is_enabled), auto_draft: Boolean(row.auto_draft), telegram_linked: Boolean(link?.telegram_user_id) } : { enabled: false, telegram_linked: Boolean(link?.telegram_user_id) });
+    return response(request, row ? { ...row, enabled: Boolean(row.is_enabled), is_enabled: Boolean(row.is_enabled), auto_draft: Boolean(row.auto_draft), notify_new_projects: Boolean(row.notify_new_projects ?? 1), telegram_linked: Boolean(link?.telegram_user_id) } : { enabled: false, auto_draft: true, notify_new_projects: true, telegram_linked: Boolean(link?.telegram_user_id) });
   }
   if (path === "/agent/settings" && (method === "PATCH" || method === "PUT")) {
     const input = await body(request);
     const old = await env.DB.prepare("SELECT * FROM agent_settings WHERE user_id=?").bind(uid).first<any>() ?? {};
     const enabled = input.enabled === undefined && input.is_enabled === undefined ? Number(old.is_enabled ?? 0) : (input.enabled ?? input.is_enabled) ? 1 : 0;
     const autoDraft = input.auto_draft === undefined ? Number(old.auto_draft ?? 1) : input.auto_draft ? 1 : 0;
+    const notifyNewProjects = input.notify_new_projects === undefined ? Number(old.notify_new_projects ?? 1) : input.notify_new_projects ? 1 : 0;
     const score = Math.max(0,Math.min(100,Math.round(Number(input.min_match_score ?? old.min_match_score ?? 60))));
-    await env.DB.prepare("UPDATE agent_settings SET is_enabled=?,auto_draft=?,min_match_score=?,updated_at=datetime('now') WHERE user_id=?").bind(enabled,autoDraft,score,uid).run();
-    return response(request, { enabled: Boolean(enabled), is_enabled: Boolean(enabled), auto_draft: Boolean(autoDraft), min_match_score: score });
+    await env.DB.prepare("UPDATE agent_settings SET is_enabled=?,auto_draft=?,min_match_score=?,notify_new_projects=?,updated_at=datetime('now') WHERE user_id=?").bind(enabled,autoDraft,score,notifyNewProjects,uid).run();
+    return response(request, { enabled: Boolean(enabled), is_enabled: Boolean(enabled), auto_draft: Boolean(autoDraft), notify_new_projects: Boolean(notifyNewProjects), min_match_score: score });
   }
   if (path === "/agent/scan" && method === "POST") {
     const recentScan = await env.DB.prepare("SELECT COUNT(*) AS total FROM sources WHERE user_id=? AND is_enabled=1 AND last_scan_at > datetime('now','-1 minute')").bind(uid).first<any>();
