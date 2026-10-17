@@ -583,7 +583,7 @@ async function syncFreelancehuntBidStatuses(env: Env, userId: string): Promise<{
       const projectTitle = escapeTelegramHtml(String(row.project_title ?? "Проект").slice(0, 180));
       const projectLink = projectUrl ? `<a href="${escapeTelegramHtml(projectUrl)}">${projectTitle}</a>` : projectTitle;
       const winnerMessage = nextWinner === 1 && previousWinner !== 1 ? "\n\nЗаказчик выбрал вас исполнителем." : "";
-      await telegramReply(env, Number(target.telegram_user_id), `<b>Обновился статус отклика</b>\\n${projectLink}\\nСтатус: ${statusLabel}${winnerMessage}`);
+      await telegramReply(env, Number(target.telegram_user_id), `<b>Обновился статус отклика</b>\n${projectLink}\nСтатус: ${statusLabel}${winnerMessage}`);
     }
     console.info("freelancehunt_bid_status_sync_completed", { userId, checked, changed, durationMs: Date.now() - startedAt });
     return { checked, changed };
