@@ -9,6 +9,16 @@ This guide documents the free-plan-compatible operational steps for the Cloudfla
 3. Export a database backup before applying destructive migrations or restoring data.
 4. Keep the backup outside Git and store it somewhere private. It contains account and project data.
 
+## Configure integration credential encryption
+
+Freelancehunt token storage requires the Worker secret `INTEGRATION_ENCRYPTION_KEY`. Generate a high-entropy value locally, then run:
+
+```bash
+npx wrangler secret put INTEGRATION_ENCRYPTION_KEY --config cloudflare-api/wrangler.toml
+```
+
+Paste the generated value only into the Wrangler prompt. Never put it in `wrangler.toml`, Git, or a chat. Do not rotate this secret without a migration plan to re-encrypt existing tokens.
+
 ## Check migration state
 
 Run from the repository root:
