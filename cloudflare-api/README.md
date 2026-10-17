@@ -44,6 +44,10 @@ The first deployment build applies the checked-in D1 migration remotely. If the 
 
 The website creates a single-use 9-digit Telegram code with a 10-minute expiry. The user opens the configured bot and sends the code as a plain message. The Worker validates the code, binds the Telegram identity, and issues an HTTP-only session cookie. Email/password routes return HTTP 410 and are not a supported authentication path. Before production use, apply the checked-in D1 migrations and verify login, logout, session expiry, and cross-account isolation against the deployed Worker.
 
+## Marketplace credentials
+
+Freelancehunt is the only marketplace credential adapter currently enabled. Set `INTEGRATION_ENCRYPTION_KEY` as a Cloudflare Worker secret before connecting a token. It must contain at least 32 characters. Generate a strong random value with `python -c "import secrets; print(secrets.token_urlsafe(48))"`. Tokens are validated against the official API and encrypted with AES-GCM before they are stored. Losing the key makes saved tokens unrecoverable. Never put the token or encryption key in frontend variables or Git.
+
 ## AI proposal drafting
 
 The Projects page calls `POST /applications/{project_id}/draft`. It verifies project ownership, passes only the saved profile and listing facts to an OpenAI-compatible chat-completions endpoint, and saves the response as a `draft` application. It does not submit proposals.
