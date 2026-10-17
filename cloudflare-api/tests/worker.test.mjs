@@ -808,3 +808,125 @@ test("manual scan imports open Freelancehunt projects through the official API a
     globalThis.fetch = originalFetch;
   }
 });
+
+
+test("Freelancehunt bid submission requires confirmation and records provider-confirmed success", async () => {
+  const token = "test-freelancehunt-api-token-123456";
+  const encryptionKey = "a-test-encryption-key-with-sufficient-entropy";
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(encryptionKey));
+  const key = await crypto.subtle.importKey("raw", digest, { name: "AES-GCM" }, false, ["encrypt"]);
+  const iv = crypto.getRandomValues(new Uint8Array(new ArrayBuffer(12)));
+  const ciphertext = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, new TextEncoder().encode(token));
+  const encode = bytes => btoa(String.fromCharCode(...new Uint8Array(bytes)));
+  const credentialEnvelope = JSON.stringify({ version: 1, algorithm: "AES-GCM", iv: encode(iv), ciphertext: encode(ciphertext) });
+  let application = { id: 3, project_id: 17, status: "awaiting_confirmation", draft_text: "Здравствуйте! Могу реализовать Telegram-бота на Python.", source: "freelancehunt", source_project_id: "12345", url: "https://freelancehunt.com/project/python-bot/12345.html", created_at: "2026-10-17 10:00:00", submitted_at: null, replied_at: null, provider_submission_id: null, submission_error: null };
+  const statements = [];
+  const DB = {
+    prepare(sql) {
+      let values = [];
+      return {
+        bind(...args) { values = args; return this; },
+        async first() {
+          if (sql.includes("FROM sessions s JOIN users")) return { id: "user-1", created_at: "2026-10-16 10:00:00" };
+          if (sql.includes("SELECT attempts FROM auth_rate_limits")) return { attempts: 1 };
+          if (sql.includes("SELECT a.id,a.project_id,a.status,a.draft_text,p.source,p.source_project_id,p.url FROM applications a JOIN projects")) return application;
+          if (sql.includes("SELECT credentials_json FROM integrations WHERE user_id=? AND provider='freelancehunt'")) return { credentials_json: credentialEnvelope };
+          if (sql.includes("SELECT id,project_id,status,draft_text,created_at,submitted_at,replied_at,provider_submission_id,submission_error FROM applications")) return application;
+          return null;
+        },
+        async run() {
+          statements.push({ sql, values: [...values] });
+          if (sql.includes("UPDATE applications SET status='submitting'")) application = { ...application, status: "submitting", submission_error: null };
+          if (sql.includes("UPDATE applications SET status='sent'")) application = { ...application, status: "sent", submitted_at: "2026-10-17 10:01:00", provider_submission_id: values[0], submission_error: null };
+          if (sql.includes("UPDATE applications SET status='submission_unknown'")) application = { ...application, status: "submission_unknown", submission_error: values[0] };
+          if (sql.includes("UPDATE applications SET status=?,submission_error=?")) application = { ...application, status: values[0], submission_error: values[1] };
+          return { meta: { changes: 1 } };
+        },
+        async all() { return { results: [] }; }
+      };
+    }
+  };
+  const originalFetch = globalThis.fetch;
+  let providerCalls = 0;
+  globalThis.fetch = async (input, init) => {
+    providerCalls += 1;
+    assert.equal(String(input), "https://api.freelancehunt.com/v2/projects/12345/bids");
+    assert.equal(new Headers(init.headers).get("Authorization"), "Bearer " + token);
+    const body = JSON.parse(init.body);
+    assert.equal(body.days, 5);
+    assert.deepEqual(body.budget, { amount: 1200, currency: "RUB" });
+    assert.equal(body.safe_type, "split");
+    assert.equal(body.comment, application.draft_text);
+    return Response.json({ data: { id: 9876, type: "bid" } }, { status: 201 });
+  };
+  const request = () => new Request("https://api.example/applications/3/submit", {
+    method: "POST",
+    headers: { Cookie: "fh_session=test-session-token", "Content-Type": "application/json", "CF-Connecting-IP": "198.51.100.93" },
+    body: JSON.stringify({ days: 5, budget_amount: 1200, currency: "RUB", safe_type: "split" })
+  });
+  try {
+    const response = await worker.fetch(request(), { DB, INTEGRATION_ENCRYPTION_KEY: encryptionKey });
+    assert.equal(response.status, 200);
+    const data = await response.json();
+    assert.equal(data.status, "sent");
+    assert.equal(data.provider_submission_id, "9876");
+    assert.equal(providerCalls, 1);
+    assert.ok(statements.some(item => item.sql.includes("status='submitting'")));
+    const repeated = await worker.fetch(request(), { DB, INTEGRATION_ENCRYPTION_KEY: encryptionKey });
+    assert.equal(repeated.status, 409);
+    assert.equal(providerCalls, 1);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("Freelancehunt ambiguous submission failures block automatic resubmission", async () => {
+  const encryptionKey = "a-test-encryption-key-with-sufficient-entropy";
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(encryptionKey));
+  const key = await crypto.subtle.importKey("raw", digest, { name: "AES-GCM" }, false, ["encrypt"]);
+  const iv = crypto.getRandomValues(new Uint8Array(new ArrayBuffer(12)));
+  const ciphertext = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, new TextEncoder().encode("test-token"));
+  const encode = bytes => btoa(String.fromCharCode(...new Uint8Array(bytes)));
+  const credentialEnvelope = JSON.stringify({ version: 1, algorithm: "AES-GCM", iv: encode(iv), ciphertext: encode(ciphertext) });
+  let application = { id: 4, project_id: 18, status: "awaiting_confirmation", draft_text: "Build the requested bot.", source: "freelancehunt", source_project_id: "22222", url: "https://freelancehunt.com/project/bot/22222.html", created_at: "2026-10-17 10:00:00", submitted_at: null, replied_at: null, provider_submission_id: null, submission_error: null };
+  const DB = {
+    prepare(sql) {
+      let values = [];
+      return {
+        bind(...args) { values = args; return this; },
+        async first() {
+          if (sql.includes("FROM sessions s JOIN users")) return { id: "user-1", created_at: "2026-10-16 10:00:00" };
+          if (sql.includes("SELECT a.id,a.project_id,a.status,a.draft_text,p.source,p.source_project_id,p.url FROM applications a JOIN projects")) return application;
+          if (sql.includes("SELECT credentials_json FROM integrations WHERE user_id=? AND provider='freelancehunt'")) return { credentials_json: credentialEnvelope };
+          if (sql.includes("SELECT id,project_id,status,draft_text,created_at,submitted_at,replied_at,provider_submission_id,submission_error FROM applications")) return application;
+          if (sql.includes("SELECT attempts FROM auth_rate_limits")) return { attempts: 1 };
+          return null;
+        },
+        async run() {
+          if (sql.includes("UPDATE applications SET status='submitting'")) application = { ...application, status: "submitting" };
+          if (sql.includes("UPDATE applications SET status='submission_unknown'")) application = { ...application, status: "submission_unknown", submission_error: values[0] };
+          return { meta: { changes: 1 } };
+        },
+        async all() { return { results: [] }; }
+      };
+    }
+  };
+  const originalFetch = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async () => { calls += 1; throw new Error("synthetic network timeout"); };
+  const request = () => new Request("https://api.example/applications/4/submit", {
+    method: "POST",
+    headers: { Cookie: "fh_session=test-session-token", "Content-Type": "application/json", "CF-Connecting-IP": "198.51.100.94" },
+    body: JSON.stringify({ days: 2, budget_amount: 500, currency: "RUB", safe_type: "" })
+  });
+  try {
+    const response = await worker.fetch(request(), { DB, INTEGRATION_ENCRYPTION_KEY: encryptionKey });
+    assert.equal(response.status, 502);
+    assert.equal(application.status, "submission_unknown");
+    const retry = await worker.fetch(request(), { DB, INTEGRATION_ENCRYPTION_KEY: encryptionKey });
+    assert.equal(retry.status, 409);
+    assert.equal(calls, 1);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
