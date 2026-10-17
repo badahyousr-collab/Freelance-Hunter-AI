@@ -1273,6 +1273,101 @@ async function handle(request: Request, env: Env): Promise<Response> {
     return response(request, saved ?? { id, project_id: existing.project_id, status: nextStatus, draft_text: draftText });
   }
 
+  const submitApplicationMatch = path.match(/^\/applications\/(\d+)\/submit$/);
+  if (submitApplicationMatch && method === "POST") {
+    const id = Number(submitApplicationMatch[1]);
+    const input = await body(request);
+    const application = await env.DB.prepare("SELECT a.id,a.project_id,a.status,a.draft_text,p.source,p.source_project_id,p.url FROM applications a JOIN projects p ON p.id=a.project_id AND p.user_id=a.user_id WHERE a.id=? AND a.user_id=?")
+      .bind(id, uid).first<any>();
+    if (!application) return response(request, { detail: "Application not found." }, 404);
+    if (String(application.source) !== "freelancehunt") return response(request, { detail: "Submission is only enabled for a connected Freelancehunt API integration." }, 400);
+    if (String(application.status) !== "awaiting_confirmation") return response(request, { detail: "Prepare and confirm the proposal before submitting it." }, 409);
+    if (!env.INTEGRATION_ENCRYPTION_KEY || env.INTEGRATION_ENCRYPTION_KEY.trim().length < 32) {
+      return response(request, { detail: "Secure credential storage is not configured." }, 503);
+    }
+    const days = Number(input.days);
+    const amount = Number(input.budget_amount);
+    const currency = String(input.currency ?? "").toUpperCase();
+    const safeType = input.safe_type === null || input.safe_type === "" ? null : String(input.safe_type);
+    if (!Number.isInteger(days) || days < 1 || days > 365) return response(request, { detail: "Duration must be from 1 to 365 days." }, 400);
+    if (!Number.isFinite(amount) || amount <= 0 || amount > 1000000000) return response(request, { detail: "Enter a valid bid amount." }, 400);
+    if (!["UAH", "RUB"].includes(currency)) return response(request, { detail: "Freelancehunt bids currently support UAH or RUB." }, 400);
+    if (safeType !== null && !["employer", "developer", "split", "employer_cashless"].includes(safeType)) {
+      return response(request, { detail: "Unsupported Freelancehunt payment type." }, 400);
+    }
+    const comment = String(application.draft_text ?? "").trim();
+    if (!comment || comment.length > 5000) return response(request, { detail: "The proposal must contain 1 to 5,000 characters." }, 400);
+    const remoteProjectId = String(application.source_project_id ?? "");
+    if (!/^\d+$/.test(remoteProjectId)) return response(request, { detail: "Freelancehunt project ID is invalid." }, 409);
+
+    const integration = await env.DB.prepare("SELECT credentials_json FROM integrations WHERE user_id=? AND provider='freelancehunt' AND status='connected'").bind(uid).first<any>();
+    if (!integration?.credentials_json) return response(request, { detail: "Connect a verified Freelancehunt API token in Integrations first." }, 503);
+    let token: string;
+    try {
+      token = await decryptIntegrationCredential(String(integration.credentials_json), env.INTEGRATION_ENCRYPTION_KEY);
+    } catch {
+      return response(request, { detail: "Could not decrypt the saved Freelancehunt token. Reconnect the integration with the current encryption key." }, 503);
+    }
+
+    // Claim the application atomically so repeated clicks cannot create duplicate bids.
+    const claimed = await env.DB.prepare("UPDATE applications SET status='submitting',submission_error=NULL WHERE id=? AND user_id=? AND status='awaiting_confirmation'").bind(id, uid).run();
+    if (!claimed.meta.changes) return response(request, { detail: "This proposal is already being submitted or its status changed. Refresh the page." }, 409);
+
+    let upstream: Response;
+    let providerData: any;
+    try {
+      const result = await freelancehuntRequest(token, `/v2/projects/${remoteProjectId}/bids`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          days,
+          budget: { amount: Math.round(amount * 100) / 100, currency },
+          safe_type: safeType,
+          comment
+        }),
+        signal: AbortSignal.timeout(15000)
+      });
+      upstream = result.upstream;
+      providerData = result.data;
+    } catch {
+      const detail = "Freelancehunt did not return a response. Check the listing manually before trying anything else.";
+      await env.DB.prepare("UPDATE applications SET status='submission_unknown',submission_error=? WHERE id=? AND user_id=? AND status='submitting'").bind(detail, id, uid).run();
+      const saved = await env.DB.prepare("SELECT id,project_id,status,draft_text,created_at,submitted_at,replied_at,provider_submission_id,submission_error FROM applications WHERE id=? AND user_id=?").bind(id, uid).first<any>();
+      return response(request, { detail, application: saved }, 502);
+    }
+
+    if (!upstream.ok) {
+      const rejected = upstream.status >= 400 && upstream.status < 500;
+      const nextStatus = rejected ? "failed" : "submission_unknown";
+      const detail = rejected
+        ? `Freelancehunt rejected the bid (HTTP ${upstream.status}). Review the proposal and API token before retrying.`
+        : "Freelancehunt returned a server error. Check the listing manually before trying again.";
+      if (upstream.status === 401 || upstream.status === 403) {
+        await env.DB.prepare("UPDATE integrations SET status='auth_error' WHERE user_id=? AND provider='freelancehunt'").bind(uid).run();
+      }
+      await env.DB.prepare("UPDATE applications SET status=?,submission_error=? WHERE id=? AND user_id=? AND status='submitting'").bind(nextStatus, detail, id, uid).run();
+      const saved = await env.DB.prepare("SELECT id,project_id,status,draft_text,created_at,submitted_at,replied_at,provider_submission_id,submission_error FROM applications WHERE id=? AND user_id=?").bind(id, uid).first<any>();
+      return response(request, { detail, application: saved }, rejected ? 422 : 502);
+    }
+
+    const bidId = String(providerData?.data?.id ?? "");
+    if (!/^\d+$/.test(bidId)) {
+      const detail = "Freelancehunt returned a success response without a bid ID. Check the listing manually before trying again.";
+      await env.DB.prepare("UPDATE applications SET status='submission_unknown',submission_error=? WHERE id=? AND user_id=? AND status='submitting'").bind(detail, id, uid).run();
+      const saved = await env.DB.prepare("SELECT id,project_id,status,draft_text,created_at,submitted_at,replied_at,provider_submission_id,submission_error FROM applications WHERE id=? AND user_id=?").bind(id, uid).first<any>();
+      return response(request, { detail, application: saved }, 502);
+    }
+    const recorded = await env.DB.prepare("UPDATE applications SET status='sent',submitted_at=datetime('now'),provider_submission_id=?,submission_error=NULL WHERE id=? AND user_id=? AND status='submitting'")
+      .bind(bidId, id, uid).run();
+    if (!recorded.meta.changes) {
+      const detail = "Freelancehunt returned a bid ID but the local status could not be saved. Check the listing manually.";
+      await env.DB.prepare("UPDATE applications SET status='submission_unknown',submission_error=? WHERE id=? AND user_id=?").bind(detail, id, uid).run();
+      return response(request, { detail }, 502);
+    }
+    const saved = await env.DB.prepare("SELECT id,project_id,status,draft_text,created_at,submitted_at,replied_at,provider_submission_id,submission_error FROM applications WHERE id=? AND user_id=?").bind(id, uid).first<any>();
+    return response(request, saved ?? { id, project_id: application.project_id, status: "sent", provider_submission_id: bidId }, 200);
+  }
+
   if (path === "/integrations/catalog" && method === "GET") return response(request, integrationCatalog);
   if (path === "/integrations" && method === "GET") {
     const rows = await env.DB.prepare("SELECT id,provider,label,status,created_at FROM integrations WHERE user_id=? ORDER BY created_at DESC").bind(uid).all<any>();
