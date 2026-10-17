@@ -8,7 +8,7 @@ import WorkspacePage from "@/components/WorkspacePage";
 const API = "/api/backend";
 type Profile = { skills: string[]; languages: string[]; payment_preferences: string[]; min_budget: number | null };
 type Source = { is_enabled: boolean; source: string };
-type AgentSettings = { enabled: boolean; auto_draft?: boolean; telegram_linked: boolean; notify_application_updates?: boolean };
+type AgentSettings = { enabled: boolean; auto_draft?: boolean; auto_submit?: boolean; daily_submission_limit?: number; telegram_linked: boolean; notify_application_updates?: boolean };
 type Readiness = {
   worker_runtime: boolean;
   cron_configured: boolean;
@@ -137,7 +137,7 @@ export default function AgentPage() {
       <p style={{ marginTop: 12 }}>Включение не заменяет проверку деплоя, секретов и реального выполнения Cron Trigger.</p>
       <label style={{ display: "flex", alignItems: "flex-start", gap: 10, marginTop: 16 }}>
         <input type="checkbox" checked={Boolean(agent?.auto_draft)} disabled={busy || !agent} onChange={() => void toggleAutoDraft()} />
-        <span><strong>Автоматически готовить отклики</strong><br/><span className="sub-muted">AI создаёт черновики для свежих подходящих заказов. Черновики появятся во вкладке «Отклики»; отправка на биржу автоматически не выполняется.</span></span>
+        <span><strong>Автоматически готовить отклики</strong><br/><span className="sub-muted">AI пишет персональные сообщения для свежих подходящих заказов. Там, где подключённый адаптер поддерживает отправку, агент может отправить их сам.</span></span>
       </label>
       <label style={{ display: "flex", alignItems: "flex-start", gap: 10, marginTop: 12 }}>
         <input type="checkbox" checked={Boolean(agent?.notify_application_updates ?? true)} disabled={busy || !agent} onChange={() => void toggleApplicationUpdateNotifications()} />
@@ -150,12 +150,12 @@ export default function AgentPage() {
     </section>
     <section className="content-card">
       <h2>Следующие шаги</h2>
-      <p>Настрой источники и профиль, затем проверим полный путь от объявления до объяснимой оценки и черновика отклика.</p>
+      <p>Настрой источники и профиль, затем агент будет искать заказы, отбирать подходящие, писать персональные сообщения и отправлять их там, где площадка и подключённый API это позволяют.</p>
       <div className="sub-list">
         <div className="sub-list-row"><div className="sub-list-main"><strong>1. Профиль и фильтры</strong><span>Укажи навыки, языки, минимальный бюджет, способы выплат и исключаемые фразы.</span></div><Link className="sub-button" href="/settings"><Settings2 size={14} />Настройки</Link></div>
         <div className="sub-list-row"><div className="sub-list-main"><strong>2. Источники заказов</strong><span>Добавь публичные Telegram-каналы. Агент проверит их по расписанию.</span></div><Link className="sub-button" href="/sources"><Workflow size={14} />Источники</Link></div>
       </div>
     </section>
-    <section className="content-card"><h2>Безопасность откликов</h2><p>Сгенерированные отклики сохраняются как черновики. Отправка считается успешной только после подтверждения со стороны площадки. AI не должен выдумывать опыт, клиентов или результаты.</p></section>
+    <section className="content-card"><h2>Безопасность откликов</h2><p>Агент отправляет подходящие отклики без подтверждения каждой заявки, соблюдает дневной лимит и сохраняет результат. Статус «Отправлен» выставляется только после подтверждения со стороны биржи. Если бюджет, валюта или доступ к API не подходят для отправки, сообщение останется в «Откликах». AI не выдумывает опыт, клиентов или результаты.</p></section>
   </WorkspacePage>;
 }
