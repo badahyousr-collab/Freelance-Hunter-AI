@@ -79,9 +79,18 @@ export default function AgentPage() {
       const d = await r.json();
       if (!r.ok) throw new Error(d.detail ?? "Не удалось изменить настройки агента");
       setAgent(d);
-      setMessage(d.enabled
-        ? "AI-агент включён. Плановое сканирование зависит от активного Cron Trigger."
-        : "AI-агент приостановлен. Плановые сканирования остановлены.");
+      if (d.enabled) {
+        const scanResponse = await fetch(API + "/agent/scan", { method: "POST", credentials: "include" });
+        const scanData = await scanResponse.json();
+        if (!scanResponse.ok) {
+          setMessage("Агент включён, но первый запуск сканирования не удался: " + (scanData.detail ?? "проверь источники и настройки"));
+        } else {
+          setMessage("Агент включён. Первый проход завершён: новых проектов " + Number(scanData.newProjects ?? 0) + ", подготовлено откликов " + Number(scanData.draftedApplications ?? 0) + ". Дальше он работает по расписанию.");
+          if (Array.isArray(scanData.errors) && scanData.errors.length) setError(scanData.errors.join("; "));
+        }
+      } else {
+        setMessage("AI-агент приостановлен. Плановые сканирования остановлены.");
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Не удалось изменить состояние агента");
     } finally { setBusy(false); }
