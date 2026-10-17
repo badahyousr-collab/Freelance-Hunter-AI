@@ -72,8 +72,13 @@
 - [x] Frontend lint and production build in CI.
 - [x] Python syntax checks for bot and local setup scripts.
 - [ ] Validate Docker Compose end-to-end and run the deployed smoke-test checklist.
-- [ ] Add production backups, rate limiting, alerting, and dependency/security scanning.
-- [ ] Run authorization and data-isolation tests across all user-scoped endpoints.
+- [x] Apply rate limits to Telegram auth, AI draft generation, and manual scans; persist source failure status.
+- [x] Add scheduled CodeQL analysis and weekly Dependabot checks for Python, Node, and GitHub Actions dependencies.
+- [x] Expand Worker health diagnostics to detect missing Telegram-only identity and notification migrations.
+- [x] Add user-scope regression tests for core dashboard reads and proposal mutations.
+- [ ] Verify a free-plan D1 backup/restore process and document recovery steps.
+- [ ] Add production alerting for Worker errors, scheduled scans, and notification failures.
+- [ ] Complete authorization/data-isolation coverage for every user-scoped endpoint.
 
 ## Phase 9 - Portfolio
 - [x] README, architecture, roadmap, acceptance checklist, and setup guides.
