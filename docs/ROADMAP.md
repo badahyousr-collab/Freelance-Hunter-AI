@@ -61,7 +61,8 @@
 - [x] Implement explicit, provider-confirmed bid submission through the Freelancehunt official API, with a concurrency guard and no automatic retry after ambiguous provider failures.
 - [x] Add editable proposal drafts and an awaiting-confirmation/closed review workflow that cannot falsely mark a proposal as sent.
 - [x] Prevent duplicate Freelancehunt submissions with a status claim and require a provider bid ID before marking an application sent.
-- [ ] Implement reliable client-reply/status synchronization.
+- [x] Synchronize Freelancehunt bid status when the provider confirms rejection or winner selection.
+- [ ] Implement and verify message-thread reply synchronization.
 - [x] Show draft, awaiting confirmation, submitting, sent, failed, and submission-unknown states for Freelancehunt; other providers remain unavailable until verified adapters exist.
 
 ## Phase 7 - Telegram companion
