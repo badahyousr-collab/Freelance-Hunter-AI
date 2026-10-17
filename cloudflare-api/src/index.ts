@@ -1205,9 +1205,44 @@ async function handle(request: Request, env: Env): Promise<Response> {
     const provider = String(input.provider ?? "");
     const item = integrationCatalog.find(i => i.provider === provider);
     if (!item) return response(request, { detail: "Unsupported integration." }, 400);
+    const suppliedSecret = String(input.secret ?? "").trim();
+    if (provider === "freelancehunt") {
+      if (!suppliedSecret) return response(request, { detail: "Enter a Freelancehunt API token." }, 400);
+      if (suppliedSecret.length > 4096) return response(request, { detail: "The API token is too long." }, 400);
+      if (!env.INTEGRATION_ENCRYPTION_KEY || env.INTEGRATION_ENCRYPTION_KEY.trim().length < 32) {
+        return response(request, { detail: "Secure credential storage is not configured. Set INTEGRATION_ENCRYPTION_KEY as a Worker secret." }, 503);
+      }
+      let upstream: Response;
+      let profileData: any;
+      try {
+        const result = await freelancehuntApi(suppliedSecret, "/my/profile");
+        upstream = result.response;
+        profileData = result.data;
+      } catch {
+        return response(request, { detail: "Could not reach Freelancehunt to validate the API token. No credential was saved." }, 502);
+      }
+      if (!upstream.ok) {
+        return response(request, {
+          detail: upstream.status === 401 || upstream.status === 403
+            ? "Freelancehunt rejected this API token. Check the token and its permissions."
+            : `Freelancehunt token validation failed with HTTP ${upstream.status}. No credential was saved.`
+        }, upstream.status === 401 || upstream.status === 403 ? 401 : 502);
+      }
+      let encrypted: string;
+      try {
+        encrypted = await encryptIntegrationSecret(suppliedSecret, env.INTEGRATION_ENCRYPTION_KEY);
+      } catch {
+        return response(request, { detail: "Could not encrypt the API token. No credential was saved." }, 503);
+      }
+      const profile = profileData?.data?.attributes ?? {};
+      const label = String(input.label ?? (profile.login ? `Freelancehunt · ${profile.login}` : item.label)).slice(0,100);
+      await env.DB.prepare("INSERT INTO integrations (user_id,provider,label,status,credentials_json) VALUES (?,?,?,?,?) ON CONFLICT(user_id,provider) DO UPDATE SET label=excluded.label,status='connected',credentials_json=excluded.credentials_json")
+        .bind(uid, provider, label, "connected", encrypted).run();
+      const saved = await env.DB.prepare("SELECT id,provider,label,status,created_at FROM integrations WHERE user_id=? AND provider=?").bind(uid,provider).first<any>();
+      return response(request, saved, 201);
+    }
+    if (suppliedSecret) return response(request, { detail: "A verified official credential adapter is not available for this provider. No credential was saved." }, 400);
     const label = String(input.label ?? item.label).slice(0,100);
-    // Never silently discard or store credentials in plaintext. Encryption must be configured before accepting secrets.
-    if (String(input.secret ?? "").trim()) return response(request, { detail: "No credential was saved. Secure encrypted credential storage must be configured before this integration can be connected." }, 503);
     await env.DB.prepare("INSERT INTO integrations (user_id,provider,label,status,credentials_json) VALUES (?,?,?,?, '{}') ON CONFLICT(user_id,provider) DO UPDATE SET label=excluded.label").bind(uid,provider,label,"not_connected").run();
     return response(request, await env.DB.prepare("SELECT id,provider,label,status,created_at FROM integrations WHERE user_id=? AND provider=?").bind(uid,provider).first(), 201);
   }
