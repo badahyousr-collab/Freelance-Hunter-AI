@@ -27,7 +27,7 @@
 - [x] Authenticated manual scan runs against the current user's enabled public Telegram sources.
 - [x] Curated public Telegram job-channel catalog is populated with public URLs and category/language labels.
 - [ ] Verify a real public channel scan and scheduled Cron execution against the deployed Worker.
-- [x] Freelancehunt official API token validation, project ingestion, explicit bid submission, and provider-confirmed bid status sync have mocked regression tests. Live account verification remains pending. Other marketplace adapters remain pending; message-thread reply sync is not implemented.
+- [x] Freelancehunt official API token validation, project ingestion, explicit bid submission, provider-confirmed bid status sync, and optional Telegram reply notifications have mocked regression tests. Live account verification remains pending. Other marketplace adapters and message-thread reply sync remain pending.
 
 ## AI and proposals
 - [x] Draft endpoint requires authentication and verifies project ownership.
@@ -43,7 +43,7 @@
 - [x] Loading, empty, and error states are present on core pages.
 - [x] Telegram account linking is expiring, single-use, and verified server-side.
 - [x] Bot setup and server-to-server endpoints require a shared secret.
-- [ ] Configure a newly issued BotFather token and webhook secret, apply migrations, then test real Telegram messages and new-project notifications.
+- [ ] Configure a newly issued BotFather token and webhook secret, apply migrations `0007` through `0011`, then test real Telegram messages, new-project notifications, and reply notifications.
 - [x] CI Playwright smoke tests cover Telegram auth, project search, source setup/manual scan, and settings save/layout.
 - [x] CI browser end-to-end tests cover dashboard, logout, and session expiry.
 - [ ] Full browser end-to-end flows are tested on the deployed site.
@@ -60,4 +60,4 @@
 - CI verifies backend tests/migrations, frontend lint/build, Playwright smoke tests, and Cloudflare Worker typecheck/tests. CodeQL and weekly Dependabot checks are configured.
 - [x] Document D1 export, migration, and test-database restore commands in [Operations and recovery](OPERATIONS.md). The backup/restore drill itself remains unverified.
 - Live service verification is pending until Telegram secrets, AI provider configuration, and public channel scans are tested.
-- Known limitations: Freelancehunt API discovery/submission is implemented but needs a real user token test and the Worker encryption secret; other marketplace adapters and client-reply synchronization are not implemented. New-project notifications need the D1 migration, bot secrets, and a live Telegram test. Telegram ingestion currently reads public channel previews only.
+- Known limitations: Freelancehunt API discovery/submission/status sync and optional Telegram reply notifications are implemented with mocked tests but need a real user token test, the Worker encryption secret, migrations, and live Telegram verification. Message-thread synchronization and other marketplace adapters are not implemented. Telegram ingestion currently reads public channel previews only.
