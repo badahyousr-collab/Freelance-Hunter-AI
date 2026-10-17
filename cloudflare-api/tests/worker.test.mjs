@@ -1140,3 +1140,50 @@ test("Freelancehunt status sync records provider-confirmed client responses only
     globalThis.fetch = originalFetch;
   }
 });
+
+
+test("source deletion and Telegram link management remain scoped to the authenticated user", async () => {
+  const statements = [];
+  const DB = {
+    prepare(sql) {
+      let values = [];
+      const record = () => statements.push({ sql, values: [...values] });
+      return {
+        bind(...args) { values = args; return this; },
+        async first() {
+          record();
+          if (sql.includes("FROM sessions s JOIN users")) return { id: "user-1", created_at: "2026-10-16 10:00:00" };
+          return null;
+        },
+        async run() { record(); return { meta: { changes: sql.includes("DELETE FROM sources WHERE id=? AND user_id=?") ? 0 : 1 } }; },
+        async all() { record(); return { results: [] }; }
+      };
+    }
+  };
+  const sourceDelete = await worker.fetch(new Request("https://api.example/sources/987", {
+    method: "DELETE",
+    headers: { Cookie: "fh_session=test-session-token" }
+  }), { DB });
+  assert.equal(sourceDelete.status, 404);
+  const sourceWrite = statements.findLast(item => item.sql.includes("DELETE FROM sources WHERE id=? AND user_id=?"));
+  assert.ok(sourceWrite);
+  assert.deepEqual(sourceWrite.values, [987, "user-1"]);
+
+  const linkCode = await worker.fetch(new Request("https://api.example/telegram/link-code", {
+    method: "POST",
+    headers: { Cookie: "fh_session=test-session-token" }
+  }), { DB });
+  assert.equal(linkCode.status, 200);
+  const codeWrite = statements.findLast(item => item.sql.includes("UPDATE telegram_links SET link_code_hash="));
+  assert.ok(codeWrite);
+  assert.equal(codeWrite.values.at(-1), "user-1");
+
+  const unlink = await worker.fetch(new Request("https://api.example/telegram/link", {
+    method: "DELETE",
+    headers: { Cookie: "fh_session=test-session-token" }
+  }), { DB });
+  assert.equal(unlink.status, 200);
+  const unlinkWrite = statements.findLast(item => item.sql.includes("UPDATE telegram_links SET link_code_hash=NULL"));
+  assert.ok(unlinkWrite);
+  assert.deepEqual(unlinkWrite.values, ["user-1"]);
+});
