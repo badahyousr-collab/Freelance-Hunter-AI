@@ -136,8 +136,8 @@ export default function AgentPage() {
       </button>
       <p style={{ marginTop: 12 }}>Включение не заменяет проверку деплоя, секретов и реального выполнения Cron Trigger.</p>
       <label style={{ display: "flex", alignItems: "flex-start", gap: 10, marginTop: 16 }}>
-        <input type="checkbox" checked={Boolean(agent?.notify_new_projects)} disabled={busy || !agent} onChange={() => void toggleNewProjectNotifications()} />
-        <span><strong>Уведомлять о новых заказах в Telegram</strong><br/><span className="sub-muted">При отключении новые проекты всё равно сохраняются на сайте. Уведомления отправляются только для действительно новых записей.</span></span>
+        <input type="checkbox" checked={Boolean(agent?.auto_draft)} disabled={busy || !agent} onChange={() => void toggleAutoDraft()} />
+        <span><strong>Автоматически готовить отклики</strong><br/><span className="sub-muted">AI создаёт черновики для свежих подходящих заказов. Черновики появятся во вкладке «Отклики»; отправка на биржу автоматически не выполняется.</span></span>
       </label>
       <label style={{ display: "flex", alignItems: "flex-start", gap: 10, marginTop: 12 }}>
         <input type="checkbox" checked={Boolean(agent?.notify_application_updates ?? true)} disabled={busy || !agent} onChange={() => void toggleApplicationUpdateNotifications()} />
