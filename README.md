@@ -27,6 +27,7 @@ Freelance Hunter is part of the Pipisso ecosystem. It discovers freelance opport
 - Telegram sign-in: one-time code with a short expiry and HTTP-only session cookie.
 - Public Telegram channel ingestion: manual scan and a 15-minute Cron Trigger while the agent is enabled.
 - AI proposal drafts: require an OpenAI-compatible provider configuration and are saved as drafts, never marked as sent.
+- Operational alerts: optional Telegram alerts for scheduled scan and notification failures require `WORKER_ALERT_CHAT_ID` plus the configured bot token.
 - Marketplace discovery and explicitly confirmed bid submission: Freelancehunt official API adapter implemented; Upwork, Kwork, FL.ru, and other marketplace adapters remain pending.
 - Live deployment verification and browser end-to-end checks remain required.
 
