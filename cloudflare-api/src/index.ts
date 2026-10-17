@@ -1156,8 +1156,13 @@ async function handle(request: Request, env: Env): Promise<Response> {
   }
 
   if (path === "/applications" && method === "GET") {
-    const rows = await env.DB.prepare("SELECT a.*, p.title AS project_title, p.url AS project_url, p.source AS project_source FROM applications a LEFT JOIN projects p ON p.id=a.project_id AND p.user_id=a.user_id WHERE a.user_id=? ORDER BY a.created_at DESC").bind(uid).all<any>();
-    return response(request, (rows.results ?? []).map((a:any) => ({ id:a.id, project_id:a.project_id, status:a.status, draft_text:a.draft_text, created_at:a.created_at, submitted_at:a.submitted_at, replied_at:a.replied_at, project:a.project_title ? { title:a.project_title, url:a.project_url, source:a.project_source } : null })));
+    const rows = await env.DB.prepare("SELECT a.*, p.title AS project_title, p.url AS project_url, p.source AS project_source, p.budget_max AS project_budget_max, p.currency AS project_currency FROM applications a LEFT JOIN projects p ON p.id=a.project_id AND p.user_id=a.user_id WHERE a.user_id=? ORDER BY a.created_at DESC").bind(uid).all<any>();
+    return response(request, (rows.results ?? []).map((a:any) => ({
+      id:a.id, project_id:a.project_id, status:a.status, draft_text:a.draft_text, created_at:a.created_at,
+      submitted_at:a.submitted_at, replied_at:a.replied_at, provider_submission_id:a.provider_submission_id ?? null,
+      submission_error:a.submission_error ?? null,
+      project:a.project_title ? { title:a.project_title, url:a.project_url, source:a.project_source, budget_max:a.project_budget_max ?? null, currency:a.project_currency ?? null } : null
+    })));
   }
 
   // This workflow prepares and reviews proposals, but deliberately does not fake
@@ -1169,14 +1174,20 @@ async function handle(request: Request, env: Env): Promise<Response> {
     const existing = await env.DB.prepare("SELECT id,project_id,status,draft_text FROM applications WHERE id=? AND user_id=?").bind(id, uid).first<any>();
     if (!existing) return response(request, { detail: "Application not found." }, 404);
     const currentStatus = String(existing.status);
-    if (!["draft", "awaiting_confirmation"].includes(currentStatus)) {
-      return response(request, { detail: "This application is closed or already submitted and cannot be edited." }, 409);
+    if (!["draft", "awaiting_confirmation", "failed"].includes(currentStatus)) {
+      const detail = currentStatus === "submission_unknown"
+        ? "The provider response was inconclusive. Check Freelancehunt manually before taking further action."
+        : "This application is closed or already submitted and cannot be edited.";
+      return response(request, { detail }, 409);
     }
     let nextStatus = currentStatus;
     if (input.status !== undefined) {
       const requested = String(input.status);
       if (!["draft", "awaiting_confirmation", "closed"].includes(requested)) {
         return response(request, { detail: "This action cannot mark an application as submitted. Submission status requires confirmation from a supported marketplace adapter." }, 400);
+      }
+      if (currentStatus === "failed" && requested !== "draft" && requested !== "closed") {
+        return response(request, { detail: "After a rejected submission, return the proposal to draft, review it, and confirm again." }, 409);
       }
       if (requested === "awaiting_confirmation" && currentStatus !== "draft" && currentStatus !== "awaiting_confirmation") {
         return response(request, { detail: "Only a draft can be prepared for confirmation." }, 409);
@@ -1190,8 +1201,11 @@ async function handle(request: Request, env: Env): Promise<Response> {
     if (nextStatus === "awaiting_confirmation" && !String(draftText ?? "").trim()) {
       return response(request, { detail: "Add proposal text before preparing it for confirmation." }, 400);
     }
-    await env.DB.prepare("UPDATE applications SET draft_text=?,status=? WHERE id=? AND user_id=? AND status IN ('draft','awaiting_confirmation')").bind(draftText, nextStatus, id, uid).run();
-    const saved = await env.DB.prepare("SELECT id,project_id,status,draft_text,created_at,submitted_at,replied_at FROM applications WHERE id=? AND user_id=?").bind(id, uid).first<any>();
+    await env.DB.prepare("UPDATE applications SET draft_text=?,status=? WHERE id=? AND user_id=? AND status IN ('draft','awaiting_confirmation','failed')").bind(draftText, nextStatus, id, uid).run();
+    if (nextStatus === "draft" && currentStatus === "failed") {
+      await env.DB.prepare("UPDATE applications SET submission_error=NULL WHERE id=? AND user_id=?").bind(id, uid).run();
+    }
+    const saved = await env.DB.prepare("SELECT id,project_id,status,draft_text,created_at,submitted_at,replied_at,provider_submission_id,submission_error FROM applications WHERE id=? AND user_id=?").bind(id, uid).first<any>();
     return response(request, saved ?? { id, project_id: existing.project_id, status: nextStatus, draft_text: draftText });
   }
 
