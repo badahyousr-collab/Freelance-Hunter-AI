@@ -1184,12 +1184,14 @@ async function handle(request: Request, env: Env): Promise<Response> {
   const uid = user.id as string;
 
   if (path === "/agent/readiness" && method === "GET") {
+    const freelancehuntIntegration = await env.DB.prepare("SELECT status FROM integrations WHERE user_id=? AND provider='freelancehunt'").bind(uid).first<any>();
     return response(request, {
       worker_runtime: true,
       cron_configured: true,
       telegram_bot_configured: Boolean(env.TELEGRAM_BOT_TOKEN && env.TELEGRAM_WEBHOOK_SECRET && env.BOT_API_SECRET),
-      ai_provider_configured: Boolean(env.AI_API_KEY && env.AI_MODEL),
+      ai_provider_configured: Boolean(env.AI_API_KEY && env.AI_MODEL && env.AI_API_BASE_URL),
       marketplace_adapters: ["freelancehunt"],
+      freelancehunt_connected: freelancehuntIntegration?.status === "connected" && Boolean(env.INTEGRATION_ENCRYPTION_KEY && env.INTEGRATION_ENCRYPTION_KEY.trim().length >= 32),
       worker_alerting_configured: Boolean(env.TELEGRAM_BOT_TOKEN && env.WORKER_ALERT_CHAT_ID)
     });
   }
