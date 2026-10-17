@@ -32,7 +32,7 @@ Freelance Hunter is part of the Pipisso ecosystem. It discovers freelance opport
 - Other marketplace discovery and client-reply synchronization are not implemented.
 - Live deployment verification and browser end-to-end checks remain required.
 
-Email/password authentication is not a supported feature. D1 migration `0007_telegram_only_identity.sql` removes the legacy identity columns; migration `0008_new_project_notifications.sql` adds the per-user notification preference. The migrations must be applied and verified against the deployed D1 database before claiming the production environment is up to date.
+Email/password authentication is not a supported feature. D1 migration `0007_telegram_only_identity.sql` removes legacy identity columns; `0008_new_project_notifications.sql` adds the per-user notification preference; `0009_provider_submission_tracking.sql` adds provider bid IDs and safe submission-error state. Apply and verify all pending migrations against the deployed D1 database before claiming production is up to date.
 
 A green CI run does not replace an end-to-end test against the deployed Cloudflare account. An application must never report a proposal as sent unless the source adapter confirms the result.
 
