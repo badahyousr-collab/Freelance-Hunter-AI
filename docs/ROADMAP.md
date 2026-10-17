@@ -45,7 +45,7 @@
 - [x] Explainable baseline score and reasons.
 - [x] OpenAI-compatible proposal drafting endpoint with profile-grounded, prompt-injection-aware instructions.
 - [ ] Configure and test an AI provider in the deployment environment.
-- [ ] Improve multilingual budget and currency parsing.
+- [x] Improve multilingual budget and currency parsing with regression tests for RU/EN currency formats, thousands separators, and `k`/`тыс.` multipliers.
 - [ ] Create a labeled matching evaluation set and test relevance, false positives, false negatives, and hard-filter invariants.
 - [ ] Test proposal drafts in Russian and English against real anonymized listings and confirm no fabricated profile claims.
 
