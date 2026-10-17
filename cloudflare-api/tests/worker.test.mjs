@@ -448,3 +448,34 @@ test("manual scan does not send notifications when the user opted out", async ()
     globalThis.fetch = originalFetch;
   }
 });
+
+
+test("manual scan does not notify about duplicate listings that were not inserted", async () => {
+  const originalFetch = globalThis.fetch;
+  const html = '<div class="tgme_widget_message_wrap" data-post="python_jobs/779"><div class="tgme_widget_message_text js-message_text" dir="auto">We need a Python developer to build a Telegram bot for a freelance project. Budget 500 USD.</div></div>';
+  let sendCount = 0;
+  globalThis.fetch = async (input, init) => {
+    const url = String(input);
+    if (url.startsWith("https://t.me/s/python_jobs")) return new Response(html, { status: 200, headers: { "Content-Type": "text/html" } });
+    if (url.includes("api.telegram.org/botTEST_TOKEN/sendMessage")) {
+      sendCount += 1;
+      return Response.json({ ok: true, result: { message_id: 1 } });
+    }
+    return originalFetch(input, init);
+  };
+  try {
+    const response = await worker.fetch(new Request("https://api.example/agent/scan", {
+      method: "POST",
+      headers: { Cookie: "fh_session=test-session-token", "Content-Type": "application/json" },
+      body: "{}"
+    }), {
+      DB: fakeDb({ scan: true, notificationTarget: { telegram_user_id: "12345", notify_new_projects: 1 }, insertChanges: 0 }),
+      TELEGRAM_BOT_TOKEN: "TEST_TOKEN"
+    });
+    assert.equal(response.status, 200);
+    assert.equal((await response.json()).newProjects, 0);
+    assert.equal(sendCount, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
