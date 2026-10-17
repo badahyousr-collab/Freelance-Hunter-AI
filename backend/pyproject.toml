@@ -17,7 +17,7 @@ dependencies = [
   "PyJWT>=2.9,<3.0",
   "telethon>=1.37,<2.0",
   "celery[redis]>=5.4,<6.0",
-  "cryptography>=43,<47",
+  "cryptography>=43,<51",
 ]
 
 [project.optional-dependencies]
