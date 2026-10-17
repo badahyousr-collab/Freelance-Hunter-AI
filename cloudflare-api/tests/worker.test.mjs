@@ -72,6 +72,7 @@ function fakeDb({ scan = false, freelancehuntScan = false, skills = ["python", "
           if (sql.includes("SELECT provider_submission_id,submission_error FROM applications LIMIT 0") && !submissionSchema) throw new Error("no such column: provider_submission_id");
           if (sql.includes("SELECT provider_status FROM applications LIMIT 0") && !providerStatusSchema) throw new Error("no such column: provider_status");
           if (sql.includes("SELECT notify_application_updates FROM agent_settings LIMIT 0") && !applicationUpdateNotificationsSchema) throw new Error("no such column: notify_application_updates");
+          if (sql.includes("SELECT auto_submit,daily_submission_limit FROM agent_settings LIMIT 0") && !autoSubmissionSchema) throw new Error("no such column: auto_submit");
           if (sql.includes("sqlite_master") && sql.includes("auth_rate_limits")) {
             return { results: ["users", "sessions", "telegram_auth_codes", "auth_rate_limits", "profiles", "agent_settings", "sources", "projects", "applications", "integrations", "telegram_links"].map(name => ({ name })) };
           }
