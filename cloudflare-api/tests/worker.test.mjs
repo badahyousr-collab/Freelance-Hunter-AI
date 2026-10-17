@@ -745,3 +745,48 @@ test("Freelancehunt submission rejects drafts that were not prepared for confirm
   });
   assert.equal(response.status, 409);
 });
+
+
+test("Freelancehunt ambiguous server failures block automatic resubmission", async () => {
+  const originalFetch = globalThis.fetch;
+  const token = "test-freelancehunt-token-timeout";
+  const encryptionKey = "test-integration-encryption-key-0123456789";
+  const db = fakeDb();
+  let bidRequests = 0;
+  globalThis.fetch = async input => {
+    const url = String(input);
+    if (url === "https://api.freelancehunt.com/v2/my/profile") return Response.json({ data: { attributes: { login: "test_freelancer" } } });
+    if (url === "https://api.freelancehunt.com/v2/projects/299172/bids") {
+      bidRequests += 1;
+      return Response.json({ error: { title: "Temporary error" } }, { status: 500 });
+    }
+    return originalFetch(input);
+  };
+  try {
+    await worker.fetch(new Request("https://api.example/integrations", {
+      method: "POST",
+      headers: { Cookie: "fh_session=test-session-token", "Content-Type": "application/json" },
+      body: JSON.stringify({ provider: "freelancehunt", secret: token })
+    }), { DB: db, INTEGRATION_ENCRYPTION_KEY: encryptionKey });
+    db.applicationRecord = {
+      id: 6, project_id: 299172, status: "awaiting_confirmation", draft_text: "I can build this bot.",
+      source: "freelancehunt", source_project_id: "299172", url: "https://freelancehunt.com/project/299172.html",
+      created_at: "2026-10-17 10:00:00", submitted_at: null, replied_at: null,
+      provider_submission_id: null, submission_error: null
+    };
+    const request = () => new Request("https://api.example/applications/6/submit", {
+      method: "POST",
+      headers: { Cookie: "fh_session=test-session-token", "Content-Type": "application/json" },
+      body: JSON.stringify({ days: 3, budget_amount: 1000, currency: "RUB", safe_type: "employer" })
+    });
+    const response = await worker.fetch(request(), { DB: db, INTEGRATION_ENCRYPTION_KEY: encryptionKey });
+    assert.equal(response.status, 502);
+    const result = await response.json();
+    assert.equal(result.application.status, "submission_unknown");
+    const duplicate = await worker.fetch(request(), { DB: db, INTEGRATION_ENCRYPTION_KEY: encryptionKey });
+    assert.equal(duplicate.status, 409);
+    assert.equal(bidRequests, 1);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
