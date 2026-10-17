@@ -1,0 +1,73 @@
+name: Worker health monitor
+
+on:
+  schedule:
+    - cron: "17 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  check-worker:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check deployed Worker health
+        id: health
+        shell: bash
+        env:
+          HEALTH_URL: https://plain-voice-c13ffreelance-hunter-api.badahyousr.workers.dev/health
+        run: |
+          set +e
+          http_code="$(curl --silent --show-error --max-time 15 --output /tmp/health.json --write-out '%{http_code}' "$HEALTH_URL")"
+          curl_status=$?
+          set -e
+          healthy=false
+          if [ "$curl_status" -eq 0 ] && [ "$http_code" = "200" ] && python -c 'import json; import sys; d=json.load(open("/tmp/health.json", encoding="utf-8")); sys.exit(0 if d.get("status") == "ok" and d.get("database") == "connected" and d.get("schema") == "ready" else 1)' ; then
+            healthy=true
+          fi
+          echo "healthy=$healthy" >> "$GITHUB_OUTPUT"
+          if [ "$healthy" = "true" ]; then
+            echo "Worker health endpoint returned a healthy database and schema." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Worker health check failed (HTTP $http_code, curl exit $curl_status). Review Cloudflare deployment, D1 migrations, and Worker logs." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Create or resolve health alert
+        uses: actions/github-script@v7
+        env:
+          HEALTHY: ${{ steps.health.outputs.healthy }}
+        with:
+          script: |
+            const title = "[monitor] Freelance Hunter Worker health check failed";
+            const openIssues = await github.paginate(github.rest.issues.listForRepo, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: "open",
+              per_page: 100
+            });
+            const existing = openIssues.find(issue => issue.title === title && !issue.pull_request);
+            if (process.env.HEALTHY !== "true") {
+              if (!existing) {
+                await github.rest.issues.create({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  title,
+                  body: "The scheduled health monitor could not confirm that the deployed Cloudflare Worker, D1 connection, and required schema are healthy. Check the latest **Worker health monitor** workflow run, apply pending D1 migrations, and review Cloudflare Worker logs. This issue is created automatically; it does not imply a confirmed outage cause."
+                });
+              }
+            } else if (existing) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: existing.number,
+                body: "The scheduled health monitor now reports a healthy Worker, database, and schema. Closing this alert."
+              });
+              await github.rest.issues.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: existing.number,
+                state: "closed"
+              });
+            }
