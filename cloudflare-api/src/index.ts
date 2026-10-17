@@ -865,7 +865,7 @@ async function handleTelegramWebhook(request: Request, env: Env): Promise<Respon
     return response(request, { ok: true });
   }
   if (isProjects) {
-    const rows = await env.DB.prepare("SELECT p.title,p.url,p.source,p.budget_min,p.currency FROM projects p WHERE p.user_id=? AND EXISTS (SELECT 1 FROM sources s WHERE s.user_id=p.user_id AND s.is_enabled=1 AND s.source=p.source AND (s.source<>'telegram' OR p.source_project_id LIKE substr(s.identifier,2) || ':%')) ORDER BY p.discovered_at DESC LIMIT 5").bind(linked.user_id).all<any>();
+    const rows = await env.DB.prepare("SELECT p.title,p.url,p.source,p.budget_min,p.currency FROM projects p WHERE p.user_id=? AND julianday(p.published_at) BETWEEN julianday('now','-7 days') AND julianday('now','+5 minutes') AND EXISTS (SELECT 1 FROM sources s WHERE s.user_id=p.user_id AND s.is_enabled=1 AND s.source=p.source AND (s.source<>'telegram' OR p.source_project_id LIKE substr(s.identifier,2) || ':%')) ORDER BY p.published_at DESC LIMIT 5").bind(linked.user_id).all<any>();
     const items = rows.results ?? [];
     const text = items.length ? "<b>Последние заказы</b>\n\n" + items.map((p: any) => {
       const budget = p.budget_min != null ? `\nБюджет: ${p.budget_min} ${escapeTelegramHtml(String(p.currency ?? ""))}` : "";
@@ -1091,7 +1091,7 @@ async function handle(request: Request, env: Env): Promise<Response> {
     if (!linked) return response(request, { detail: "Telegram account is not linked." }, 404);
     const requestedLimit = Number(url.searchParams.get("limit") ?? 5);
     if (!Number.isInteger(requestedLimit) || requestedLimit < 1 || requestedLimit > 10) return response(request, { detail: "Limit must be between 1 and 10." }, 400);
-    const rows = await env.DB.prepare("SELECT p.title,p.url,p.source,p.budget_min,p.budget_max,p.currency,p.published_at FROM projects p WHERE p.user_id=? AND EXISTS (SELECT 1 FROM sources s WHERE s.user_id=p.user_id AND s.is_enabled=1 AND s.source=p.source AND (s.source<>'telegram' OR p.source_project_id LIKE substr(s.identifier,2) || ':%')) ORDER BY p.discovered_at DESC LIMIT ?").bind(linked.id, requestedLimit).all<any>();
+    const rows = await env.DB.prepare("SELECT p.title,p.url,p.source,p.budget_min,p.budget_max,p.currency,p.published_at FROM projects p WHERE p.user_id=? AND julianday(p.published_at) BETWEEN julianday('now','-7 days') AND julianday('now','+5 minutes') AND EXISTS (SELECT 1 FROM sources s WHERE s.user_id=p.user_id AND s.is_enabled=1 AND s.source=p.source AND (s.source<>'telegram' OR p.source_project_id LIKE substr(s.identifier,2) || ':%')) ORDER BY p.published_at DESC LIMIT ?").bind(linked.id, requestedLimit).all<any>();
     return response(request, { items: rows.results ?? [] });
   }
 
@@ -1144,7 +1144,7 @@ async function handle(request: Request, env: Env): Promise<Response> {
     const sourceFilter = String(url.searchParams.get("source") ?? "").trim().slice(0, 40);
     const query = String(url.searchParams.get("q") ?? "").trim().slice(0, 120);
     const pattern = "%" + query + "%";
-    const rows = await env.DB.prepare("SELECT * FROM projects WHERE user_id=? AND (?='' OR source=?) AND (?='' OR lower(title) LIKE lower(?) OR lower(description) LIKE lower(?)) ORDER BY discovered_at DESC LIMIT ?")
+    const rows = await env.DB.prepare("SELECT * FROM projects WHERE user_id=? AND julianday(published_at) BETWEEN julianday('now','-7 days') AND julianday('now','+5 minutes') AND (?='' OR source=?) AND (?='' OR lower(title) LIKE lower(?) OR lower(description) LIKE lower(?)) ORDER BY published_at DESC LIMIT ?")
       .bind(uid, sourceFilter, sourceFilter, query, pattern, pattern, limit).all<any>();
     return response(request, (rows.results ?? []).map((p:any) => ({ ...p, match_reasons: safeJson(p.match_reasons, []) })));
   }
