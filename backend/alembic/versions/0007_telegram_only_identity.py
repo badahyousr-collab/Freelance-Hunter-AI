@@ -22,7 +22,7 @@ def upgrade() -> None:
         "UPDATE users SET identity_provider = CASE WHEN telegram_user_id IS NOT NULL THEN 'telegram' ELSE 'legacy' END"
     )
     op.execute(
-        "UPDATE users SET telegram_verified = CASE WHEN telegram_user_id IS NOT NULL THEN 1 ELSE 0 END"
+        "UPDATE users SET telegram_verified = CASE WHEN telegram_user_id IS NOT NULL THEN TRUE ELSE FALSE END"
     )
     op.drop_index("ix_users_email", table_name="users")
     op.drop_column("users", "email")
