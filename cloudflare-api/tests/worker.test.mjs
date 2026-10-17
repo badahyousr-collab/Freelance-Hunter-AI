@@ -978,3 +978,73 @@ test("disconnecting Freelancehunt removes its source subscription but keeps disc
   assert.ok(sourceDelete);
   assert.deepEqual(sourceDelete.values, ["user-1"]);
 });
+
+
+test("Freelancehunt status sync records provider-confirmed client responses only", async () => {
+  const key = "test-integration-encryption-key-0123456789";
+  let integration = null;
+  const statements = [];
+  const DB = {
+    prepare(sql) {
+      let values = [];
+      return {
+        bind(...args) { values = args; return this; },
+        async run() {
+          statements.push({ sql, values: [...values] });
+          if (sql.includes("INSERT INTO integrations")) integration = { id: 3, user_id: "user-1", provider: values[1], label: values[2], status: values[3], credentials_json: values[4], created_at: "2026-10-17 10:00:00" };
+          if (sql.includes("UPDATE applications SET status='replied'")) return { meta: { changes: 1 } };
+          return { meta: { changes: 1 } };
+        },
+        async first() {
+          if (sql.includes("FROM sessions s JOIN users")) return { id: "user-1", created_at: "2026-10-16 10:00:00" };
+          if (sql.includes("SELECT attempts FROM auth_rate_limits")) return { attempts: 1 };
+          if (sql.includes("SELECT id,provider,label,status,created_at FROM integrations WHERE user_id=? AND provider=?")) return integration ? { id: integration.id, provider: integration.provider, label: integration.label, status: integration.status, created_at: integration.created_at } : null;
+          if (sql.includes("SELECT credentials_json FROM integrations WHERE user_id=? AND provider='freelancehunt'")) return integration?.status === "connected" ? { credentials_json: integration.credentials_json } : null;
+          return null;
+        },
+        async all() {
+          if (sql.includes("SELECT a.id,a.provider_submission_id,p.source_project_id FROM applications")) {
+            return { results: [{ id: 12, provider_submission_id: "321", source_project_id: "123" }] };
+          }
+          return { results: [] };
+        }
+      };
+    }
+  };
+  const originalFetch = globalThis.fetch;
+  const requests = [];
+  globalThis.fetch = async (input, init) => {
+    const url = String(input);
+    requests.push({ url, init });
+    if (url.endsWith("/my/profile")) return Response.json({ data: { attributes: { login: "test-user" } } });
+    if (url.includes("/my/bids?filter[project_id]=123")) {
+      return Response.json({ data: [{ id: 321, attributes: { status: "rejected", is_winner: false } }] });
+    }
+    throw new Error("Unexpected provider request: " + url);
+  };
+  try {
+    const connect = await worker.fetch(new Request("https://api.example/integrations", {
+      method: "POST",
+      headers: { Cookie: "fh_session=test-session-token", "Content-Type": "application/json", "CF-Connecting-IP": "198.51.100.111" },
+      body: JSON.stringify({ provider: "freelancehunt", secret: "provider-test-token" })
+    }), { DB, INTEGRATION_ENCRYPTION_KEY: key });
+    assert.equal(connect.status, 201);
+    const response = await worker.fetch(new Request("https://api.example/integrations/freelancehunt/sync", {
+      method: "POST",
+      headers: { Cookie: "fh_session=test-session-token", "CF-Connecting-IP": "198.51.100.112" }
+    }), { DB, INTEGRATION_ENCRYPTION_KEY: key });
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), {
+      checked: 1,
+      updated: 1,
+      errors: 0,
+      message: "Status sync completed; provider-confirmed replies were recorded."
+    });
+    assert.ok(requests.some(item => item.url.includes("/my/bids?filter[project_id]=123")));
+    const write = statements.find(item => item.sql.includes("UPDATE applications SET status='replied'"));
+    assert.ok(write);
+    assert.deepEqual(write.values, [12, "user-1"]);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
