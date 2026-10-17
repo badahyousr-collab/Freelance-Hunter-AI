@@ -40,7 +40,8 @@
 - [x] Implement the Freelancehunt official API discovery adapter with token validation, encrypted storage, project normalization, and deduplication.
 - [ ] Implement and verify additional provider-specific marketplace discovery adapters where access is permitted.
 - [x] Add structured logs for per-source scan outcomes, durations, new-project counts, and scheduled scan failures.
-- [ ] Add production alert delivery for source failures and scheduled scan errors.
+- [x] Add a free hourly GitHub Actions health monitor that opens/resolves one issue when the deployed Worker, D1 connection, or schema is unhealthy.
+- [ ] Add alert delivery for individual source failures and scheduled scan errors.
 
 ## Phase 5 - Matching and proposal drafting
 - [x] Deterministic hard filters for unsupported languages, minimum budget when currencies match, excluded keywords, and explicit unpaid-work signals; currency mismatches are not compared without an exchange rate.
