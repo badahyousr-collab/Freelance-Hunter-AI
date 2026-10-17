@@ -95,7 +95,7 @@ test("health endpoint confirms a reachable D1 binding and required schema", asyn
 });
 
 test("health endpoint reports missing Telegram identity and notification migrations", async () => {
-  const response = await worker.fetch(new Request("https://api.example/health"), { DB: fakeDb({ telegramIdentitySchema: false, notificationsSchema: false, submissionSchema: false, providerStatusSchema: false, applicationUpdateNotificationsSchema: false }) });
+  const response = await worker.fetch(new Request("https://api.example/health"), { DB: fakeDb({ telegramIdentitySchema: false, notificationsSchema: false, submissionSchema: false, providerStatusSchema: false, applicationUpdateNotificationsSchema: false, autoSubmissionSchema: false }) });
   assert.equal(response.status, 200);
   const data = await response.json();
   assert.equal(data.status, "degraded");
