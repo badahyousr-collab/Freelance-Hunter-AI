@@ -1294,8 +1294,8 @@ test("agent settings can opt out of client response notifications", async () => 
   const update = writes.find(item => item.sql.includes("UPDATE agent_settings SET is_enabled=?"));
   assert.ok(update);
   assert.match(update.sql, /notify_application_updates=\?/);
-  assert.equal(update.values[4], 0);
-  assert.equal(update.values[5], "user-1");
+  assert.equal(update.values[6], 0);
+  assert.equal(update.values[7], "user-1");
 });
 
 
