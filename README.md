@@ -27,7 +27,7 @@ Freelance Hunter is part of the Pipisso ecosystem. It discovers freelance opport
 - Telegram sign-in: one-time code with a short expiry and HTTP-only session cookie.
 - Public Telegram channel ingestion: manual scan and a 15-minute Cron Trigger while the agent is enabled.
 - AI proposal drafts: require an OpenAI-compatible provider configuration and are saved as drafts, never marked as sent.
-- Marketplace discovery and proposal submission: provider-specific adapters are not yet implemented.
+- Marketplace discovery and explicitly confirmed bid submission: Freelancehunt official API adapter implemented; Upwork, Kwork, FL.ru, and other marketplace adapters remain pending.
 - Live deployment verification and browser end-to-end checks remain required.
 
 Email/password authentication is not a supported feature. D1 migration `0007_telegram_only_identity.sql` removes the legacy identity columns; migration `0008_new_project_notifications.sql` adds the per-user notification preference. The migrations must be applied and verified against the deployed D1 database before claiming the production environment is up to date.
