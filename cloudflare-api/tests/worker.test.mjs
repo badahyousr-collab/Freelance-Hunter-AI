@@ -1275,3 +1275,79 @@ test("user-scoped read, draft, and Telegram link endpoints bind the authenticate
     assert.equal(statement.values[item.ownerPosition], "user-1", "Authenticated user ID must be bound for " + item.path);
   }
 });
+
+
+test("expired website sessions are rejected before user data is read", async () => {
+  const statements = [];
+  const DB = {
+    prepare(sql) {
+      let values = [];
+      return {
+        bind(...args) { values = args; return this; },
+        async first() { statements.push({ sql, values: [...values] }); return null; },
+        async all() { statements.push({ sql, values: [...values] }); return { results: [] }; },
+        async run() { statements.push({ sql, values: [...values] }); return { meta: { changes: 0 } }; }
+      };
+    }
+  };
+  const response = await worker.fetch(new Request("https://api.example/profile", {
+    headers: { Cookie: "fh_session=expired-session-token" }
+  }), { DB });
+  assert.equal(response.status, 401);
+  const sessionQuery = statements.find(entry => entry.sql.includes("FROM sessions s JOIN users"));
+  assert.ok(sessionQuery);
+  assert.match(sessionQuery.sql, /s\.expires_at > datetime\('now'\)/);
+  assert.notEqual(sessionQuery.values[0], "expired-session-token");
+});
+
+test("Telegram bot summary, project list, and agent control use the linked user's data", async () => {
+  const statements = [];
+  const DB = {
+    prepare(sql) {
+      let values = [];
+      const record = () => statements.push({ sql, values: [...values] });
+      return {
+        bind(...args) { values = args; return this; },
+        async first() {
+          record();
+          if (sql.includes("SELECT u.id FROM telegram_links tl JOIN users u")) return { id: "linked-user-2" };
+          if (sql.includes("SELECT user_id FROM telegram_links WHERE telegram_user_id=?")) return { user_id: "linked-user-2" };
+          if (sql.includes("SELECT (SELECT COUNT(*) FROM projects WHERE user_id=?)")) return { projects_found: 8, matched_projects: 3, proposals_sent: 2, client_replies: 1 };
+          return null;
+        },
+        async all() {
+          record();
+          if (sql.includes("SELECT p.title,p.url,p.source,p.budget_min,p.budget_max,p.currency,p.published_at FROM projects p WHERE p.user_id=?")) {
+            return { results: [{ title: "Linked user's project", url: "https://example.test/project/1", source: "telegram" }] };
+          }
+          return { results: [] };
+        },
+        async run() { record(); return { meta: { changes: 1 } }; }
+      };
+    }
+  };
+  const headers = { "X-Bot-Secret": "test-bot-secret" };
+  const summary = await worker.fetch(new Request("https://api.example/telegram/summary/12345", { headers }), { DB, BOT_API_SECRET: "test-bot-secret" });
+  assert.equal(summary.status, 200);
+  assert.equal((await summary.json()).projects_found, 8);
+  const summaryQuery = statements.find(entry => entry.sql.includes("SELECT (SELECT COUNT(*) FROM projects WHERE user_id=?)"));
+  assert.ok(summaryQuery);
+  assert.deepEqual(summaryQuery.values, ["linked-user-2", "linked-user-2", "linked-user-2", "linked-user-2"]);
+
+  const projects = await worker.fetch(new Request("https://api.example/telegram/projects/12345?limit=3", { headers }), { DB, BOT_API_SECRET: "test-bot-secret" });
+  assert.equal(projects.status, 200);
+  assert.equal((await projects.json()).items[0].title, "Linked user's project");
+  const projectQuery = statements.find(entry => entry.sql.includes("SELECT p.title,p.url,p.source,p.budget_min,p.budget_max,p.currency,p.published_at FROM projects p WHERE p.user_id=?"));
+  assert.ok(projectQuery);
+  assert.deepEqual(projectQuery.values, ["linked-user-2", 3]);
+
+  const control = await worker.fetch(new Request("https://api.example/telegram/agent-control", {
+    method: "POST",
+    headers: { ...headers, "Content-Type": "application/json" },
+    body: JSON.stringify({ telegram_user_id: "12345", enabled: false })
+  }), { DB, BOT_API_SECRET: "test-bot-secret" });
+  assert.equal(control.status, 200);
+  const controlWrite = statements.find(entry => entry.sql.includes("UPDATE agent_settings SET is_enabled=?"));
+  assert.ok(controlWrite);
+  assert.deepEqual(controlWrite.values, [0, "linked-user-2"]);
+});
