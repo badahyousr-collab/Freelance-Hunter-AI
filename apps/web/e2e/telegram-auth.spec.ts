@@ -255,7 +255,7 @@ test("AI agent toggle and manual scan call the API and show results", async ({ p
   await page.getByRole("button", { name: "Включить агента" }).click();
   await expect(page.getByText(/AI-агент включён/i)).toBeVisible();
   await expect(page.getByRole("button", { name: "Приостановить агента" })).toBeVisible();
-  await page.getByRole("button", { name: "Сканировать Telegram-каналы" }).click();
+  await page.getByRole("button", { name: "Сканировать источники" }).click();
   await expect(page.getByText(/новых проектов 2, источников 1/i)).toBeVisible();
 });
 
@@ -333,4 +333,67 @@ test("proposal draft can be edited and prepared for confirmation without claimin
   expect(application.status).toBe("awaiting_confirmation");
   expect(application.draft_text).toContain("skills in my profile");
   expect(application.status).not.toBe("sent");
+});
+
+
+test("Freelancehunt integration accepts an API token but never displays it after saving", async ({ page }) => {
+  await mockAuthenticatedAccount(page);
+  let stored: Record<string, unknown> | null = null;
+  await page.route("**/api/backend/integrations/catalog", async route => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([
+      { provider: "freelancehunt", label: "Freelancehunt", status: "pending", setup_note: "Use the official API token." }
+    ]) });
+  });
+  await page.route("**/api/backend/integrations", async route => {
+    if (route.request().method() === "POST") {
+      const payload = route.request().postDataJSON() as { provider: string; secret: string };
+      expect(payload.provider).toBe("freelancehunt");
+      expect(payload.secret).toBe("test-api-token");
+      stored = { id: 1, provider: "freelancehunt", label: "Freelancehunt · test_user", status: "connected", created_at: "2026-10-17T10:00:00Z" };
+      await route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify(stored) });
+      return;
+    }
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(stored ? [stored] : []) });
+  });
+
+  await page.goto("/integrations");
+  await page.getByLabel("API-токен Freelancehunt").fill("test-api-token");
+  await page.getByRole("button", { name: "Проверить и подключить" }).click();
+  await expect(page.getByText(/API-токен проверен и сохранён в зашифрованном виде/i)).toBeVisible();
+  await expect(page.getByText("Подключено")).toBeVisible();
+  await expect(page.getByLabel("API-токен Freelancehunt")).toHaveValue("");
+});
+
+test("Freelancehunt submission requires a visible confirmation and provider success", async ({ page }) => {
+  await mockAuthenticatedAccount(page);
+  let submitPayload: Record<string, unknown> | null = null;
+  await page.route("**/api/backend/applications**", async route => {
+    if (route.request().method() === "GET") {
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([{
+        id: 43, project_id: 299172, status: "awaiting_confirmation", draft_text: "I can build this bot.",
+        created_at: "2026-10-17T10:00:00Z", submitted_at: null, replied_at: null,
+        project: { title: "Python Telegram bot", url: "https://freelancehunt.com/project/python-telegram-bot/299172.html", source: "freelancehunt", budget_max: 5000, currency: "RUB" }
+      }]) });
+      return;
+    }
+    if (route.request().method() === "POST" && route.request().url().endsWith("/applications/43/submit")) {
+      submitPayload = route.request().postDataJSON() as Record<string, unknown>;
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({
+        id: 43, project_id: 299172, status: "sent", draft_text: "I can build this bot.",
+        created_at: "2026-10-17T10:00:00Z", submitted_at: "2026-10-17T10:30:00Z",
+        provider_submission_id: "3119168", submission_error: null
+      }) });
+      return;
+    }
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({}) });
+  });
+  page.on("dialog", dialog => dialog.accept());
+
+  await page.goto("/applications");
+  await page.getByLabel("Сумма отклика (UAH или RUB)").fill("4500");
+  await page.getByLabel("Срок выполнения, дней").fill("5");
+  await page.getByRole("button", { name: /Подтвердить и отправить через Freelancehunt/ }).click();
+  await expect(page.getByText("Freelancehunt подтвердил отправку отклика.")).toBeVisible();
+  await expect(page.getByText("Отправлен площадкой")).toBeVisible();
+  expect(submitPayload).toEqual({ budget_amount: 4500, currency: "RUB", days: 5, safe_type: "employer" });
 });
