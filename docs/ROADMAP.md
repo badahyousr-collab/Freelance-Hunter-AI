@@ -35,7 +35,7 @@
 - [x] Telegram post parser, public channel adapter, scheduled worker, retry behavior, deduplication, and per-source scan health.
 - [x] Per-user source subscriptions and enabled-agent filtering.
 - [x] Authenticated user-scoped manual scan endpoint.
-- [x] Build a curated catalog of six public Telegram job channels, with URLs, languages, and focus areas.
+- [x] Build a curated catalog of eight public Telegram job channels, with URLs, languages, and focus areas.
 - [ ] Configure and test a real scan against several public channels and verify newly stored projects.
 - [ ] Implement and verify provider-specific marketplace discovery adapters where access is permitted.
 - [ ] Add operational monitoring for source failures, scan duration, and new-project counts.
