@@ -13,7 +13,7 @@ Sources and account integrations are separate:
 5. Add a Freelancehunt source from **Источники** and run a scan. The adapter reads open projects from the official `GET /v2/projects` endpoint and deduplicates them by provider project ID.
 6. To submit a bid, edit the draft, move it to **Готов к подтверждению**, provide the amount, currency, delivery days, and payment type, then confirm the browser prompt. The Worker calls the official `POST /v2/projects/{id}/bids` endpoint. The application is marked sent only after a successful provider response includes a bid ID.
 7. If the provider times out or returns a server error, the state becomes `submission_unknown`. Check the provider site manually before doing anything else; the system deliberately blocks automatic retry to avoid duplicate bids. A definite 4xx rejection is marked `failed` and can be reviewed and edited before a new confirmation.
-8. On the **Подключения** page, use **Синхронизировать отклики** to check sent bids against the official `/my/bids` endpoint. A bid is marked `replied` only when the API reports `rejected` or `is_winner: true`. This does not yet synchronize message-thread conversations; check the Freelancehunt inbox for messages.
+8. On the **Подключения** page, use **Синхронизировать отклики** to check sent bids against the official `/my/bids` endpoint. A bid is marked `replied` only when the API reports `rejected` or `is_winner: true`. If Telegram is linked and `notify_application_updates` is enabled, a confirmed response also triggers a bot notification. Users can disable this on the AI-agent page. Message-thread conversations are not synchronized; check the Freelancehunt inbox for messages.
 
 Freelancehunt API docs: https://apidocs.freelancehunt.com/
 
@@ -24,4 +24,4 @@ Freelancehunt API docs: https://apidocs.freelancehunt.com/
 
 ## Credential handling
 
-The API never returns stored credentials. Only the Freelancehunt API token is accepted by the current official-token adapter. Credentials for unsupported providers are rejected and not persisted. Losing `INTEGRATION_ENCRYPTION_KEY` makes the saved token unrecoverable; users must reconnect after key loss. Client reply synchronization is not implemented yet.
+The API never returns stored credentials. Only the Freelancehunt API token is accepted by the current official-token adapter. Credentials for unsupported providers are rejected and not persisted. Losing `INTEGRATION_ENCRYPTION_KEY` makes the saved token unrecoverable; users must reconnect after key loss. Message-thread reply synchronization is not implemented yet. Bid outcome synchronization and optional Telegram notifications are implemented, but still need a live test with a real token and deployed migrations.
