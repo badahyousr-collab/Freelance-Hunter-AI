@@ -610,24 +610,30 @@ async function scanUserSources(env: Env, userId: string): Promise<{ scannedSourc
 
 async function runScheduledScan(env: Env): Promise<void> {
   const startedAt = Date.now();
-  const rows = await env.DB.prepare("SELECT DISTINCT s.user_id FROM sources s JOIN agent_settings a ON a.user_id=s.user_id WHERE s.is_enabled=1 AND s.source IN ('telegram','freelancehunt') AND a.is_enabled=1").all<any>();
+  const sourceRows = await env.DB.prepare("SELECT DISTINCT s.user_id FROM sources s JOIN agent_settings a ON a.user_id=s.user_id WHERE s.is_enabled=1 AND s.source IN ('telegram','freelancehunt') AND a.is_enabled=1").all<any>();
+  const integrationRows = await env.DB.prepare("SELECT DISTINCT i.user_id FROM integrations i JOIN agent_settings a ON a.user_id=i.user_id WHERE i.provider='freelancehunt' AND i.status='connected' AND a.is_enabled=1").all<any>();
+  const statusSyncUsers = new Set((integrationRows.results ?? []).map(row => String(row.user_id)));
+  const users = [...new Set([...(sourceRows.results ?? []), ...(integrationRows.results ?? [])].map(row => String(row.user_id)))];
   let scannedSources = 0;
   let newProjects = 0;
   let failedUsers = 0;
-  const users = rows.results ?? [];
-  for (const row of users) {
-    const userId = String(row.user_id);
+  let statusSyncErrors = 0;
+  for (const userId of users) {
     try {
       const result = await scanUserSources(env, userId);
       scannedSources += result.scannedSources;
       newProjects += result.newProjects;
       if (result.errors.length) console.warn("scheduled_scan_user_sources_failed", { userId, errorCount: result.errors.length });
+      if (statusSyncUsers.has(userId)) {
+        const sync = await syncFreelancehuntBidStatuses(env, userId);
+        if (sync.error) statusSyncErrors += 1;
+      }
     } catch (error) {
       failedUsers += 1;
       console.error("scheduled_scan_user_failed", { userId, error: error instanceof Error ? error.message : "Unknown error" });
     }
   }
-  console.info("scheduled_scan_completed", { users: users.length, scannedSources, newProjects, failedUsers, durationMs: Date.now() - startedAt });
+  console.info("scheduled_scan_completed", { users: users.length, scannedSources, newProjects, failedUsers, statusSyncErrors, durationMs: Date.now() - startedAt });
 }
 
 
