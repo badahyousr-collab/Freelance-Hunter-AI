@@ -27,6 +27,6 @@ Upwork, Kwork, and FL.ru remain listed as future integrations. The app must not 
 - Integration secrets are encrypted before persistence. The parallel FastAPI backend uses Fernet; the Cloudflare Worker uses AES-GCM for the Freelancehunt token.
 - The API never returns saved credentials after submission.
 - A credential record is not the same as a connected account. Freelancehunt is marked connected only after its API validates the token.
-- Proposal submission and client-reply synchronization must remain unavailable until provider behavior, result confirmation, and retry/idempotency handling are verified. Never report a proposal as sent merely because a request was attempted.
+- Freelancehunt bid submission is implemented behind an explicit user action after the draft is prepared for confirmation. The user must supply duration, amount, currency, and payment type. The API marks a bid sent only after a successful provider response containing a bid ID. An ambiguous network/server outcome becomes `submission_unknown` and blocks retry to avoid duplicate bids. Live submission and recovery still need a real-account test. Client-reply synchronization is not implemented. Never report a proposal as sent merely because a request was attempted.
 
 Official documentation: https://apidocs.freelancehunt.com/
