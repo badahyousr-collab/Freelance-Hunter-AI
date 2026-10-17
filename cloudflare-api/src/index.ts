@@ -880,6 +880,11 @@ async function handle(request: Request, env: Env): Promise<Response> {
     } catch {
       missingMigrations.push("0009_provider_submission_tracking.sql");
     }
+    try {
+      await env.DB.prepare("SELECT provider_status FROM applications LIMIT 0").all();
+    } catch {
+      missingMigrations.push("0010_freelancehunt_status_sync.sql");
+    }
     const schemaReady = missingTables.length === 0 && missingMigrations.length === 0;
     return response(request, {
       status: check?.ok === 1 && schemaReady ? "ok" : "degraded",
@@ -1235,7 +1240,7 @@ async function handle(request: Request, env: Env): Promise<Response> {
     return response(request, (rows.results ?? []).map((a:any) => ({
       id:a.id, project_id:a.project_id, status:a.status, draft_text:a.draft_text, created_at:a.created_at,
       submitted_at:a.submitted_at, replied_at:a.replied_at, provider_submission_id:a.provider_submission_id ?? null,
-      submission_error:a.submission_error ?? null,
+      submission_error:a.submission_error ?? null, provider_status:a.provider_status ?? null,
       project:a.project_title ? { title:a.project_title, url:a.project_url, source:a.project_source, budget_max:a.project_budget_max ?? null, currency:a.project_currency ?? null } : null
     })));
   }
@@ -1367,6 +1372,62 @@ async function handle(request: Request, env: Env): Promise<Response> {
       .bind(bidId, id, uid).run();
     const saved = await env.DB.prepare("SELECT id,project_id,status,draft_text,created_at,submitted_at,replied_at,provider_submission_id,submission_error FROM applications WHERE id=? AND user_id=?").bind(id, uid).first<any>();
     return response(request, saved ?? { id, project_id: application.project_id, status: "sent", provider_submission_id: bidId }, 200);
+  }
+
+  if (path === "/integrations/freelancehunt/sync" && method === "POST") {
+    if (await isRateLimited(request, env, "freelancehunt-status-sync", 4)) {
+      return response(request, { detail: "Too many status sync requests. Wait 15 minutes before trying again." }, 429, { "Retry-After": "900" });
+    }
+    if (!env.INTEGRATION_ENCRYPTION_KEY || env.INTEGRATION_ENCRYPTION_KEY.trim().length < 32) {
+      return response(request, { detail: "Secure credential storage is not configured." }, 503);
+    }
+    const integration = await env.DB.prepare("SELECT credentials_json FROM integrations WHERE user_id=? AND provider='freelancehunt' AND status='connected'").bind(uid).first<any>();
+    if (!integration?.credentials_json) return response(request, { detail: "Connect a verified Freelancehunt API token first." }, 503);
+    let token: string;
+    try {
+      token = await decryptIntegrationSecret(String(integration.credentials_json), env.INTEGRATION_ENCRYPTION_KEY);
+    } catch {
+      return response(request, { detail: "Could not decrypt the saved Freelancehunt token. Reconnect the integration." }, 503);
+    }
+
+    const rows = await env.DB.prepare("SELECT a.id,a.provider_submission_id,a.provider_status,p.source_project_id FROM applications a JOIN projects p ON p.id=a.project_id AND p.user_id=a.user_id WHERE a.user_id=? AND a.status='sent' AND a.replied_at IS NULL AND a.provider_submission_id IS NOT NULL AND p.source='freelancehunt' ORDER BY a.submitted_at DESC LIMIT 20").bind(uid).all<any>();
+    let checked = 0;
+    let updated = 0;
+    let errors = 0;
+    let reauthRequired = false;
+    for (const application of rows.results ?? []) {
+      const projectId = String(application.source_project_id ?? "");
+      const bidId = String(application.provider_submission_id ?? "");
+      if (!/^\d+$/.test(projectId) || !/^\d+$/.test(bidId)) { errors += 1; continue; }
+      try {
+        const result = await freelancehuntApi(token, "/my/bids?filter[project_id]=" + encodeURIComponent(projectId));
+        if (result.response.status === 401 || result.response.status === 403) {
+          reauthRequired = true;
+          break;
+        }
+        if (!result.response.ok || !Array.isArray(result.data?.data)) { errors += 1; continue; }
+        checked += 1;
+        const bid = result.data.data.find((item: any) => String(item?.id ?? "") === bidId);
+        if (!bid) continue;
+        const providerStatus = String(bid?.attributes?.status ?? "").toLowerCase();
+        if (!["active", "revoked", "rejected"].includes(providerStatus)) { errors += 1; continue; }
+        if (String(application.provider_status ?? "") !== providerStatus) {
+          await env.DB.prepare("UPDATE applications SET provider_status=? WHERE id=? AND user_id=?").bind(providerStatus, application.id, uid).run();
+        }
+        const hasClientResponse = providerStatus === "rejected" || bid?.attributes?.is_winner === true;
+        if (hasClientResponse) {
+          const write = await env.DB.prepare("UPDATE applications SET status='replied',replied_at=COALESCE(replied_at,datetime('now')) WHERE id=? AND user_id=? AND status='sent' AND replied_at IS NULL").bind(application.id, uid).run();
+          if (write.meta.changes) updated += 1;
+        }
+      } catch {
+        errors += 1;
+      }
+    }
+    if (reauthRequired) {
+      await env.DB.prepare("UPDATE integrations SET status='reauth_required' WHERE user_id=? AND provider='freelancehunt'").bind(uid).run();
+      return response(request, { detail: "Freelancehunt rejected the token. Reconnect the integration.", checked, updated, errors, integration_status: "reauth_required" }, 401);
+    }
+    return response(request, { checked, updated, errors, message: updated ? "Status sync completed; provider-confirmed replies were recorded." : "Status sync completed; no new provider-confirmed replies were found." });
   }
 
   if (path === "/integrations/catalog" && method === "GET") return response(request, integrationCatalog);
