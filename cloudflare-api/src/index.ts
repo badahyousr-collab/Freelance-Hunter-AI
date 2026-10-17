@@ -538,7 +538,7 @@ async function autoDraftPendingProjects(env: Env, userId: string): Promise<numbe
     minimum_budget: profile.min_budget ?? null,
     preferred_currency: profile.currency ?? "USD"
   };
-  const apiBase = (env.AI_API_BASE_URL || "https://api.openai.com/v1").replace(/\\/+$/, "");
+  const apiBase = (env.AI_API_BASE_URL || "https://api.openai.com/v1").replace(/\/+$/, "");
   const endpoint = apiBase.endsWith("/chat/completions") ? apiBase : apiBase + "/chat/completions";
   const results = await Promise.all((rows.results ?? []).map(async (project: any) => {
     try {
