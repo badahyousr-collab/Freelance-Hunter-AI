@@ -57,6 +57,12 @@
 - [ ] Run a D1 backup/restore drill against a separate non-production database.
 - [ ] Complete the deployed smoke-test checklist and full user-scoped authorization coverage.
 
+## Mobile and authorization regression coverage
+- [x] Playwright checks core workspace pages at a 390px viewport for horizontal overflow.
+- [x] Worker tests verify expired-session rejection and owner-scoped website and Telegram-bot data access.
+- [ ] Verify session expiry and cross-account isolation with two real deployed accounts.
+- [ ] Complete a deployed smoke test of all empty states and visible controls.
+
 ## Verification record
 - CI verifies backend tests/migrations, frontend lint/build, Playwright smoke tests, and Cloudflare Worker typecheck/tests. CodeQL and weekly Dependabot checks are configured.
 - [x] Document D1 export, migration, and test-database restore commands in [Operations and recovery](OPERATIONS.md). The backup/restore drill itself remains unverified.

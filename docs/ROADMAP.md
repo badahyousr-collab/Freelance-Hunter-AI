@@ -27,7 +27,9 @@
 - [x] Profile preferences and source configuration forms call the API.
 - [x] Add Playwright smoke tests for Telegram auth, project search, source setup/manual scan, and settings save/layout.
 - [x] Complete CI browser end-to-end tests for dashboard, session expiry, logout, source setup/manual scan, settings, agent controls, and proposal review.
-- [ ] Fix and verify session-expiry handling, empty states, mobile layouts, and all visible controls.
+- [x] Add Playwright mobile-width overflow checks for integrations, agent settings, applications, and sources.
+- [x] Add regression checks for expired sessions and Telegram-linked data isolation.
+- [ ] Verify empty states and every visible control in the deployed app.
 - [ ] Verify the deployed website against the latest API Worker.
 
 ## Phase 4 - Source ingestion
@@ -88,7 +90,8 @@
 - [ ] Execute and verify a D1 backup/restore drill against a non-production database.
 - [x] Add optional Telegram operations alerts for scheduled scan and new-project notification failures, with a readiness indicator.
 - [ ] Configure the private alert chat and verify real alert delivery in the deployed Worker.
-- [ ] Complete authorization/data-isolation coverage for every user-scoped endpoint.
+- [x] Add owner-bound SQL tests for user-scoped reads/mutations and Telegram-linked bot summary, project, and agent-control actions.
+- [ ] Complete authorization/data-isolation coverage for every user-scoped endpoint and verify it with two deployed accounts.
 
 ## Phase 9 - Portfolio
 - [x] README, architecture, roadmap, acceptance checklist, setup guides, operations runbook, and code-verified case study.
