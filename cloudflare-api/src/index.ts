@@ -7,6 +7,7 @@ interface Env {
   AI_API_KEY?: string;
   AI_API_BASE_URL?: string;
   AI_MODEL?: string;
+  INTEGRATION_ENCRYPTION_KEY?: string;
 }
 
 const COOKIE = "fh_session";
@@ -57,6 +58,61 @@ async function sha256(value: string): Promise<string> {
   return Array.from(new Uint8Array(digest), b => b.toString(16).padStart(2, "0")).join("");
 }
 
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary);
+}
+
+function base64ToBytes(value: string): Uint8Array {
+  const binary = atob(value);
+  return Uint8Array.from(binary, char => char.charCodeAt(0));
+}
+
+function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
+  const copy = new Uint8Array(bytes.byteLength);
+  copy.set(bytes);
+  return copy.buffer;
+}
+
+async function integrationCryptoKey(masterSecret: string, usage: KeyUsage[]): Promise<CryptoKey> {
+  if (masterSecret.trim().length < 32) throw new Error("INTEGRATION_ENCRYPTION_KEY must be at least 32 characters.");
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(masterSecret));
+  return crypto.subtle.importKey("raw", digest, { name: "AES-GCM" }, false, usage);
+}
+
+async function encryptIntegrationSecret(secret: string, masterSecret: string): Promise<string> {
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const key = await integrationCryptoKey(masterSecret, ["encrypt"]);
+  const encrypted = await crypto.subtle.encrypt({ name: "AES-GCM", iv: toArrayBuffer(iv) }, key, toArrayBuffer(new TextEncoder().encode(secret)));
+  return JSON.stringify({ version: 1, iv: bytesToBase64(iv), ciphertext: bytesToBase64(new Uint8Array(encrypted)) });
+}
+
+async function decryptIntegrationSecret(serialized: string, masterSecret: string): Promise<string> {
+  const value = JSON.parse(serialized) as { version?: number; iv?: string; ciphertext?: string };
+  if (value.version !== 1 || !value.iv || !value.ciphertext) throw new Error("Stored integration credential format is invalid.");
+  const key = await integrationCryptoKey(masterSecret, ["decrypt"]);
+  const decrypted = await crypto.subtle.decrypt({ name: "AES-GCM", iv: toArrayBuffer(base64ToBytes(value.iv)) }, key, toArrayBuffer(base64ToBytes(value.ciphertext)));
+  return new TextDecoder().decode(decrypted);
+}
+
+async function freelancehuntApi(token: string, path: string, init: RequestInit = {}): Promise<{ response: Response; data: any }> {
+  if (!path.startsWith("/") || path.startsWith("//")) throw new Error("Invalid Freelancehunt API path.");
+  const upstream = await fetch("https://api.freelancehunt.com/v2" + path, {
+    ...init,
+    headers: {
+      "Authorization": `Bearer ${token}`,
+      "Accept": "application/json",
+      ...(init.body ? { "Content-Type": "application/json" } : {}),
+      ...(init.headers ?? {})
+    },
+    signal: init.signal ?? AbortSignal.timeout(12000)
+  });
+  let data: any = null;
+  try { data = upstream.status === 204 ? null : await upstream.json<any>(); } catch { data = null; }
+  return { response: upstream, data };
+}
+
 async function body(request: Request): Promise<Record<string, any>> {
   try { const value = await request.json(); return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, any> : {}; }
   catch { return {}; }
@@ -102,7 +158,7 @@ async function linkedTelegramAccount(env: Env, telegramUserId: string): Promise<
 const sourceCatalog = [
   { source: "telegram", label: "Public Telegram channels", kind: "telegram", capabilities: ["read_public_posts"], setup_note: "Public channel previews are scanned on demand and every 15 minutes while the AI agent is enabled. Private channels are not supported." },
   { source: "kwork", label: "Kwork", kind: "marketplace", capabilities: ["discover_projects"], setup_note: "Configuration only; a tested marketplace adapter is not yet available." },
-  { source: "freelancehunt", label: "Freelancehunt", kind: "marketplace", capabilities: ["discover_projects"], setup_note: "Configuration only; a tested marketplace adapter is not yet available." },
+  { source: "freelancehunt", label: "Freelancehunt", kind: "marketplace", capabilities: ["discover_projects", "submit_bid"], setup_note: "Uses the official API. Connect a Freelancehunt API token in Integrations; discovery and bid submission require a verified token." },
   { source: "upwork", label: "Upwork", kind: "marketplace", capabilities: ["discover_projects"], setup_note: "Configuration only; a tested marketplace adapter is not yet available." },
   { source: "fl_ru", label: "FL.ru", kind: "marketplace", capabilities: ["discover_projects"], setup_note: "Configuration only; a tested marketplace adapter is not yet available." }
 ];
@@ -110,7 +166,7 @@ const sourceCatalog = [
 const integrationCatalog = [
   { provider: "upwork", label: "Upwork", description: "Marketplace account integration is not implemented yet.", setup_note: "Credential storage and account adapter are not enabled yet." },
   { provider: "kwork", label: "Kwork", description: "Marketplace account integration is not implemented yet.", setup_note: "Credential storage and account adapter are not enabled yet." },
-  { provider: "freelancehunt", label: "Freelancehunt", description: "Marketplace account integration is not implemented yet.", setup_note: "Credential storage and account adapter are not enabled yet." },
+  { provider: "freelancehunt", label: "Freelancehunt", description: "Official API integration for project discovery and explicitly confirmed bids.", setup_note: "Create an API token in your Freelancehunt account. The token is validated and encrypted before storage." },
   { provider: "fl_ru", label: "FL.ru", description: "Marketplace account integration is not implemented yet.", setup_note: "Credential storage and account adapter are not enabled yet." },
   { provider: "telegram", label: "Telegram bot", description: "Link the Telegram bot to control the agent and view projects.", setup_note: "Cloudflare Worker webhook mode needs TELEGRAM_BOT_TOKEN, TELEGRAM_WEBHOOK_SECRET, and BOT_API_SECRET Worker secrets." },
   { provider: "llm", label: "AI provider", description: "AI drafting integration is not connected yet.", setup_note: "Configure AI_API_KEY, AI_MODEL, and optionally AI_API_BASE_URL as Worker secrets/variables to generate profile-grounded proposal drafts." }
@@ -330,6 +386,38 @@ export function evaluateProjectMatch(input: {
   return { score, reasons, excluded, complexity };
 }
 
+async function notifyNewProjects(env: Env, userId: string, added: number, posts: Array<{ title: string; url: string }>): Promise<void> {
+  if (added <= 0 || posts.length === 0 || !env.TELEGRAM_BOT_TOKEN) return;
+  try {
+    const target = await env.DB.prepare("SELECT tl.telegram_user_id,a.notify_new_projects FROM telegram_links tl JOIN agent_settings a ON a.user_id=tl.user_id WHERE tl.user_id=? AND tl.telegram_user_id IS NOT NULL")
+      .bind(userId).first<any>();
+    if (!target?.telegram_user_id || Number(target.notify_new_projects ?? 1) !== 1) return;
+    const items = posts.slice(0, 3).map(post => {
+      const href = safeTelegramUrl(post.url) ?? safeFreelancehuntProjectUrl(post.url);
+      const title = escapeTelegramHtml(post.title.slice(0, 180));
+      return href ? `• <a href="${escapeTelegramHtml(href)}">${title}</a>` : `• ${title}`;
+    }).join("\n");
+    const remainder = added > 3 ? `\n\nЕщё новых заказов: ${added - 3}` : "";
+    await telegramReply(env, Number(target.telegram_user_id), `<b>Новые проекты: ${added}</b>\n\n${items}${remainder}`);
+  } catch (notificationError) {
+    console.warn("new_project_notification_failed", {
+      userId,
+      error: notificationError instanceof Error ? notificationError.message : "Unknown notification error"
+    });
+  }
+}
+
+function safeFreelancehuntProjectUrl(value: unknown): string | null {
+  try {
+    const parsed = new URL(String(value ?? ""));
+    if (!["freelancehunt.com", "www.freelancehunt.com"].includes(parsed.hostname) || parsed.username || parsed.password) return null;
+    parsed.protocol = "https:";
+    return parsed.toString();
+  } catch {
+    return null;
+  }
+}
+
 async function scanTelegramSource(env: Env, userId: string, source: any): Promise<{ added: number; error?: string }> {
   const channel = String(source.identifier ?? "").replace(/^@/, "").trim();
   if (!/^[a-zA-Z0-9_]{5,}$/.test(channel)) return { added: 0, error: "Invalid public Telegram channel username." };
@@ -368,28 +456,7 @@ async function scanTelegramSource(env: Env, userId: string, source: any): Promis
     await env.DB.prepare("UPDATE sources SET status='active',last_scan_at=datetime('now'),last_error=NULL,last_discovered_count=? WHERE id=? AND user_id=?")
       .bind(added, source.id, userId).run();
 
-    // Notify once per scan and only for genuinely new rows, never for duplicates.
-    // Notification failures do not turn a successful ingestion into a source failure.
-    if (added > 0 && newlyAddedPosts.length > 0 && env.TELEGRAM_BOT_TOKEN) {
-      try {
-        const target = await env.DB.prepare("SELECT tl.telegram_user_id,a.notify_new_projects FROM telegram_links tl JOIN agent_settings a ON a.user_id=tl.user_id WHERE tl.user_id=? AND tl.telegram_user_id IS NOT NULL")
-          .bind(userId).first<any>();
-        if (target?.telegram_user_id && Number(target.notify_new_projects ?? 1) === 1) {
-          const items = newlyAddedPosts.slice(0, 3).map(post => {
-            const href = safeTelegramUrl(post.url);
-            const title = escapeTelegramHtml(post.title.slice(0, 180));
-            return href ? `• <a href="${escapeTelegramHtml(href)}">${title}</a>` : `• ${title}`;
-          }).join("\n");
-          const remainder = added > 3 ? `\n\nЕщё новых заказов: ${added - 3}` : "";
-          await telegramReply(env, Number(target.telegram_user_id), `<b>Новые проекты: ${added}</b>\n\n${items}${remainder}`);
-        }
-      } catch (notificationError) {
-        console.warn("new_project_notification_failed", {
-          userId,
-          error: notificationError instanceof Error ? notificationError.message : "Unknown notification error"
-        });
-      }
-    }
+    await notifyNewProjects(env, userId, added, newlyAddedPosts);
     return { added };
   } catch (error) {
     const message = error instanceof Error ? error.message.slice(0, 500) : "Source scan failed";
@@ -399,20 +466,82 @@ async function scanTelegramSource(env: Env, userId: string, source: any): Promis
   }
 }
 
+async function scanFreelancehuntSource(env: Env, userId: string, source: any): Promise<{ added: number; error?: string }> {
+  try {
+    if (!env.INTEGRATION_ENCRYPTION_KEY) throw new Error("Integration encryption is not configured.");
+    const integration = await env.DB.prepare("SELECT credentials_json FROM integrations WHERE user_id=? AND provider='freelancehunt' AND status='connected'")
+      .bind(userId).first<any>();
+    if (!integration?.credentials_json) throw new Error("Connect a verified Freelancehunt API token in Integrations first.");
+    const token = await decryptIntegrationSecret(String(integration.credentials_json), env.INTEGRATION_ENCRYPTION_KEY);
+    const { response: upstream, data } = await freelancehuntApi(token, "/projects");
+    if (!upstream.ok) {
+      if (upstream.status === 401 || upstream.status === 403) {
+        await env.DB.prepare("UPDATE integrations SET status='reauth_required' WHERE user_id=? AND provider='freelancehunt'").bind(userId).run();
+      }
+      throw new Error(`Freelancehunt API returned HTTP ${upstream.status}.`);
+    }
+    const projects = Array.isArray(data?.data) ? data.data : [];
+    const profileRow = await env.DB.prepare("SELECT skills,languages,payment_preferences,min_budget,currency,excluded_keywords FROM profiles WHERE user_id=?").bind(userId).first<any>() ?? {};
+    const profile: MatchProfile = {
+      skills: safeJson(profileRow.skills, []),
+      languages: safeJson(profileRow.languages, ["ru", "en"]),
+      payment_preferences: safeJson(profileRow.payment_preferences, []),
+      min_budget: profileRow.min_budget,
+      currency: profileRow.currency ?? "USD",
+      excluded_keywords: safeJson(profileRow.excluded_keywords, [])
+    };
+    let added = 0;
+    const newlyAdded: Array<{ title: string; url: string }> = [];
+    for (const item of projects.slice(0, 50)) {
+      const attributes = item?.attributes ?? {};
+      const id = String(item?.id ?? "").trim();
+      const title = String(attributes.name ?? "").trim().slice(0, 180);
+      const description = decodeHtml(String(attributes.description_html ?? attributes.description ?? "")).slice(0, 12000);
+      const url = safeFreelancehuntProjectUrl(attributes.self?.web ?? attributes.url ?? item?.links?.self?.web);
+      if (!id || !title || !description || !url) continue;
+      const amount = Number(attributes.budget?.amount);
+      const currency = String(attributes.budget?.currency ?? "").toUpperCase();
+      const budget = Number.isFinite(amount) && amount > 0 && ["UAH", "RUB"].includes(currency) ? { amount, currency } : null;
+      const language = /[а-яёіїєґ]/i.test(description) ? "ru" : "en";
+      const evaluation = evaluateProjectMatch({ title, description, language, budget, profile });
+      const result = await env.DB.prepare(`INSERT INTO projects
+        (user_id,source,source_project_id,url,title,description,language,budget_min,budget_max,currency,payment_method,published_at,match_score,match_reasons)
+        VALUES (?, 'freelancehunt', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(user_id,source,source_project_id) DO NOTHING`)
+        .bind(userId, id, url, title, description, language, budget?.amount ?? null, budget?.amount ?? null, budget?.currency ?? null,
+          String(attributes.safe_type ?? ""), attributes.published_at ?? null, evaluation.score, JSON.stringify(evaluation.reasons)).run();
+      const inserted = Number(result.meta.changes ?? 0);
+      added += inserted;
+      if (inserted > 0) newlyAdded.push({ title, url });
+    }
+    await env.DB.prepare("UPDATE sources SET status='active',last_scan_at=datetime('now'),last_error=NULL,last_discovered_count=? WHERE id=? AND user_id=?")
+      .bind(added, source.id, userId).run();
+    await notifyNewProjects(env, userId, added, newlyAdded);
+    return { added };
+  } catch (error) {
+    const message = error instanceof Error ? error.message.slice(0, 500) : "Freelancehunt scan failed";
+    await env.DB.prepare("UPDATE sources SET status='error',last_scan_at=datetime('now'),last_error=? WHERE id=? AND user_id=?")
+      .bind(message, source.id, userId).run();
+    return { added: 0, error: message };
+  }
+}
+
 async function scanUserSources(env: Env, userId: string): Promise<{ scannedSources: number; newProjects: number; errors: string[] }> {
-  const rows = await env.DB.prepare("SELECT * FROM sources WHERE user_id=? AND is_enabled=1 AND source='telegram' ORDER BY created_at ASC").bind(userId).all<any>();
+  const rows = await env.DB.prepare("SELECT * FROM sources WHERE user_id=? AND is_enabled=1 AND source IN ('telegram','freelancehunt') ORDER BY created_at ASC").bind(userId).all<any>();
   let newProjects = 0;
   const errors: string[] = [];
   for (const source of rows.results ?? []) {
-    const result = await scanTelegramSource(env, userId, source);
+    const result = source.source === "telegram"
+      ? await scanTelegramSource(env, userId, source)
+      : await scanFreelancehuntSource(env, userId, source);
     newProjects += result.added;
-    if (result.error) errors.push(`${source.identifier}: ${result.error}`);
+    if (result.error) errors.push(`${source.identifier || source.source}: ${result.error}`);
   }
   return { scannedSources: (rows.results ?? []).length, newProjects, errors };
 }
 
 async function runScheduledScan(env: Env): Promise<void> {
-  const rows = await env.DB.prepare("SELECT DISTINCT s.user_id FROM sources s JOIN agent_settings a ON a.user_id=s.user_id WHERE s.is_enabled=1 AND s.source='telegram' AND a.is_enabled=1").all<any>();
+  const rows = await env.DB.prepare("SELECT DISTINCT s.user_id FROM sources s JOIN agent_settings a ON a.user_id=s.user_id WHERE s.is_enabled=1 AND s.source IN ('telegram','freelancehunt') AND a.is_enabled=1").all<any>();
   for (const row of rows.results ?? []) await scanUserSources(env, String(row.user_id));
 }
 
@@ -687,6 +816,11 @@ async function handle(request: Request, env: Env): Promise<Response> {
       await env.DB.prepare("SELECT notify_new_projects FROM agent_settings LIMIT 0").all();
     } catch {
       missingMigrations.push("0008_new_project_notifications.sql");
+    }
+    try {
+      await env.DB.prepare("SELECT provider_submission_id,submission_error FROM applications LIMIT 0").all();
+    } catch {
+      missingMigrations.push("0009_provider_submission_tracking.sql");
     }
     const schemaReady = missingTables.length === 0 && missingMigrations.length === 0;
     return response(request, {
@@ -1038,8 +1172,13 @@ async function handle(request: Request, env: Env): Promise<Response> {
   }
 
   if (path === "/applications" && method === "GET") {
-    const rows = await env.DB.prepare("SELECT a.*, p.title AS project_title, p.url AS project_url, p.source AS project_source FROM applications a LEFT JOIN projects p ON p.id=a.project_id AND p.user_id=a.user_id WHERE a.user_id=? ORDER BY a.created_at DESC").bind(uid).all<any>();
-    return response(request, (rows.results ?? []).map((a:any) => ({ id:a.id, project_id:a.project_id, status:a.status, draft_text:a.draft_text, created_at:a.created_at, submitted_at:a.submitted_at, replied_at:a.replied_at, project:a.project_title ? { title:a.project_title, url:a.project_url, source:a.project_source } : null })));
+    const rows = await env.DB.prepare("SELECT a.*, p.title AS project_title, p.url AS project_url, p.source AS project_source, p.budget_max AS project_budget_max, p.currency AS project_currency FROM applications a LEFT JOIN projects p ON p.id=a.project_id AND p.user_id=a.user_id WHERE a.user_id=? ORDER BY a.created_at DESC").bind(uid).all<any>();
+    return response(request, (rows.results ?? []).map((a:any) => ({
+      id:a.id, project_id:a.project_id, status:a.status, draft_text:a.draft_text, created_at:a.created_at,
+      submitted_at:a.submitted_at, replied_at:a.replied_at, provider_submission_id:a.provider_submission_id ?? null,
+      submission_error:a.submission_error ?? null,
+      project:a.project_title ? { title:a.project_title, url:a.project_url, source:a.project_source, budget_max:a.project_budget_max ?? null, currency:a.project_currency ?? null } : null
+    })));
   }
 
   // This workflow prepares and reviews proposals, but deliberately does not fake
@@ -1051,14 +1190,20 @@ async function handle(request: Request, env: Env): Promise<Response> {
     const existing = await env.DB.prepare("SELECT id,project_id,status,draft_text FROM applications WHERE id=? AND user_id=?").bind(id, uid).first<any>();
     if (!existing) return response(request, { detail: "Application not found." }, 404);
     const currentStatus = String(existing.status);
-    if (!["draft", "awaiting_confirmation"].includes(currentStatus)) {
-      return response(request, { detail: "This application is closed or already submitted and cannot be edited." }, 409);
+    if (!["draft", "awaiting_confirmation", "failed"].includes(currentStatus)) {
+      const detail = currentStatus === "submission_unknown"
+        ? "The provider response was inconclusive. Check Freelancehunt manually before taking further action."
+        : "This application is closed or already submitted and cannot be edited.";
+      return response(request, { detail }, 409);
     }
     let nextStatus = currentStatus;
     if (input.status !== undefined) {
       const requested = String(input.status);
       if (!["draft", "awaiting_confirmation", "closed"].includes(requested)) {
         return response(request, { detail: "This action cannot mark an application as submitted. Submission status requires confirmation from a supported marketplace adapter." }, 400);
+      }
+      if (currentStatus === "failed" && requested !== "draft" && requested !== "closed") {
+        return response(request, { detail: "After a rejected submission, return the proposal to draft, review it, and confirm again." }, 409);
       }
       if (requested === "awaiting_confirmation" && currentStatus !== "draft" && currentStatus !== "awaiting_confirmation") {
         return response(request, { detail: "Only a draft can be prepared for confirmation." }, 409);
@@ -1072,9 +1217,97 @@ async function handle(request: Request, env: Env): Promise<Response> {
     if (nextStatus === "awaiting_confirmation" && !String(draftText ?? "").trim()) {
       return response(request, { detail: "Add proposal text before preparing it for confirmation." }, 400);
     }
-    await env.DB.prepare("UPDATE applications SET draft_text=?,status=? WHERE id=? AND user_id=? AND status IN ('draft','awaiting_confirmation')").bind(draftText, nextStatus, id, uid).run();
-    const saved = await env.DB.prepare("SELECT id,project_id,status,draft_text,created_at,submitted_at,replied_at FROM applications WHERE id=? AND user_id=?").bind(id, uid).first<any>();
+    await env.DB.prepare("UPDATE applications SET draft_text=?,status=? WHERE id=? AND user_id=? AND status IN ('draft','awaiting_confirmation','failed')").bind(draftText, nextStatus, id, uid).run();
+    if (nextStatus === "draft" && currentStatus === "failed") {
+      await env.DB.prepare("UPDATE applications SET submission_error=NULL WHERE id=? AND user_id=?").bind(id, uid).run();
+    }
+    const saved = await env.DB.prepare("SELECT id,project_id,status,draft_text,created_at,submitted_at,replied_at,provider_submission_id,submission_error FROM applications WHERE id=? AND user_id=?").bind(id, uid).first<any>();
     return response(request, saved ?? { id, project_id: existing.project_id, status: nextStatus, draft_text: draftText });
+  }
+
+  const submitApplicationMatch = path.match(/^\/applications\/(\d+)\/submit$/);
+  if (submitApplicationMatch && method === "POST") {
+    const id = Number(submitApplicationMatch[1]);
+    const input = await body(request);
+    const application = await env.DB.prepare("SELECT a.id,a.project_id,a.status,a.draft_text,p.source,p.source_project_id,p.url FROM applications a JOIN projects p ON p.id=a.project_id AND p.user_id=a.user_id WHERE a.id=? AND a.user_id=?")
+      .bind(id, uid).first<any>();
+    if (!application) return response(request, { detail: "Application not found." }, 404);
+    if (String(application.source) !== "freelancehunt") return response(request, { detail: "Submission is only enabled for verified Freelancehunt API integrations." }, 400);
+    if (String(application.status) !== "awaiting_confirmation") return response(request, { detail: "Prepare and confirm the proposal before submitting it." }, 409);
+    if (!env.INTEGRATION_ENCRYPTION_KEY || env.INTEGRATION_ENCRYPTION_KEY.trim().length < 32) {
+      return response(request, { detail: "Secure credential storage is not configured." }, 503);
+    }
+    const days = Number(input.days);
+    const amount = Number(input.budget_amount);
+    const currency = String(input.currency ?? "").toUpperCase();
+    const safeType = input.safe_type === null || input.safe_type === "" ? null : String(input.safe_type);
+    if (!Number.isInteger(days) || days < 1 || days > 365) return response(request, { detail: "Duration must be from 1 to 365 days." }, 400);
+    if (!Number.isFinite(amount) || amount <= 0 || amount > 1000000000) return response(request, { detail: "Enter a valid bid amount." }, 400);
+    if (!["UAH", "RUB"].includes(currency)) return response(request, { detail: "Freelancehunt bids currently support UAH or RUB." }, 400);
+    if (safeType !== null && !["employer", "developer", "split", "employer_cashless"].includes(safeType)) {
+      return response(request, { detail: "Unsupported Freelancehunt payment type." }, 400);
+    }
+    const comment = String(application.draft_text ?? "").trim();
+    if (!comment || comment.length > 5000) return response(request, { detail: "The proposal must contain 1 to 5,000 characters." }, 400);
+    if (!/^\d+$/.test(String(application.source_project_id ?? ""))) return response(request, { detail: "Freelancehunt project ID is invalid." }, 409);
+    const integration = await env.DB.prepare("SELECT credentials_json FROM integrations WHERE user_id=? AND provider='freelancehunt' AND status='connected'").bind(uid).first<any>();
+    if (!integration?.credentials_json) return response(request, { detail: "Connect a verified Freelancehunt API token in Integrations first." }, 503);
+    let token: string;
+    try {
+      token = await decryptIntegrationSecret(String(integration.credentials_json), env.INTEGRATION_ENCRYPTION_KEY);
+    } catch {
+      return response(request, { detail: "Could not decrypt the saved Freelancehunt token. Reconnect the integration with the current encryption key." }, 503);
+    }
+    const claimed = await env.DB.prepare("UPDATE applications SET status='submitting',submission_error=NULL WHERE id=? AND user_id=? AND status='awaiting_confirmation'").bind(id, uid).run();
+    if (!claimed.meta.changes) return response(request, { detail: "This proposal is already being submitted or its status changed. Refresh the page." }, 409);
+
+    let upstream: Response;
+    let providerData: any;
+    try {
+      const result = await freelancehuntApi(token, `/projects/${String(application.source_project_id)}/bids`, {
+        method: "POST",
+        body: JSON.stringify({
+          days,
+          budget: { amount: Math.round(amount * 100) / 100, currency },
+          safe_type: safeType,
+          comment
+        }),
+        signal: AbortSignal.timeout(15000)
+      });
+      upstream = result.response;
+      providerData = result.data;
+    } catch {
+      const detail = "Freelancehunt did not return a response. Check the listing manually before trying anything else.";
+      await env.DB.prepare("UPDATE applications SET status='submission_unknown',submission_error=? WHERE id=? AND user_id=? AND status='submitting'").bind(detail, id, uid).run();
+      const saved = await env.DB.prepare("SELECT id,project_id,status,draft_text,created_at,submitted_at,replied_at,provider_submission_id,submission_error FROM applications WHERE id=? AND user_id=?").bind(id, uid).first<any>();
+      return response(request, { detail, application: saved }, 502);
+    }
+
+    if (!upstream.ok) {
+      const rejected = upstream.status >= 400 && upstream.status < 500;
+      const nextStatus = rejected ? "failed" : "submission_unknown";
+      const detail = rejected
+        ? `Freelancehunt rejected the bid (HTTP ${upstream.status}). Review the proposal and API token before retrying.`
+        : "Freelancehunt returned a server error. Check the listing manually before trying again.";
+      if (upstream.status === 401 || upstream.status === 403) {
+        await env.DB.prepare("UPDATE integrations SET status='reauth_required' WHERE user_id=? AND provider='freelancehunt'").bind(uid).run();
+      }
+      await env.DB.prepare("UPDATE applications SET status=?,submission_error=? WHERE id=? AND user_id=? AND status='submitting'").bind(nextStatus, detail, id, uid).run();
+      const saved = await env.DB.prepare("SELECT id,project_id,status,draft_text,created_at,submitted_at,replied_at,provider_submission_id,submission_error FROM applications WHERE id=? AND user_id=?").bind(id, uid).first<any>();
+      return response(request, { detail, application: saved }, rejected ? 422 : 502);
+    }
+
+    const bidId = String(providerData?.data?.id ?? "");
+    if (!/^\d+$/.test(bidId)) {
+      const detail = "Freelancehunt returned an unexpected success response without a bid ID. Check the listing manually before retrying.";
+      await env.DB.prepare("UPDATE applications SET status='submission_unknown',submission_error=? WHERE id=? AND user_id=? AND status='submitting'").bind(detail, id, uid).run();
+      const saved = await env.DB.prepare("SELECT id,project_id,status,draft_text,created_at,submitted_at,replied_at,provider_submission_id,submission_error FROM applications WHERE id=? AND user_id=?").bind(id, uid).first<any>();
+      return response(request, { detail, application: saved }, 502);
+    }
+    await env.DB.prepare("UPDATE applications SET status='sent',submitted_at=datetime('now'),provider_submission_id=?,submission_error=NULL WHERE id=? AND user_id=? AND status='submitting'")
+      .bind(bidId, id, uid).run();
+    const saved = await env.DB.prepare("SELECT id,project_id,status,draft_text,created_at,submitted_at,replied_at,provider_submission_id,submission_error FROM applications WHERE id=? AND user_id=?").bind(id, uid).first<any>();
+    return response(request, saved ?? { id, project_id: application.project_id, status: "sent", provider_submission_id: bidId }, 200);
   }
 
   if (path === "/integrations/catalog" && method === "GET") return response(request, integrationCatalog);
@@ -1083,13 +1316,49 @@ async function handle(request: Request, env: Env): Promise<Response> {
     return response(request, rows.results ?? []);
   }
   if (path === "/integrations" && method === "POST") {
+    if (await isRateLimited(request, env, "integration-connect", 5)) return response(request, { detail: "Too many integration attempts. Wait 15 minutes before trying again." }, 429, { "Retry-After": "900" });
     const input = await body(request);
     const provider = String(input.provider ?? "");
     const item = integrationCatalog.find(i => i.provider === provider);
     if (!item) return response(request, { detail: "Unsupported integration." }, 400);
+    const suppliedSecret = String(input.secret ?? "").trim();
+    if (provider === "freelancehunt") {
+      if (!suppliedSecret) return response(request, { detail: "Enter a Freelancehunt API token." }, 400);
+      if (suppliedSecret.length > 4096) return response(request, { detail: "The API token is too long." }, 400);
+      if (!env.INTEGRATION_ENCRYPTION_KEY || env.INTEGRATION_ENCRYPTION_KEY.trim().length < 32) {
+        return response(request, { detail: "Secure credential storage is not configured. Set INTEGRATION_ENCRYPTION_KEY as a Worker secret." }, 503);
+      }
+      let upstream: Response;
+      let profileData: any;
+      try {
+        const result = await freelancehuntApi(suppliedSecret, "/my/profile");
+        upstream = result.response;
+        profileData = result.data;
+      } catch {
+        return response(request, { detail: "Could not reach Freelancehunt to validate the API token. No credential was saved." }, 502);
+      }
+      if (!upstream.ok) {
+        return response(request, {
+          detail: upstream.status === 401 || upstream.status === 403
+            ? "Freelancehunt rejected this API token. Check the token and its permissions."
+            : `Freelancehunt token validation failed with HTTP ${upstream.status}. No credential was saved.`
+        }, upstream.status === 401 || upstream.status === 403 ? 401 : 502);
+      }
+      let encrypted: string;
+      try {
+        encrypted = await encryptIntegrationSecret(suppliedSecret, env.INTEGRATION_ENCRYPTION_KEY);
+      } catch {
+        return response(request, { detail: "Could not encrypt the API token. No credential was saved." }, 503);
+      }
+      const profile = profileData?.data?.attributes ?? {};
+      const label = String(input.label ?? (profile.login ? `Freelancehunt · ${profile.login}` : item.label)).slice(0,100);
+      await env.DB.prepare("INSERT INTO integrations (user_id,provider,label,status,credentials_json) VALUES (?,?,?,?,?) ON CONFLICT(user_id,provider) DO UPDATE SET label=excluded.label,status='connected',credentials_json=excluded.credentials_json")
+        .bind(uid, provider, label, "connected", encrypted).run();
+      const saved = await env.DB.prepare("SELECT id,provider,label,status,created_at FROM integrations WHERE user_id=? AND provider=?").bind(uid,provider).first<any>();
+      return response(request, saved, 201);
+    }
+    if (suppliedSecret) return response(request, { detail: "A verified official credential adapter is not available for this provider. No credential was saved." }, 400);
     const label = String(input.label ?? item.label).slice(0,100);
-    // Never silently discard or store credentials in plaintext. Encryption must be configured before accepting secrets.
-    if (String(input.secret ?? "").trim()) return response(request, { detail: "No credential was saved. Secure encrypted credential storage must be configured before this integration can be connected." }, 503);
     await env.DB.prepare("INSERT INTO integrations (user_id,provider,label,status,credentials_json) VALUES (?,?,?,?, '{}') ON CONFLICT(user_id,provider) DO UPDATE SET label=excluded.label").bind(uid,provider,label,"not_connected").run();
     return response(request, await env.DB.prepare("SELECT id,provider,label,status,created_at FROM integrations WHERE user_id=? AND provider=?").bind(uid,provider).first(), 201);
   }
