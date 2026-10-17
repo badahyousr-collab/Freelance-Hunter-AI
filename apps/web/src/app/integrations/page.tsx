@@ -22,6 +22,9 @@ export default function IntegrationsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
+  const [apiToken, setApiToken] = useState("");
+  const [connecting, setConnecting] = useState(false);
+  const [scanning, setScanning] = useState(false);
 
   async function load() {
     setLoading(true);
@@ -51,6 +54,44 @@ export default function IntegrationsPage() {
 
   useEffect(() => { void load(); }, []);
 
+  async function connectFreelancehunt() {
+    if (!apiToken.trim()) { setError("Вставь API-токен Freelancehunt."); return; }
+    setConnecting(true); setError(""); setMessage("");
+    try {
+      const response = await fetch(API + "/integrations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ provider: "freelancehunt", secret: apiToken.trim() })
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail ?? "Не удалось подключить Freelancehunt.");
+      setApiToken("");
+      setMessage("Freelancehunt подключён. Токен проверен и сохранён в зашифрованном виде.");
+      await load();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Не удалось подключить Freelancehunt.");
+    } finally {
+      setConnecting(false);
+    }
+  }
+
+  async function scanProjects() {
+    setScanning(true); setError(""); setMessage("");
+    try {
+      const response = await fetch(API + "/agent/scan", { method: "POST", credentials: "include" });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail ?? "Не удалось запустить сканирование.");
+      const scanErrors = Array.isArray(data.errors) && data.errors.length ? " Ошибки: " + data.errors.join("; ") : "";
+      setMessage("Сканирование завершено. Источников: " + Number(data.scannedSources ?? 0) + ", новых проектов: " + Number(data.newProjects ?? 0) + "." + scanErrors);
+      await load();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Не удалось запустить сканирование.");
+    } finally {
+      setScanning(false);
+    }
+  }
+
   async function remove(item: Integration) {
     setError("");
     setMessage("");
@@ -73,7 +114,7 @@ export default function IntegrationsPage() {
   return (
     <WorkspacePage
       title="Подключения"
-      subtitle="Здесь будут появляться реальные подключения к биржам. Пароли от аккаунтов вводить не нужно."
+      subtitle="Подключай только проверенные API-интеграции. Пароли от аккаунтов не запрашиваются."
     >
       {error && <div className="sub-alert error" role="alert">{error}</div>}
       {message && <div className="sub-alert" role="status">{message}</div>}
@@ -98,10 +139,27 @@ export default function IntegrationsPage() {
                     <strong>{entry.label}</strong>
                     <span>{entry.setup_note}</span>
                     {integration && <span>Запись: {integration.status.replaceAll("_", " ")}</span>}
+                    {entry.provider === "freelancehunt" && integration?.status !== "connected" && (
+                      <div className="sub-form-field">
+                        <label htmlFor="freelancehunt-api-token">API-токен Freelancehunt</label>
+                        <input id="freelancehunt-api-token" name="api-token" type="password" className="sub-input" autoComplete="off" spellCheck={false} value={apiToken} onChange={event => setApiToken(event.target.value)} placeholder="Вставь API-токен" />
+                        <span>Токен проверяется через официальный API и хранится зашифрованным. Пароль аккаунта не вводи.</span>
+                      </div>
+                    )}
                   </div>
-                  <span className="sub-badge pending">
-                    {integration?.status === "connected" ? "Подключено" : "Интеграция в разработке"}
+                  <span className={"sub-badge " + (integration?.status === "connected" ? "" : "pending")}>
+                    {integration?.status === "connected" ? "Подключено" : integration?.status === "auth_error" ? "Нужно переподключить" : "Не подключено"}
                   </span>
+                  {entry.provider === "freelancehunt" && integration?.status !== "connected" && (
+                    <button className="sub-button primary" type="button" disabled={connecting || !apiToken.trim()} onClick={() => void connectFreelancehunt()}>
+                      <Plug size={14} /> {connecting ? "Проверяем токен…" : "Подключить API"}
+                    </button>
+                  )}
+                  {entry.provider === "freelancehunt" && integration?.status === "connected" && (
+                    <button className="sub-button primary" type="button" disabled={scanning || loading} onClick={() => void scanProjects()}>
+                      <Plug size={14} /> {scanning ? "Сканируем…" : "Сканировать проекты"}
+                    </button>
+                  )}
                   {externalUrl && (
                     <a className="sub-button" href={externalUrl} target="_blank" rel="noreferrer">
                       <ExternalLink size={14} /> Открыть биржу
@@ -125,7 +183,7 @@ export default function IntegrationsPage() {
           <div className="sub-list-row">
             <div className="sub-list-main">
               <strong>Пароли аккаунтов не запрашиваются</strong>
-              <span>Подключение будет идти через официальный экран площадки или ограниченный токен, если биржа это поддерживает.</span>
+              <span>Freelancehunt подключается ограниченным API-токеном. Остальные площадки остаются недоступными, пока для них не будет реализован и проверен официальный адаптер.</span>
             </div>
           </div>
           <div className="sub-list-row">
