@@ -29,8 +29,7 @@
 - [ ] Verify a real public Telegram channel scan and scheduled Cron execution against the deployed Worker.
 - [x] Mock-test Freelancehunt API token verification, encrypted storage, and open-project discovery.
 - [ ] Verify Freelancehunt token connection and live project ingestion against the deployed Worker.
-- [x] Freelancehunt token verification and discovery code are covered by mocked API tests.
-- [ ] Live Freelancehunt ingestion and other marketplace adapters are verified; catalog entries marked pending are not live integrations.
+- [ ] Implement other marketplace adapters where official access is permitted; catalog entries marked pending are not live integrations.
 
 ## AI and proposals
 - [x] Draft endpoint requires authentication and verifies project ownership.
@@ -65,4 +64,4 @@
 - CI verifies backend tests/migrations, frontend lint/build, Playwright smoke tests, and Cloudflare Worker typecheck/tests. CodeQL and weekly Dependabot checks are configured.
 - [x] Document D1 export, migration, and test-database restore commands in [Operations and recovery](OPERATIONS.md). The backup/restore drill itself remains unverified.
 - Live service verification is pending until Telegram secrets, AI provider configuration, and public channel scans are tested.
-- Known limitations: provider-specific marketplace discovery/authentication/submission and reply synchronization are not implemented. New-project notifications are implemented in code but need the D1 migration, bot secrets, and a live Telegram test. Telegram ingestion currently reads public channel previews only.
+- Known limitations: Freelancehunt connection, discovery, and explicit bid-submission code are covered by mocked tests but still need live account verification. Other marketplace adapters and client-reply synchronization are not implemented. New-project notifications need the D1 migration, bot secrets, and a live Telegram test. Telegram ingestion currently reads public channel previews only.
