@@ -168,7 +168,7 @@ export default function SourcesPage() {
     </section>
 
     <section className="content-card">
-      <div className="panel-heading"><div><h2>Подключённые источники</h2><p>Здесь отображается состояние источника и результат последнего сканирования.</p></div><div className="sub-actions"><button className="sub-button" onClick={() => void load()} disabled={loading || scanning}><RefreshCw size={14}/>Обновить</button><button className="sub-button primary" onClick={() => void scanNow()} disabled={loading || scanning || !items.some(item => item.source === "telegram" && item.is_enabled)}><Radio size={14}/>{scanning ? "Сканируем…" : "Сканировать сейчас"}</button></div></div>
+      <div className="panel-heading"><div><h2>Подключённые источники</h2><p>Здесь отображается состояние источника и результат последнего сканирования.</p></div><div className="sub-actions"><button className="sub-button" onClick={() => void load()} disabled={loading || scanning}><RefreshCw size={14}/>Обновить</button><button className="sub-button primary" onClick={() => void scanNow()} disabled={loading || scanning || !items.some(item => ["telegram", "freelancehunt"].includes(item.source) && item.is_enabled)}><Radio size={14}/>{scanning ? "Сканируем…" : "Сканировать сейчас"}</button></div></div>
       {loading ? <div className="sub-empty">Загружаем источники…</div> : items.length === 0 ? <div className="sub-empty"><Workflow size={25}/><strong>Источники пока не добавлены</strong><span>Добавь канал из подборки выше или укажи публичный Telegram-канал вручную.</span></div> :
         <div className="sub-list">{items.map(item => <article className="sub-list-row" key={item.id}>
           <div className="sub-list-main">
@@ -184,7 +184,7 @@ export default function SourcesPage() {
     <section className="content-card">
       <h2>Статус адаптеров</h2>
       <p>Публичные Telegram-каналы поддерживаются сканером превью. Остальные площадки не будут помечаться как активные до проверки интеграции.</p>
-      <div className="sub-list">{catalog.map(c => <div className="sub-list-row" key={c.source}><div className="sub-list-main"><strong>{c.label}</strong><span>{c.setup_note}</span></div><span className={"sub-badge " + (c.source === "telegram" ? "" : "pending")}>{c.source === "telegram" ? "Сканер реализован" : "Адаптер ожидается"}</span></div>)}</div>
+      <div className="sub-list">{catalog.map(c => <div className="sub-list-row" key={c.source}><div className="sub-list-main"><strong>{c.label}</strong><span>{c.setup_note}</span></div><span className={"sub-badge " + (["telegram", "freelancehunt"].includes(c.source) ? "" : "pending")}>{c.source === "telegram" ? "Сканер реализован" : c.source === "freelancehunt" ? "Официальный API" : "Адаптер ожидается"}</span></div>)}</div>
     </section>
   </WorkspacePage>;
 }
