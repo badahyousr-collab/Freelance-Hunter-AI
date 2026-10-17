@@ -1268,7 +1268,7 @@ test("user-scoped read, draft, and Telegram link endpoints bind the authenticate
         ...(item.body ? { "Content-Type": "application/json" } : {})
       },
       ...(item.body ? { body: JSON.stringify(item.body) } : {})
-    }), { DB });
+    }), { DB, AI_API_KEY: "test-key", AI_MODEL: "test-model" });
     assert.equal(response.status, item.status, item.path);
     const statement = statements.findLast(entry => entry.sql.includes(item.sql));
     assert.ok(statement, "Expected scoped query for " + item.path);
