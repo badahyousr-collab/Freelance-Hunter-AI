@@ -255,7 +255,7 @@ test("AI agent toggle and manual scan call the API and show results", async ({ p
   await page.getByRole("button", { name: "Включить агента" }).click();
   await expect(page.getByText(/AI-агент включён/i)).toBeVisible();
   await expect(page.getByRole("button", { name: "Приостановить агента" })).toBeVisible();
-  await page.getByRole("button", { name: "Сканировать Telegram-каналы" }).click();
+  await page.getByRole("button", { name: "Сканировать источники" }).click();
   await expect(page.getByText(/новых проектов 2, источников 1/i)).toBeVisible();
 });
 
@@ -334,3 +334,33 @@ test("proposal draft can be edited and prepared for confirmation without claimin
   expect(application.draft_text).toContain("skills in my profile");
   expect(application.status).not.toBe("sent");
 });
+
+
+test("Freelancehunt integration accepts an API token but never displays it after saving", async ({ page }) => {
+  await mockAuthenticatedAccount(page);
+  let stored: Record<string, unknown> | null = null;
+  await page.route("**/api/backend/integrations/catalog", async route => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([
+      { provider: "freelancehunt", label: "Freelancehunt", status: "pending", setup_note: "Use the official API token." }
+    ]) });
+  });
+  await page.route("**/api/backend/integrations", async route => {
+    if (route.request().method() === "POST") {
+      const payload = route.request().postDataJSON() as { provider: string; secret: string };
+      expect(payload.provider).toBe("freelancehunt");
+      expect(payload.secret).toBe("test-api-token");
+      stored = { id: 1, provider: "freelancehunt", label: "Freelancehunt · test_user", status: "connected", created_at: "2026-10-17T10:00:00Z" };
+      await route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify(stored) });
+      return;
+    }
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(stored ? [stored] : []) });
+  });
+
+  await page.goto("/integrations");
+  await page.getByLabel("API-токен Freelancehunt").fill("test-api-token");
+  await page.getByRole("button", { name: "Проверить и подключить" }).click();
+  await expect(page.getByText(/API-токен проверен и сохранён в зашифрованном виде/i)).toBeVisible();
+  await expect(page.getByText("Подключено")).toBeVisible();
+  await expect(page.getByLabel("API-токен Freelancehunt")).toHaveValue("");
+});
+
