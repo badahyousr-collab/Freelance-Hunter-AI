@@ -570,7 +570,7 @@ async function autoDraftPendingProjects(env: Env, userId: string): Promise<numbe
       return 0;
     }
   }));
-  return results.reduce((sum, value) => sum + value, 0);
+  return results.reduce<number>((sum, value) => sum + value, 0);
 }
 
 async function scanUserSources(env: Env, userId: string): Promise<{ scannedSources: number; newProjects: number; errors: string[]; draftedApplications: number }> {
