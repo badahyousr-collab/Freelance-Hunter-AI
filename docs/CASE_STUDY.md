@@ -32,7 +32,7 @@ Freelance requests are scattered across channels and platforms. Manually reviewi
 - Production D1 migrations, the `INTEGRATION_ENCRYPTION_KEY` Worker secret, and Telegram secrets still require verification in the target Cloudflare account.
 - Live Telegram and Freelancehunt scans have not been confirmed by CI; CI uses mocked network responses.
 - Real AI-provider quality testing needs an intentionally configured provider key and representative anonymized listings. A real provider may charge for API usage.
-- Freelancehunt discovery and optional automatic bid submission are implemented through the official API, with encrypted per-user tokens, a daily cap, and provider-confirmed bid IDs. Live account verification still requires a real user-owned token. Kwork, Upwork, FL.ru, Fiverr, and Freelancer adapters are unavailable. Client message-thread synchronization is not implemented.
+- Marketplace discovery includes Freelancehunt's official API, FL.ru's public RSS, and public Freelance.ru tasks. Automatic bid submission is available only through Freelancehunt's verified API; the other two sources are read-only and require manual proposal submission. Live Freelancehunt account verification still requires a real user-owned token. Kwork, Upwork, Fiverr, Freelancer.com, and unsupported sources remain unavailable. Client message-thread synchronization is not implemented.
 - No real production throughput, latency, success-rate, or cost measurements are claimed here.
 - Screenshots and a demo recording must be captured from the configured live app before publishing a final visual portfolio case.
 

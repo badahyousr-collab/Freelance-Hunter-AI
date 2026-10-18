@@ -7,7 +7,7 @@
 - **Bot**: aiogram; concise notifications and remote controls, using the same API/domain data.
 - **Database**: PostgreSQL as the source of truth.
 - **Queue**: Redis-backed workers for scheduled ingestion and AI processing.
-- **Sources**: independent adapters normalize marketplace listings and public Telegram-channel posts.
+- **Sources**: independent adapters normalize Freelancehunt API projects, FL.ru RSS listings, Freelance.ru public tasks, and public Telegram-channel posts.
 
 ## Core data boundaries
 

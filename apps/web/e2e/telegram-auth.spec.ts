@@ -110,6 +110,45 @@ test("source catalog can add a public Telegram job channel", async ({ page }) =>
 });
 
 
+test("source catalog can connect FL.ru and Freelance.ru as draft-only sources", async ({ page }) => {
+  await mockAuthenticatedAccount(page);
+  const savedSources: Array<Record<string, unknown>> = [];
+  const submitted: Array<Record<string, unknown>> = [];
+  await page.route("**/api/backend/sources/catalog", async route => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([
+      { source: "telegram", label: "Telegram", kind: "telegram", capabilities: ["read_public_posts"], setup_note: "Public channels." },
+      { source: "fl_ru", label: "FL.ru", kind: "marketplace", capabilities: ["read_public_projects", "generate_drafts", "manual_submission_only"], setup_note: "RSS-заказы." },
+      { source: "freelance_ru", label: "Freelance.ru", kind: "marketplace", capabilities: ["read_public_projects", "generate_drafts", "manual_submission_only"], setup_note: "Открытые задания." }
+    ]) });
+  });
+  await page.route("**/api/backend/integrations", async route => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([]) });
+  });
+  await page.route("**/api/backend/sources", async route => {
+    if (route.request().method() === "GET") {
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(savedSources) });
+      return;
+    }
+    const payload = route.request().postDataJSON() as Record<string, unknown>;
+    submitted.push(payload);
+    const item = { id: savedSources.length + 1, source: payload.source, identifier: payload.identifier, is_enabled: true, status: "configured", created_at: "2026-10-18T10:00:00Z", last_scan_at: null, last_error: null, last_discovered_count: 0 };
+    savedSources.push(item);
+    await route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify(item) });
+  });
+
+  await page.goto("/sources");
+  await expect(page.locator("article.sub-list-row").filter({ hasText: "FL.ru" })).toBeVisible();
+  await expect(page.locator("article.sub-list-row").filter({ hasText: "Freelance.ru" })).toBeVisible();
+  await expect(page.getByText(/Отправить его можно вручную/)).toBeVisible();
+  await page.locator("article.sub-list-row").filter({ hasText: "FL.ru" }).getByRole("button", { name: "Подключить" }).click();
+  await expect(page.getByText(/FL\.ru подключён для поиска новых заказов/)).toBeVisible();
+  await page.locator("article.sub-list-row").filter({ hasText: "Freelance.ru" }).getByRole("button", { name: "Подключить" }).click();
+  expect(submitted).toEqual([
+    { source: "fl_ru", identifier: "all", is_enabled: true },
+    { source: "freelance_ru", identifier: "public", is_enabled: true }
+  ]);
+});
+
 test("projects search sends filters to the API and renders returned projects", async ({ page }) => {
   await mockAuthenticatedAccount(page);
   let lastQuery: string | null = null;

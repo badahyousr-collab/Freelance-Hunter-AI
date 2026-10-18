@@ -157,7 +157,9 @@ async function linkedTelegramAccount(env: Env, telegramUserId: string): Promise<
 }
 
 const sourceCatalog = [
-  { source: "telegram", label: "Telegram", kind: "telegram", capabilities: ["read_public_posts"], setup_note: "Добавь публичный канал с заказами. Агент будет проверять новые публикации до 72 часов." }
+  { source: "telegram", label: "Telegram", kind: "telegram", capabilities: ["read_public_posts"], setup_note: "Добавь публичный канал с заказами. Агент будет проверять новые публикации до 72 часов." },
+  { source: "fl_ru", label: "FL.ru", kind: "marketplace", capabilities: ["read_public_projects", "generate_drafts", "manual_submission_only"], setup_note: "Публичная RSS-лента заказов FL.ru. AI подготовит черновик, отклик отправляется вручную на сайте биржи." },
+  { source: "freelance_ru", label: "Freelance.ru", kind: "marketplace", capabilities: ["read_public_projects", "generate_drafts", "manual_submission_only"], setup_note: "Открытые задания Freelance.ru. AI подготовит черновик, отклик отправляется вручную на сайте биржи." }
 ];
 
 const integrationCatalog = [
@@ -190,6 +192,7 @@ async function isRateLimited(request: Request, env: Env, endpoint: string, limit
 
 
 type TelegramPost = { postId: string; title: string; description: string; url: string; publishedAt: string | null };
+export type MarketplaceListing = { id: string; title: string; description: string; url: string; publishedAt: string };
 
 function decodeHtml(value: string): string {
   return value
@@ -199,8 +202,16 @@ function decodeHtml(value: string): string {
     .replace(/&nbsp;|&#160;/gi, " ")
     .replace(/&amp;/gi, "&").replace(/&quot;/gi, '"')
     .replace(/&#39;|&apos;/gi, "'").replace(/&lt;/gi, "<").replace(/&gt;/gi, ">")
-    .replace(/&#(\d+);/g, (_, n: string) => String.fromCodePoint(Number(n)))
-    .replace(/&#x([0-9a-f]+);/gi, (_, n: string) => String.fromCodePoint(parseInt(n, 16)))
+    .replace(/&#(\d+);/g, (entity, n: string) => {
+      const codePoint = Number(n);
+      return Number.isInteger(codePoint) && codePoint >= 0 && codePoint <= 0x10ffff && !(codePoint >= 0xd800 && codePoint <= 0xdfff)
+        ? String.fromCodePoint(codePoint) : entity;
+    })
+    .replace(/&#x([0-9a-f]+);/gi, (entity, n: string) => {
+      const codePoint = parseInt(n, 16);
+      return Number.isInteger(codePoint) && codePoint >= 0 && codePoint <= 0x10ffff && !(codePoint >= 0xd800 && codePoint <= 0xdfff)
+        ? String.fromCodePoint(codePoint) : entity;
+    })
     .replace(/[ \t]+/g, " ").replace(/ *\n */g, "\n").trim();
 }
 
@@ -233,6 +244,74 @@ function parseTelegramPreview(html: string, channel: string): TelegramPost[] {
     if (posts.length >= 50) break;
   }
   return posts;
+}
+
+function xmlField(xml: string, field: string): string {
+  const match = new RegExp("<" + field + "(?:\\s[^>]*)?>([\\s\\S]*?)</" + field + "\\s*>", "i").exec(xml);
+  if (!match) return "";
+  return decodeHtml(match[1].replace(/<!\[CDATA\[([\s\S]*?)\]\]>/gi, "$1")).trim();
+}
+
+function safeFlRuUrl(value: unknown): string | null {
+  try {
+    const parsed = new URL(String(value ?? ""));
+    if (!["fl.ru", "www.fl.ru"].includes(parsed.hostname) || parsed.username || parsed.password) return null;
+    parsed.protocol = "https:";
+    return parsed.toString();
+  } catch { return null; }
+}
+
+export function parseFlRuRss(xml: string): MarketplaceListing[] {
+  const listings: MarketplaceListing[] = [];
+  for (const match of xml.matchAll(/<item(?:\s[^>]*)?>([\s\S]*?)<\/item\s*>/gi)) {
+    const item = match[1];
+    const url = safeFlRuUrl(xmlField(item, "link"));
+    const title = xmlField(item, "title").slice(0, 180);
+    const description = xmlField(item, "description").slice(0, 12000);
+    const publishedAt = xmlField(item, "pubDate");
+    const stableId = url ? new URL(url).pathname.replace(/\/$/, "") : "";
+    if (!url || !stableId || !title || !isRecentListing(publishedAt)) continue;
+    listings.push({ id: stableId, title, description, url, publishedAt: new Date(Date.parse(publishedAt)).toISOString() });
+    if (listings.length >= 50) break;
+  }
+  return listings;
+}
+
+function freelanceRuPublishedAt(card: string): string | null {
+  const match = /task-card__foot-item[^>]*title=["'](\d{2})\.(\d{2})\.(\d{4})\s+(\d{2}):(\d{2})["']/i.exec(card);
+  if (!match) return null;
+  const [, day, month, year, hour, minute] = match;
+  if (Number(month) < 1 || Number(month) > 12 || Number(day) < 1 || Number(day) > 31 || Number(hour) > 23 || Number(minute) > 59) return null;
+  // Freelance.ru displays its task timestamps in Moscow time (UTC+03:00).
+  const timestamp = Date.UTC(Number(year), Number(month) - 1, Number(day), Number(hour) - 3, Number(minute));
+  const parsed = new Date(timestamp);
+  if (parsed.getUTCFullYear() !== Number(year) || parsed.getUTCMonth() !== Number(month) - 1 || parsed.getUTCDate() !== Number(day)) return null;
+  return parsed.toISOString();
+}
+
+export function parseFreelanceRuTasks(html: string): MarketplaceListing[] {
+  const listings: MarketplaceListing[] = [];
+  for (const match of html.matchAll(/<article\b[^>]*class=["'][^"']*\btask-card\b[^"']*["'][^>]*>([\s\S]*?)<\/article\s*>/gi)) {
+    const card = match[1];
+    if (!/task-badge--all/i.test(card)) continue;
+    const titleLink = /<a\b[^>]*class=["'][^"']*\btask-card__title-link\b[^"']*["'][^>]*href=["']\/task\/view\/(\d+)["'][^>]*>([\s\S]*?)<\/a>/i.exec(card);
+    const descriptionMatch = /<p\b[^>]*class=["'][^"']*\btask-card__desc\b[^"']*["'][^>]*>([\s\S]*?)<\/p>/i.exec(card);
+    const publishedAt = freelanceRuPublishedAt(card);
+    if (!titleLink || !publishedAt || !isRecentListing(publishedAt)) continue;
+    const title = decodeHtml(titleLink[2]).slice(0, 180);
+    const description = decodeHtml(descriptionMatch?.[1] ?? "").slice(0, 12000);
+    const categoryMatches = [...card.matchAll(/<span\b[^>]*class=["'][^"']*\btask-chip--(?:cat|skill)\b[^"']*["'][^>]*>([\s\S]*?)<\/span>/gi)];
+    const categories = [...new Set(categoryMatches.map((entry) => decodeHtml(entry[1])).filter(Boolean))];
+    const budgetMatch = /<div\b[^>]*class=["'][^"']*\btask-card__budget\b[^"']*["'][^>]*>([\s\S]*?)<\/div>/i.exec(card);
+    const enrichedDescription = [
+      categories.length ? "Категории: " + categories.join(", ") : "",
+      budgetMatch ? "Бюджет: " + decodeHtml(budgetMatch[1]) : "",
+      description
+    ].filter(Boolean).join("\n").slice(0, 12000);
+    listings.push({ id: titleLink[1], title, description: enrichedDescription, url: "https://freelance.ru/task/view/" + titleLink[1], publishedAt });
+    if (listings.length >= 50) break;
+  }
+  return listings;
 }
 
 export function detectedBudget(text: string): { amount: number; currency: string } | null {
@@ -511,6 +590,86 @@ async function scanFreelancehuntSource(env: Env, userId: string, source: any): P
 }
 
 
+async function saveMarketplaceListings(env: Env, userId: string, source: any, provider: "fl_ru" | "freelance_ru", listings: MarketplaceListing[]): Promise<number> {
+  const profileRow = await env.DB.prepare("SELECT skills,languages,payment_preferences,min_budget,currency,excluded_keywords FROM profiles WHERE user_id=?").bind(userId).first<any>() ?? {};
+  const profile: MatchProfile = {
+    skills: safeJson(profileRow.skills, []),
+    languages: safeJson(profileRow.languages, ["ru", "en"]),
+    payment_preferences: safeJson(profileRow.payment_preferences, []),
+    min_budget: profileRow.min_budget,
+    currency: profileRow.currency ?? "USD",
+    excluded_keywords: safeJson(profileRow.excluded_keywords, [])
+  };
+  let added = 0;
+  for (const listing of listings) {
+    const budget = detectedBudget(listing.title + "\n" + listing.description);
+    const language = /[а-яёіїєґ]/i.test(listing.title + "\n" + listing.description) ? "ru" : "en";
+    const evaluation = evaluateProjectMatch({ title: listing.title, description: listing.description, language, budget, profile });
+    const result = await env.DB.prepare(
+      "INSERT INTO projects " +
+      "(user_id,source,source_project_id,url,title,description,language,budget_min,budget_max,currency,published_at,match_score,match_reasons) " +
+      "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(user_id,source,source_project_id) DO NOTHING"
+    ).bind(userId, provider, listing.id, listing.url, listing.title, listing.description, language,
+      budget?.amount ?? null, budget?.amount ?? null, budget?.currency ?? null,
+      listing.publishedAt, evaluation.score, JSON.stringify(evaluation.reasons)).run();
+    added += Number(result.meta.changes ?? 0);
+  }
+  await env.DB.prepare("UPDATE sources SET status='active',last_scan_at=datetime('now'),last_error=NULL,last_discovered_count=? WHERE id=? AND user_id=?")
+    .bind(added, source.id, userId).run();
+  return added;
+}
+
+async function scanFlRuSource(env: Env, userId: string, source: any): Promise<{ added: number; error?: string }> {
+  const startedAt = Date.now();
+  try {
+    const upstream = await fetch("https://www.fl.ru/rss/all.xml", {
+      headers: { "Accept": "application/rss+xml, application/xml;q=0.9, text/xml;q=0.8", "User-Agent": "FreelanceHunterAI/1.0 (+https://freelance-hunter-ai.badahyousr.workers.dev)" },
+      cf: { cacheEverything: true, cacheTtl: 600 },
+      signal: AbortSignal.timeout(12000)
+    });
+    if (!upstream.ok) throw new Error("FL.ru RSS returned HTTP " + upstream.status + ".");
+    const xml = await upstream.text();
+    if (xml.length > 2_000_000 || !/<rss\b/i.test(xml)) throw new Error("FL.ru RSS feed did not return a valid project feed.");
+    const added = await saveMarketplaceListings(env, userId, source, "fl_ru", parseFlRuRss(xml));
+    console.info("fl_ru_source_scan_completed", { userId, sourceId: source.id, newProjects: added, durationMs: Date.now() - startedAt });
+    return { added };
+  } catch (error) {
+    const message = error instanceof Error ? error.message.slice(0, 500) : "FL.ru scan failed";
+    await env.DB.prepare("UPDATE sources SET status='error',last_scan_at=datetime('now'),last_error=? WHERE id=? AND user_id=?")
+      .bind(message, source.id, userId).run();
+    console.warn("fl_ru_source_scan_failed", { userId, sourceId: source.id, durationMs: Date.now() - startedAt, error: message });
+    return { added: 0, error: message };
+  }
+}
+
+async function scanFreelanceRuSource(env: Env, userId: string, source: any): Promise<{ added: number; error?: string }> {
+  const startedAt = Date.now();
+  try {
+    const upstream = await fetch("https://freelance.ru/task", {
+      headers: { "Accept": "text/html", "User-Agent": "FreelanceHunterAI/1.0 (+https://freelance-hunter-ai.badahyousr.workers.dev)" },
+      cf: { cacheEverything: true, cacheTtl: 600 },
+      signal: AbortSignal.timeout(12000)
+    });
+    if (!upstream.ok) throw new Error("Freelance.ru task feed returned HTTP " + upstream.status + ".");
+    const html = await upstream.text();
+    if (/verify (?:that )?you(?:'|’)re not a robot|enable javascript and then reload|captcha|robot verification/i.test(html.slice(0, 12000))) {
+      throw new Error("Freelance.ru requested a browser verification; automatic scanning stopped.");
+    }
+    if (html.length > 2_000_000 || !/<article\b[^>]*class=["'][^"']*\btask-card\b/i.test(html)) {
+      throw new Error("Freelance.ru public task feed changed or is unavailable; no automated access check was bypassed.");
+    }
+    const added = await saveMarketplaceListings(env, userId, source, "freelance_ru", parseFreelanceRuTasks(html));
+    console.info("freelance_ru_source_scan_completed", { userId, sourceId: source.id, newProjects: added, durationMs: Date.now() - startedAt });
+    return { added };
+  } catch (error) {
+    const message = error instanceof Error ? error.message.slice(0, 500) : "Freelance.ru scan failed";
+    await env.DB.prepare("UPDATE sources SET status='error',last_scan_at=datetime('now'),last_error=? WHERE id=? AND user_id=?")
+      .bind(message, source.id, userId).run();
+    console.warn("freelance_ru_source_scan_failed", { userId, sourceId: source.id, durationMs: Date.now() - startedAt, error: message });
+    return { added: 0, error: message };
+  }
+}
+
 async function autoSubmitFreelancehuntProposal(env: Env, userId: string, applicationId: number, project: any, profile: any): Promise<boolean> {
   const settings = await env.DB.prepare("SELECT auto_submit,daily_submission_limit FROM agent_settings WHERE user_id=?").bind(userId).first<any>();
   if (Number(settings?.auto_submit ?? 1) !== 1) return false;
@@ -638,13 +797,17 @@ async function autoSubmitPendingFreelancehuntDrafts(env: Env, userId: string): P
 }
 
 async function scanUserSources(env: Env, userId: string): Promise<{ scannedSources: number; newProjects: number; errors: string[]; draftedApplications: number }> {
-  const rows = await env.DB.prepare("SELECT * FROM sources WHERE user_id=? AND is_enabled=1 AND source IN ('telegram','freelancehunt') ORDER BY created_at ASC").bind(userId).all<any>();
+  const rows = await env.DB.prepare("SELECT * FROM sources WHERE user_id=? AND is_enabled=1 AND source IN ('telegram','freelancehunt','fl_ru','freelance_ru') ORDER BY created_at ASC").bind(userId).all<any>();
   let newProjects = 0;
   const errors: string[] = [];
   for (const source of rows.results ?? []) {
     const result = source.source === "telegram"
       ? await scanTelegramSource(env, userId, source)
-      : await scanFreelancehuntSource(env, userId, source);
+      : source.source === "freelancehunt"
+        ? await scanFreelancehuntSource(env, userId, source)
+        : source.source === "fl_ru"
+          ? await scanFlRuSource(env, userId, source)
+          : await scanFreelanceRuSource(env, userId, source);
     newProjects += result.added;
     if (result.error) errors.push(`${source.identifier || source.source}: ${result.error}`);
   }
@@ -657,7 +820,7 @@ async function runScheduledScan(env: Env): Promise<void> {
   const startedAt = Date.now();
   let rows: { results?: Array<{ user_id: string }> };
   try {
-    rows = await env.DB.prepare("SELECT DISTINCT s.user_id FROM sources s JOIN agent_settings a ON a.user_id=s.user_id WHERE s.is_enabled=1 AND s.source IN ('telegram','freelancehunt') AND a.is_enabled=1").all<any>();
+    rows = await env.DB.prepare("SELECT DISTINCT s.user_id FROM sources s JOIN agent_settings a ON a.user_id=s.user_id WHERE s.is_enabled=1 AND s.source IN ('telegram','freelancehunt','fl_ru','freelance_ru') AND a.is_enabled=1").all<any>();
   } catch (error) {
     const detail = error instanceof Error ? error.message : "Unknown database error";
     console.error("scheduled_scan_query_failed", { error: detail });
@@ -1266,8 +1429,11 @@ async function handle(request: Request, env: Env): Promise<Response> {
     const identifier = String(input.identifier ?? "").trim();
     if (!sourceCatalog.some(s => s.source === source)) return response(request, { detail: "Unsupported source type." }, 400);
     if (source === "telegram" && !/^@[a-zA-Z0-9_]{5,}$/.test(identifier)) return response(request, { detail: "Enter a public Telegram channel username such as @python_jobs." }, 400);
+    if (source === "fl_ru" && identifier !== "all") return response(request, { detail: "FL.ru uses the official public all-projects RSS feed." }, 400);
+    if (source === "freelance_ru" && identifier !== "public") return response(request, { detail: "Freelance.ru uses its public open-tasks feed." }, 400);
     try {
-      await env.DB.prepare("INSERT INTO sources (user_id,source,identifier,is_enabled,status) VALUES (?,?,?,?,?)").bind(uid, source, identifier, input.is_enabled === false ? 0 : 1, source === "telegram" ? "configured" : "pending_integration").run();
+      const status = ["telegram", "fl_ru", "freelance_ru"].includes(source) ? "configured" : "pending_integration";
+      await env.DB.prepare("INSERT INTO sources (user_id,source,identifier,is_enabled,status) VALUES (?,?,?,?,?)").bind(uid, source, identifier, input.is_enabled === false ? 0 : 1, status).run();
     } catch { return response(request, { detail: "This source is already configured." }, 409); }
     const row = await env.DB.prepare("SELECT * FROM sources WHERE user_id=? AND source=? AND identifier=?").bind(uid, source, identifier).first<any>();
     return response(request, row, 201);
