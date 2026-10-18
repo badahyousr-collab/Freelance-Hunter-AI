@@ -1,7 +1,7 @@
 # Marketplace integrations
 
 Sources and account integrations are separate:
-- A source is a discovery target. Public Telegram channels and Freelancehunt project listings are supported.
+- A source is a discovery target. Public Telegram channels, FL.ru RSS projects, Freelance.ru public tasks, and Freelancehunt projects are supported.
 - An integration is a per-user credential used to access a provider API.
 
 ## Freelancehunt official API
@@ -17,10 +17,32 @@ Sources and account integrations are separate:
 
 Freelancehunt API docs: https://apidocs.freelancehunt.com/
 
-## Other marketplaces
+## FL.ru public RSS
 
-- **Upwork:** the public API requires developer credentials and provider approval; access is not assumed. See https://www.upwork.com/developer/documentation/graphql/api/docs/index.html and the official access requirements.
-- **Kwork / FL.ru / Fiverr / Freelancer:** no provider adapter is enabled in this project yet. Do not enter account passwords, browser cookies, or personal Telegram session strings. These providers stay marked as pending until an official and permitted integration can be implemented and tested.
+1. Open **Источники** and choose **Подключить** next to FL.ru. No account password, cookie, or API token is needed.
+2. The Worker reads FL.ru's official public https://www.fl.ru/rss/all.xml feed, which FL.ru offers from its projects page through “Подписаться через RSS”.
+3. Listings without a valid publication date or older than 72 hours are skipped. Results are matched against the user's profile and can receive AI draft proposals.
+4. FL.ru proposal submission is manual. Open the listing on FL.ru and send the reviewed draft there; the app does not submit it.
+
+## Freelance.ru public tasks
+
+1. Open **Источники** and choose **Подключить** next to Freelance.ru. Only tasks publicly marked “Видно всем” are scanned.
+2. The Worker reads the public open-tasks page without account cookies and does not request private tasks or individual authenticated pages. It stops if a browser verification challenge appears.
+3. Listings without a readable publication time or older than 72 hours are skipped. Results are matched against the user's profile and can receive AI draft proposals.
+4. The Freelance.ru FAQ prohibits automated message mailing when replying to tasks. The app therefore never sends Freelance.ru proposals; review the generated draft and submit it manually on the marketplace.
+
+The public discovery adapters run on the existing 15-minute schedule when the AI agent is enabled. Their source status and recent scan errors appear on **Источники**. Both sources are discovery and draft only; only Freelancehunt has a verified proposal-submission API in this project.
+
+## Platforms that are not enabled
+
+- **Upwork:** a public API exists, but key requests are reviewed, and commercial API access is limited to selected partners with prior written permission. This project does not have that approval or credentials. See https://www.upwork.com/developer/documentation/graphql/api/docs/index.html and https://support.upwork.com/hc/en-us/sections/17976982721555-Upwork-API.
+- **Freelancer.com:** despite an official API, the User Agreement prohibits automated website/API access without express written permission and prohibits aggregating its listings with other websites' listings without that permission. It cannot be used as a source in this multi-marketplace dashboard without written permission. See https://www.freelancer.com/about/terms and https://www.freelancer.com/about/apiterms.
+- **Kwork:** its terms prohibit bots/robots and automated extraction or collection of marketplace data. See https://kwork.ru/terms_of_service.
+- **Fiverr:** its Terms of Service prohibit robots, scraping, or systematic collection of marketplace content and data. See https://www.fiverr.com/legal-portal/legal-terms/terms-of-service.
+- **Workana:** its Terms prohibit automated access and scripts for scraping or data mining. See https://www.workana.com/en/pages/view/terms.
+- **PeoplePerHour / Guru.com:** no official, permitted public API for searching freelance jobs was verified. Guru's published developer API is for Guru's knowledge product, not Guru.com project listings. These stay unavailable until an official method and its terms are confirmed.
+
+Never use account passwords, session cookies, private APIs, anti-bot workarounds, or CAPTCHA bypasses for these sources. A platform stays unavailable until an official permitted access path is confirmed and tested.
 
 ## Credential handling
 

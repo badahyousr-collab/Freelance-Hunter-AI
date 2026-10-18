@@ -169,10 +169,8 @@ def create_application_draft(
 
 _SOURCE_CATALOG = [
     SourceCatalogItem(source="telegram", label="Telegram channels", kind="telegram", capabilities=["discovery"], setup_note="Add a public channel username, for example @python_jobs. Telegram API session setup is required on the server."),
-    SourceCatalogItem(source="kwork", label="Kwork", kind="marketplace", capabilities=["discovery"], setup_note="Discovery adapter is not connected yet; source setup does not imply a working integration."),
-    SourceCatalogItem(source="fl_ru", label="FL.ru", kind="marketplace", capabilities=["discovery"], setup_note="Discovery adapter is not connected yet; source setup does not imply a working integration."),
-    SourceCatalogItem(source="freelancer", label="Freelancer.com", kind="marketplace", capabilities=["discovery"], setup_note="Discovery adapter is not connected yet; source setup does not imply a working integration."),
-    SourceCatalogItem(source="upwork", label="Upwork", kind="marketplace", capabilities=["discovery"], setup_note="Discovery adapter is not connected yet; source setup does not imply a working integration."),
+    SourceCatalogItem(source="fl_ru", label="FL.ru", kind="marketplace", capabilities=["discovery", "drafts", "manual_submission"], setup_note="Scans the public FL.ru RSS feed. AI drafts are available; proposals must be sent manually on FL.ru."),
+    SourceCatalogItem(source="freelance_ru", label="Freelance.ru", kind="marketplace", capabilities=["discovery", "drafts", "manual_submission"], setup_note="Scans public open tasks visible to all users. AI drafts are available; automated replies are not used."),
 ]
 
 

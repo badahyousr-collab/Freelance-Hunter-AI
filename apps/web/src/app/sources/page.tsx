@@ -54,12 +54,12 @@ export default function SourcesPage() {
 
   useEffect(() => { void load(); }, []);
 
-  async function saveSource(channel: string) {
+  async function saveSource(source: string, identifier: string) {
     const r = await fetch(API + "/sources", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       credentials: "include",
-      body: JSON.stringify({ source: "telegram", identifier: channel, is_enabled: true })
+      body: JSON.stringify({ source, identifier, is_enabled: true })
     });
     const d = await r.json();
     if (!r.ok) throw new Error(d.detail ?? "Не удалось добавить источник");
@@ -69,7 +69,7 @@ export default function SourcesPage() {
   async function add(e: FormEvent) {
     e.preventDefault(); setBusy(true); setMessage(""); setError("");
     try {
-      await saveSource(identifier.trim());
+      await saveSource("telegram", identifier.trim());
       setMessage("Источник добавлен. Агент проверит его автоматически при следующем запуске по расписанию, если он включён.");
       setIdentifier(""); await load();
     } catch (e) {
@@ -80,13 +80,28 @@ export default function SourcesPage() {
   async function addRecommended(channel: RecommendedChannel) {
     setAddingChannel(channel.handle); setError(""); setMessage("");
     try {
-      await saveSource("@" + channel.handle);
+      await saveSource("telegram", "@" + channel.handle);
       setMessage("Канал @" + channel.handle + " добавлен. Агент проверит его автоматически при следующем запуске по расписанию, если он включён.");
       await load();
     } catch (e) {
       const text = e instanceof Error ? e.message : "Не удалось добавить канал";
       if (/already configured|already exists|уже настроен|уже добавлен/i.test(text)) {
         setMessage("Канал @" + channel.handle + " уже есть в твоих источниках.");
+      } else setError(text);
+    } finally { setAddingChannel(""); }
+  }
+
+  async function addMarketplace(source: Catalog) {
+    setAddingChannel(source.source); setError(""); setMessage("");
+    try {
+      const identifier = source.source === "fl_ru" ? "all" : "public";
+      await saveSource(source.source, identifier);
+      setMessage(source.label + " подключён для поиска новых заказов. AI подготовит черновики, отправка откликов выполняется вручную на площадке.");
+      await load();
+    } catch (e) {
+      const text = e instanceof Error ? e.message : "Не удалось подключить биржу";
+      if (/already configured|already exists|уже настроен|уже добавлен/i.test(text)) {
+        setMessage(source.label + " уже есть в твоих источниках.");
       } else setError(text);
     } finally { setAddingChannel(""); }
   }
@@ -118,19 +133,38 @@ export default function SourcesPage() {
   const configuredHandles = new Set(items.filter(item => item.source === "telegram").map(item => item.identifier.replace(/^@/, "").toLowerCase()));
 
   const marketplace = integrations.find(item => item.provider === "freelancehunt");
+  const marketplaceSources = catalog.filter(item => item.kind === "marketplace");
+  const configuredMarketplaces = new Set(items.filter(item => item.source !== "telegram").map(item => item.source));
 
   return <WorkspacePage title="Источники" subtitle="Подключай фриланс-биржи и публичные Telegram-каналы для поиска заказов.">
     {error && <div className="sub-alert error" role="alert">{error}</div>}
     {message && <div className="sub-alert" role="status">{message}</div>}
 
     <section className="content-card">
-      <div className="panel-heading"><div><h2>Фриланс-биржи</h2><p>Подключение через официальный API площадки и личный токен.</p></div><Workflow size={18}/></div>
+      <div className="panel-heading"><div><h2>Фриланс-биржи</h2><p>Публичный поиск и подключение официального API, когда площадка его предоставляет.</p></div><Workflow size={18}/></div>
       <div className="sub-list">
         <article className="sub-list-row">
-          <div className="sub-list-main"><strong>Freelancehunt</strong><span>{marketplace?.status === "connected" ? "Подключён" : "Доступно подключение"} · поиск заказов и отправка откликов</span><span>На сайте Freelancehunt создай API-токен, затем вставь его в форме подключения. Пароль от аккаунта не нужен.</span></div>
+          <div className="sub-list-main"><strong>Freelancehunt</strong><span>{marketplace?.status === "connected" ? "Подключён" : "Доступно подключение"} · поиск заказов и отправка откликов через официальный API</span><span>На сайте Freelancehunt создай API-токен, затем вставь его в форме подключения. Пароль от аккаунта не нужен.</span></div>
           <div className="sub-actions"><Link className="sub-button primary" href="/integrations">{marketplace?.status === "connected" ? "Настройки" : "Как подключить"} ↗</Link></div>
         </article>
-        <p className="sub-muted">Сейчас доступна интеграция с Freelancehunt. Для других бирж подключение появится после проверки их API и правил отправки заявок.</p>
+        {marketplaceSources.map(source => {
+          const configured = configuredMarketplaces.has(source.source);
+          const externalUrl = source.source === "fl_ru" ? "https://www.fl.ru/projects/" : "https://freelance.ru/task";
+          return <article className="sub-list-row" key={source.source}>
+            <div className="sub-list-main">
+              <strong>{source.label}</strong>
+              <span>{configured ? "Подключён" : "Доступен для поиска"} · только публичные заказы и проекты не старше 72 часов</span>
+              <span>{source.setup_note}</span>
+            </div>
+            <div className="sub-actions">
+              <a className="sub-button" href={externalUrl} target="_blank" rel="noreferrer"><ExternalLink size={14}/>Открыть</a>
+              <button className="sub-button primary" type="button" disabled={configured || Boolean(addingChannel)} onClick={() => void addMarketplace(source)}>
+                <Plus size={14}/>{addingChannel === source.source ? "Подключаем…" : configured ? "Добавлен" : "Подключить"}
+              </button>
+            </div>
+          </article>;
+        })}
+        <p className="sub-muted">На FL.ru и Freelance.ru агент ищет заказы и готовит персональный черновик. Отправить его можно вручную на самой бирже; автоматическая отправка там отключена.</p>
       </div>
     </section>
 
@@ -174,7 +208,7 @@ export default function SourcesPage() {
 
     <section className="content-card">
       <div className="panel-heading"><div><h2>Мои источники</h2><p>{items.length} подключено · раскрывай список, чтобы проверить состояние и управлять источниками.</p></div><div className="sub-actions"><button className="sub-button" onClick={() => void load()} disabled={loading}><RefreshCw size={14}/>Обновить</button></div></div>
-      {loading ? <div className="sub-empty">Загружаем источники…</div> : items.length === 0 ? <div className="sub-empty"><Workflow size={25}/><strong>Источники пока не добавлены</strong><span>Подключи Freelancehunt или добавь Telegram-канал выше.</span></div> :
+      {loading ? <div className="sub-empty">Загружаем источники…</div> : items.length === 0 ? <div className="sub-empty"><Workflow size={25}/><strong>Источники пока не добавлены</strong><span>Подключи биржу или добавь Telegram-канал выше.</span></div> :
         <details className="source-group-accordion">
           <summary className="source-group-summary"><span><strong>Показать подключённые источники</strong><small>{items.length} · {items.filter(item => item.is_enabled).length} включено</small></span><ChevronDown className="source-chevron" size={16} aria-hidden="true"/></summary>
           <div className="source-group-content"><div className="sub-list source-accordion-list">{items.map(item => <details className="source-accordion" key={item.id}>

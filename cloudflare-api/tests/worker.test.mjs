@@ -1,8 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import worker, { detectedBudget, evaluateProjectMatch } from "../.test-dist/src/index.js";
+import worker, { detectedBudget, evaluateProjectMatch, parseFlRuRss, parseFreelanceRuTasks } from "../.test-dist/src/index.js";
 
-function fakeDb({ scan = false, freelancehuntScan = false, skills = ["python", "telegram"], telegramAuth = null, telegramCode = null, linkedAccount = null, application = null, project = null, profile = null, integration = null, notificationTarget = null, agentSettings = null, pendingDraftProjects = [], sourceCount = 0, insertChanges = 1, projectInserts = [], telegramIdentitySchema = true, notificationsSchema = true, submissionSchema = true, providerStatusSchema = true, applicationUpdateNotificationsSchema = true, autoSubmissionSchema = true } = {}) {
+function fakeDb({ scan = false, freelancehuntScan = false, marketplaceSource = null, skills = ["python", "telegram"], telegramAuth = null, telegramCode = null, linkedAccount = null, application = null, project = null, profile = null, integration = null, notificationTarget = null, agentSettings = null, pendingDraftProjects = [], sourceCount = 0, insertChanges = 1, projectInserts = [], telegramIdentitySchema = true, notificationsSchema = true, submissionSchema = true, providerStatusSchema = true, applicationUpdateNotificationsSchema = true, autoSubmissionSchema = true } = {}) {
   return {
     get storedIntegration() { return integration; },
     set storedIntegration(value) { integration = value; },
@@ -78,6 +78,7 @@ function fakeDb({ scan = false, freelancehuntScan = false, skills = ["python", "
           }
           if (sql.includes("LEFT JOIN applications a ON a.user_id=p.user_id AND a.project_id=p.id")) return { results: pendingDraftProjects };
           if (sql.includes("SELECT * FROM sources WHERE user_id=? AND is_enabled=1")) {
+            if (marketplaceSource) return { results: [{ id: 9, user_id: "user-1", identifier: marketplaceSource === "fl_ru" ? "all" : "public", is_enabled: 1, source: marketplaceSource }] };
             if (freelancehuntScan) return { results: [{ id: 8, user_id: "user-1", source: "freelancehunt", identifier: "", is_enabled: 1 }] };
             if (scan) return { results: [{ id: 7, user_id: "user-1", source: "telegram", identifier: "@python_jobs", is_enabled: 1 }] };
           }
@@ -1476,6 +1477,93 @@ test("source catalog advertises only implemented discovery adapters", async () =
   assert.equal(response.status, 200);
   const catalog = await response.json();
   const bySource = Object.fromEntries(catalog.map(item => [item.source, item]));
-  assert.deepEqual(Object.keys(bySource), ["telegram"]);
+  assert.deepEqual(Object.keys(bySource), ["telegram", "fl_ru", "freelance_ru"]);
   assert.ok(bySource.telegram.capabilities.includes("read_public_posts"));
+  for (const source of ["fl_ru", "freelance_ru"]) {
+    assert.ok(bySource[source].capabilities.includes("read_public_projects"));
+    assert.ok(bySource[source].capabilities.includes("manual_submission_only"));
+  }
+});
+
+test("FL.ru RSS parser keeps recent first-party project listings only", () => {
+  const published = new Date(Date.now() - 60_000).toUTCString();
+  const stale = new Date(Date.now() - 73 * 60 * 60 * 1000).toUTCString();
+  const xml = "<rss><channel>" +
+    "<item><title><![CDATA[Сделать Telegram-бота]]></title><link>https://www.fl.ru/projects/123456/</link><description><![CDATA[Нужен бот на Python, бюджет 10 000 ₽]]></description><pubDate>" + published + "</pubDate></item>" +
+    "<item><title>Устаревший заказ</title><link>https://www.fl.ru/projects/123457/</link><description>Заказ</description><pubDate>" + stale + "</pubDate></item>" +
+    "<item><title>Чужой домен</title><link>https://example.com/projects/123458/</link><description>Заказ</description><pubDate>" + published + "</pubDate></item>" +
+    "</channel></rss>";
+  const listings = parseFlRuRss(xml);
+  assert.equal(listings.length, 1);
+  assert.equal(listings[0].id, "/projects/123456");
+  assert.equal(listings[0].title, "Сделать Telegram-бота");
+  assert.match(listings[0].description, /бюджет 10 000 ₽/);
+});
+
+test("Freelance.ru parser keeps only recent tasks visible to everyone", () => {
+  const formatMoscow = date => [String(date.getUTCDate()).padStart(2, "0"), String(date.getUTCMonth() + 1).padStart(2, "0"), date.getUTCFullYear()].join(".") + " " + String(date.getUTCHours()).padStart(2, "0") + ":" + String(date.getUTCMinutes()).padStart(2, "0");
+  const recent = formatMoscow(new Date(Date.now() - 60_000 + 3 * 60 * 60 * 1000));
+  const stale = formatMoscow(new Date(Date.now() - 73 * 60 * 60 * 1000 + 3 * 60 * 60 * 1000));
+  const card = (id, date, badge = "task-badge--all") => "<article class=\"task-card\"><span class=\"" + badge + "\">Видно всем</span><a class=\"task-card__title-link\" href=\"/task/view/" + id + "\">Разработать Telegram-бота</a><p class=\"task-card__desc\">Нужен бот на Python</p><span class=\"task-chip--cat\">Разработка ботов</span><div class=\"task-card__budget\">10 000 ₽</div><span class=\"task-card__foot-item\" title=\"" + date + "\">Сегодня</span></article>";
+  const listings = parseFreelanceRuTasks(card(12, recent) + card(13, stale) + card(14, recent, "task-badge--premium"));
+  assert.equal(listings.length, 1);
+  assert.equal(listings[0].id, "12");
+  assert.equal(listings[0].url, "https://freelance.ru/task/view/12");
+  assert.match(listings[0].description, /Разработка ботов/);
+  assert.match(listings[0].description, /10 000 ₽/);
+});
+
+test("manual scan fetches and saves fresh FL.ru RSS projects", async () => {
+  const originalFetch = globalThis.fetch;
+  const published = new Date(Date.now() - 60_000).toUTCString();
+  const xml = "<rss><channel><item><title>Python Telegram bot</title><link>https://www.fl.ru/projects/334455/</link><description>Need a Python Telegram bot. Budget 500 USD.</description><pubDate>" + published + "</pubDate></item></channel></rss>";
+  globalThis.fetch = async input => {
+    assert.equal(String(input), "https://www.fl.ru/rss/all.xml");
+    return new Response(xml, { status: 200, headers: { "Content-Type": "application/rss+xml" } });
+  };
+  const projectInserts = [];
+  try {
+    const response = await worker.fetch(new Request("https://api.example/agent/scan", {
+      method: "POST",
+      headers: { Cookie: "fh_session=test-session-token", "Content-Type": "application/json" },
+      body: "{}"
+    }), { DB: fakeDb({ marketplaceSource: "fl_ru", projectInserts }) });
+    assert.equal(response.status, 200);
+    const result = await response.json();
+    assert.equal(result.scannedSources, 1);
+    assert.equal(result.newProjects, 1);
+    assert.deepEqual(result.errors, []);
+    assert.equal(projectInserts[0].values[1], "fl_ru");
+    assert.equal(projectInserts[0].values[3], "https://www.fl.ru/projects/334455/");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("manual scan fetches only public Freelance.ru tasks", async () => {
+  const originalFetch = globalThis.fetch;
+  const moscow = new Date(Date.now() - 60_000 + 3 * 60 * 60 * 1000);
+  const date = [String(moscow.getUTCDate()).padStart(2, "0"), String(moscow.getUTCMonth() + 1).padStart(2, "0"), moscow.getUTCFullYear()].join(".") + " " + String(moscow.getUTCHours()).padStart(2, "0") + ":" + String(moscow.getUTCMinutes()).padStart(2, "0");
+  const html = "<article class=\"task-card\"><span class=\"task-badge--all\">Видно всем</span><a class=\"task-card__title-link\" href=\"/task/view/556677\">Python Telegram bot</a><p class=\"task-card__desc\">Need a Python Telegram bot. Budget 500 USD.</p><span class=\"task-chip--cat\">Development</span><div class=\"task-card__budget\">500 USD</div><span class=\"task-card__foot-item\" title=\"" + date + "\">Today</span></article>";
+  globalThis.fetch = async input => {
+    assert.equal(String(input), "https://freelance.ru/task");
+    return new Response(html, { status: 200, headers: { "Content-Type": "text/html" } });
+  };
+  const projectInserts = [];
+  try {
+    const response = await worker.fetch(new Request("https://api.example/agent/scan", {
+      method: "POST",
+      headers: { Cookie: "fh_session=test-session-token", "Content-Type": "application/json" },
+      body: "{}"
+    }), { DB: fakeDb({ marketplaceSource: "freelance_ru", projectInserts }) });
+    assert.equal(response.status, 200);
+    const result = await response.json();
+    assert.equal(result.scannedSources, 1);
+    assert.equal(result.newProjects, 1);
+    assert.deepEqual(result.errors, []);
+    assert.equal(projectInserts[0].values[1], "freelance_ru");
+    assert.equal(projectInserts[0].values[3], "https://freelance.ru/task/view/556677");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
