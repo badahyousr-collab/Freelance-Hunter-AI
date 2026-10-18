@@ -6,11 +6,15 @@ import AccountMenu from "@/components/AccountMenu";
 import {
   Activity, ArrowDownRight, Bot, BriefcaseBusiness, ChartNoAxesCombined,
   CircleHelp, Clock3, Command, FileText, LayoutDashboard, LogOut,
-  Search, Send, Settings2, ShieldCheck, Sparkles, Workflow,
+  Search, Send, Settings2, Sparkles, Workflow,
 } from "lucide-react";
 
 const API = "/api/backend";
-type Summary = { projects_found: number; matched_projects: number; proposals_sent: number; client_replies: number };
+type Summary = {
+  projects_found: number; matched_projects: number; proposals_sent: number; client_replies: number;
+  telegram_channels_connected: number; marketplaces_connected: number; telegram_bots_connected: number;
+  agent_enabled: number; daily_activity: { day: string; projects_found: number }[];
+};
 type Project = {
   id: number; source: string; source_project_id: string; url: string; title: string;
   description: string; language: string | null; budget_min: number | null; budget_max: number | null;
@@ -20,10 +24,10 @@ type Project = {
 type CurrentUser = { identity_provider?: string; telegram_user_id?: string | null; created_at?: string | null; display_name?: string | null };
 
 const metricDefinitions = [
-  { key: "projects_found" as const, label: "Projects found", change: "All sources", icon: BriefcaseBusiness },
-  { key: "matched_projects" as const, label: "Matched projects", change: "Based on your profile", icon: Sparkles },
-  { key: "proposals_sent" as const, label: "Proposals sent", change: "Confirmed submissions", icon: Send },
-  { key: "client_replies" as const, label: "Client replies", change: "Tracked responses", icon: Activity },
+  { key: "projects_found" as const, label: "Найдено заказов", change: "Все источники", icon: BriefcaseBusiness },
+  { key: "matched_projects" as const, label: "Подходят по профилю", change: "По твоим навыкам", icon: Sparkles },
+  { key: "proposals_sent" as const, label: "Отправлено откликов", change: "Подтверждено биржей", icon: Send },
+  { key: "client_replies" as const, label: "Ответы заказчиков", change: "Отслеженные ответы", icon: Activity },
 ];
 
 function formatBudget(project: Project): string {
@@ -37,7 +41,6 @@ function formatBudget(project: Project): string {
 export default function DashboardPage() {
   const [summary, setSummary] = useState<Summary | null>(null);
   const [projects, setProjects] = useState<Project[]>([]);
-  const [enabledSources, setEnabledSources] = useState(0);
   const [lastScan, setLastScan] = useState<string | null>(null);
   const [user, setUser] = useState<CurrentUser | null>(null);
   const [loading, setLoading] = useState(true);
@@ -68,7 +71,7 @@ export default function DashboardPage() {
         const sourceData = Array.isArray(sourcesJson) ? sourcesJson as {is_enabled:boolean;last_scan_at:string|null}[] : [];
         const scanTimes = sourceData.map(source => source.last_scan_at).filter((value): value is string => Boolean(value));
         const latestScan = scanTimes.sort((a,b) => new Date(b).getTime() - new Date(a).getTime())[0] ?? null;
-        if (!cancelled) { setUser({ ...me, display_name: typeof profileJson.display_name === "string" ? profileJson.display_name : null }); setSummary(summaryData); setProjects(projectData); setEnabledSources(sourceData.filter(source => source.is_enabled).length); setLastScan(latestScan); }
+        if (!cancelled) { setUser({ ...me, display_name: typeof profileJson.display_name === "string" ? profileJson.display_name : null }); setSummary(summaryData); setProjects(projectData); setLastScan(latestScan); }
       } catch (err) {
         if (!cancelled) setError(err instanceof Error ? err.message : "Could not connect to the API");
       } finally { if (!cancelled) setLoading(false); }
@@ -115,10 +118,10 @@ export default function DashboardPage() {
         </section>
 
         <section className="main-grid">
-          <article className="panel activity-panel"><div className="panel-heading"><div><h2>Search activity</h2><p>Project discovery history</p></div><span className="select-button"><Clock3 size={14} /> All time</span></div>
-            <div className="empty-chart"><div className="empty-chart-icon"><ChartNoAxesCombined size={24} /></div><strong>{loading ? "Loading activity…" : summary?.projects_found ? "Activity will appear here" : "Your first scan starts here"}</strong><p>Once sources are connected and scans run, this panel will show real discovery activity.</p></div>
+          <article className="panel activity-panel"><div className="panel-heading"><div><h2>Заказы за неделю</h2><p>Новые публикации по дням</p></div><span className="select-button"><Clock3 size={14} /> 7 дней</span></div>
+            {(() => { const days = summary?.daily_activity ?? []; const maximum = Math.max(1, ...days.map(day => day.projects_found)); const total = days.reduce((sum, day) => sum + day.projects_found, 0); return <><div className="chart-summary"><strong>{loading ? "—" : total}<span> заказов</span></strong></div><div className="activity-chart" role="img" aria-label={`Найдено заказов за неделю: ${total}`}>{days.map(day => <div className="activity-chart-column" key={day.day} title={`${day.projects_found} заказов`}><span style={{ height: `${Math.max(day.projects_found ? 8 : 2, day.projects_found / maximum * 100)}%` }} /><small>{new Date(`${day.day}T00:00:00`).toLocaleDateString("ru-RU", { weekday: "short" })}</small></div>)}</div></>; })()}
           </article>
-          <article className="panel agent-panel"><div className="panel-heading"><div><h2>AI Agent</h2><p>Automation status</p></div><span className="status-pill pending"><i />Setup pending</span></div><div className="agent-orb"><div className="orb-ring"><div className="orb-core"><Bot size={28} /></div></div><span className="orb-spark spark-one">✦</span><span className="orb-spark spark-two">✧</span></div><h3>Ready when you are</h3><p className="agent-description">Connect your first sources and configure your matching preferences to start discovering projects.</p><div className="agent-stats"><div><span>Enabled source configs</span><strong>{enabledSources}</strong></div><div><span>Last scan</span><strong>{lastScan ? new Date(lastScan).toLocaleString() : "Not started"}</strong></div></div><Link className="secondary-button button-link" href="/agent"><Settings2 size={16} />Configure agent</Link></article>
+          <article className="panel agent-panel"><div className="panel-heading"><div><h2>AI-агент</h2><p>Состояние поиска</p></div><span className={"status-pill " + (summary?.agent_enabled ? "" : "pending")}><i />{summary?.agent_enabled ? "Работает" : "Приостановлен"}</span></div><div className="agent-orb"><div className="orb-ring"><div className="orb-core"><Bot size={28} /></div></div><span className="orb-spark spark-one">✦</span><span className="orb-spark spark-two">✧</span></div><p className="agent-description">Подключённые источники</p><div className="agent-stats source-counts"><div><span>Биржи</span><strong>{loading ? "—" : summary?.marketplaces_connected ?? 0}</strong></div><div><span>TG-каналы</span><strong>{loading ? "—" : summary?.telegram_channels_connected ?? 0}</strong></div><div><span>TG-боты</span><strong>{loading ? "—" : summary?.telegram_bots_connected ?? 0}</strong></div></div><p className="last-scan">{lastScan ? `Последний поиск: ${new Date(lastScan).toLocaleString("ru-RU")}` : "Поиск ещё не запускался"}</p><Link className="secondary-button button-link" href="/agent"><Settings2 size={16} />Настроить агента</Link></article>
         </section>
 
         <section className="panel projects-panel"><div className="panel-heading"><div><h2>Recent projects</h2><p>Latest projects collected from your sources</p></div><Link className="text-link" href="/projects">View all projects <ArrowDownRight size={15} /></Link></div>
@@ -127,7 +130,6 @@ export default function DashboardPage() {
             {!loading && projects.length === 0 && <tr><td colSpan={6}><div className="table-empty"><FileText size={22} /><strong>No projects yet</strong><span>Connect a marketplace or Telegram channel to begin collecting listings.</span><Link href="/sources">Connect sources <ArrowDownRight size={14} /></Link></div></td></tr>}
           </tbody></table></div>
         </section>
-        <section className="panel recent-panel"><div className="panel-heading"><div><h2>Recent activity</h2><p>Confirmed events from your workspace</p></div></div><div className="activity-list"><div className="activity-row"><span className="activity-icon"><ShieldCheck size={16} /></span><span className="activity-title">Account workspace loaded</span><span className="activity-time">{loading ? "Loading" : "Just now"}</span></div><div className="activity-row"><span className="activity-icon"><Workflow size={16} /></span><span className="activity-title">Source ingestion will appear here after setup</span><span className="activity-time">—</span></div></div></section>
         <footer>Pipisso <span>·</span> Freelance Hunter — one ecosystem, connected systems</footer>
       </section>
     </main>

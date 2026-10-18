@@ -9,11 +9,7 @@ type Catalog = { provider: string; label: string; status: string; setup_note: st
 type Integration = { id: number; provider: string; label: string; status: string; created_at: string };
 
 const publicUrls: Record<string, string> = {
-  upwork: "https://www.upwork.com/",
-  freelancer: "https://www.freelancer.com/",
-  kwork: "https://kwork.ru/",
   freelancehunt: "https://freelancehunt.com/",
-  fiverr: "https://www.fiverr.com/",
 };
 
 export default function IntegrationsPage() {
@@ -120,18 +116,14 @@ export default function IntegrationsPage() {
   return (
     <WorkspacePage
       title="Подключения"
-      subtitle="Freelancehunt подключается через официальный API-токен. Остальные биржи остаются недоступными, пока их разрешённые способы подключения не проверены."
+      subtitle="Подключи Freelancehunt, чтобы находить заказы и отправлять отклики."
     >
       {error && <div className="sub-alert error" role="alert">{error}</div>}
       {message && <div className="sub-alert" role="status">{message}</div>}
 
       <section className="content-card">
         <h2><Plug size={16} style={{ verticalAlign: "middle", marginRight: 8 }} />Биржи фриланса</h2>
-        <p>
-          Список показывает готовность интеграций, а не имитирует подключение. Для каждой площадки
-          отдельно реализуем официальный OAuth или другой разрешённый способ авторизации, затем
-          проверим получение заказов и доступность отправки откликов.
-        </p>
+        <p>Токен проверяется перед сохранением. Пароль от аккаунта не нужен.</p>
         {loading ? (
           <div className="sub-empty">Загружаем список площадок…</div>
         ) : (
@@ -153,7 +145,7 @@ export default function IntegrationsPage() {
                       </div>
                     )}
                   </div>
-                  <span className="sub-badge pending">
+                  <span className={"sub-badge " + (integration?.status === "connected" ? "" : "pending")}>
                     {integration?.status === "connected" ? "Подключено" : integration?.status === "reauth_required" ? "Нужно переподключить" : entry.provider === "freelancehunt" ? "Доступно через официальный API" : "Интеграция в разработке"}
                   </span>
                   {externalUrl && (

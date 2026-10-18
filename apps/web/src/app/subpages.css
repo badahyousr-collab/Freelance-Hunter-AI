@@ -50,3 +50,24 @@
 .link-code-box span { color: #9ca4b7; font-size: 10px; line-height: 1.6; }
 .link-code-box span strong { color: #e5ddff; }
 .sub-actions { display: flex; gap: 7px; align-items: center; }
+
+/* Compact, aligned source accordions */
+.source-accordion-list { gap: 8px; }
+.source-accordion { min-width: 0; border: 1px solid #2b3040; border-radius: 10px; background: #12151d; overflow: hidden; }
+.source-accordion-summary { display: grid; grid-template-columns: minmax(0,1fr) 100px 18px; align-items: center; gap: 12px; padding: 13px 14px; cursor: pointer; list-style: none; }
+.source-accordion-summary::-webkit-details-marker { display: none; }
+.source-accordion-summary::marker { content: ""; }
+.source-summary-title { min-width: 0; }
+.source-summary-title strong { display: block; font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; }
+.source-summary-title span { display: block; margin-top: 3px; color: var(--muted); font-size: 10px; line-height: 1.4; }
+.source-status-column { width: 100px; justify-content: center; text-align: center; }
+.source-chevron { color: var(--muted); transition: transform .15s ease; }
+.source-accordion[open] .source-chevron { transform: rotate(180deg); }
+.source-accordion-content { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 12px 14px 14px; border-top: 1px solid #292e3a; }
+.source-details { min-width: 0; display: grid; gap: 5px; color: var(--muted); font-size: 10px; line-height: 1.5; overflow-wrap: anywhere; }
+.source-error-text { color: #ffb7c4; }
+@media (max-width: 480px) {
+  .source-accordion-summary { grid-template-columns: minmax(0,1fr) 74px 16px; gap: 7px; padding: 12px 10px; }
+  .source-status-column { width: 74px; font-size: 8px; padding: 5px 3px; }
+  .source-accordion-content { align-items: flex-start; flex-direction: column; padding: 12px 10px; }
+}

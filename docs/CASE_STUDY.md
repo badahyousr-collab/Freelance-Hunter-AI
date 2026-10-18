@@ -17,7 +17,7 @@ Freelance requests are scattered across channels and platforms. Manually reviewi
 - Explainable matching scores with language, budget, excluded-keyword, unpaid-work, risk, and complexity signals.
 - RU/EN proposal drafting through an OpenAI-compatible endpoint. Prompts treat listing text as untrusted and instruct the model not to invent experience or credentials.
 - Editable proposal drafts and an awaiting-confirmation workflow. The application is never marked as sent without a verified provider result.
-- Telegram account linking, statistics, project listing, pause/resume commands, and opt-out new-project notifications.
+- Telegram account linking, statistics, recent project summaries, and pause/resume commands. Project counts and links are available through bot commands; separate messages for each new listing are disabled.
 - Automated CI for backend tests and migrations, frontend lint/build and Playwright smoke tests, Cloudflare Worker typecheck/tests, plus CodeQL and Dependabot configuration.
 
 ## Architecture
@@ -32,7 +32,7 @@ Freelance requests are scattered across channels and platforms. Manually reviewi
 - Production D1 migrations, the `INTEGRATION_ENCRYPTION_KEY` Worker secret, and Telegram secrets still require verification in the target Cloudflare account.
 - Live Telegram and Freelancehunt scans have not been confirmed by CI; CI uses mocked network responses.
 - Real AI-provider quality testing needs an intentionally configured provider key and representative anonymized listings. A real provider may charge for API usage.
-- Freelancehunt discovery and explicitly confirmed bid submission are implemented through the official API, with encrypted per-user tokens and provider-confirmed bid IDs. Live account verification still requires a real user-owned token. Kwork, Upwork, FL.ru, Fiverr, and Freelancer adapters remain pending; Upwork API access requires provider credentials/approval. Client-reply synchronization is not implemented.
+- Freelancehunt discovery and optional automatic bid submission are implemented through the official API, with encrypted per-user tokens, a daily cap, and provider-confirmed bid IDs. Live account verification still requires a real user-owned token. Kwork, Upwork, FL.ru, Fiverr, and Freelancer adapters are unavailable. Client message-thread synchronization is not implemented.
 - No real production throughput, latency, success-rate, or cost measurements are claimed here.
 - Screenshots and a demo recording must be captured from the configured live app before publishing a final visual portfolio case.
 

@@ -49,7 +49,7 @@ def main() -> None:
         db.executescript(migration.read_text(encoding="utf-8"))
 
     settings_columns = {row[1] for row in db.execute("PRAGMA table_info(agent_settings)")}
-    assert "notify_new_projects" in settings_columns
+    assert {"notify_new_projects", "auto_submit", "daily_submission_limit"} <= settings_columns
     application_columns = {row[1] for row in db.execute("PRAGMA table_info(applications)")}
     assert {"provider_submission_id", "submission_error"} <= application_columns
     application_indexes = {row[1] for row in db.execute("PRAGMA index_list(applications)")}
@@ -60,7 +60,7 @@ def main() -> None:
     )
     db.execute("INSERT INTO profiles (user_id) VALUES ('user-3')")
     db.execute("INSERT INTO agent_settings (user_id) VALUES ('user-3')")
-    assert db.execute("SELECT notify_new_projects FROM agent_settings WHERE user_id='user-3'").fetchone()[0] == 1
+    assert db.execute("SELECT notify_new_projects,auto_submit,daily_submission_limit FROM agent_settings WHERE user_id='user-3'").fetchone() == (1, 1, 10)
 
     try:
         db.execute("INSERT INTO telegram_links (user_id,telegram_user_id) VALUES (?,?)", ("user-3", "12345"))
@@ -79,7 +79,7 @@ def main() -> None:
     )
     assert db.execute("SELECT user_id FROM telegram_auth_codes WHERE code_hash='auth-code-hash'").fetchone()[0] == "user-3"
 
-    print(f"Validated {len(MIGRATIONS)} D1 migrations, Telegram-only identity, notification defaults, provider submission tracking, auth codes, uniqueness, and cascading session deletion.")
+    print(f"Validated {len(MIGRATIONS)} D1 migrations, Telegram-only identity, notification defaults, auto-submission defaults, provider submission tracking, auth codes, uniqueness, and cascading session deletion.")
 
 
 if __name__ == "__main__":

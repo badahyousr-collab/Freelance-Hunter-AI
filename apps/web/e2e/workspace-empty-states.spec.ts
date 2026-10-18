@@ -23,10 +23,10 @@ test("projects empty state explains the next action and links to source setup", 
 
   await page.goto("/projects");
 
-  await expect(page.getByRole("heading", { name: "Collected opportunities" })).toBeVisible();
-  await expect(page.getByText("No projects found yet")).toBeVisible();
-  await expect(page.getByRole("link", { name: "Configure sources" })).toHaveAttribute("href", "/sources");
-  await expect(page.getByText(/Configuring a source does not itself mean its integration is already active/i)).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Найденные заказы" })).toBeVisible();
+  await expect(page.getByText("Подходящих заказов пока нет")).toBeVisible();
+  await expect(page.getByRole("link", { name: "Подключить источники" })).toHaveAttribute("href", "/sources");
+  await expect(page.getByText(/публикации не старше 72 часов/i)).toBeVisible();
 });
 
 test("projects page keeps the search controls usable after an API error and shows a recoverable message", async ({ page }) => {
@@ -49,6 +49,6 @@ test("projects page keeps the search controls usable after an API error and show
   await expect(page.getByText("API temporarily unavailable.")).toBeVisible();
   await page.getByLabel("Search projects").fill("Telegram bot");
   await page.getByRole("button", { name: /Apply filters/i }).click();
-  await expect(page.getByText("No projects found yet")).toBeVisible();
+  await expect(page.getByText("Подходящих заказов пока нет")).toBeVisible();
   expect(requestCount).toBeGreaterThanOrEqual(2);
 });
