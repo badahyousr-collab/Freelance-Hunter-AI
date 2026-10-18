@@ -64,6 +64,9 @@ test("source catalog can add a public Telegram job channel", async ({ page }) =>
       }])
     });
   });
+  await page.route("**/api/backend/integrations", async route => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([]) });
+  });
   await page.route("**/api/backend/sources", async route => {
     if (route.request().method() === "GET") {
       await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(savedSources) });
@@ -94,10 +97,12 @@ test("source catalog can add a public Telegram job channel", async ({ page }) =>
   });
 
   await page.goto("/sources");
+  await page.locator(".source-group-summary").filter({ hasText: "Подборка Telegram-каналов" }).click();
   const channel = page.locator(".sub-list-row").filter({ hasText: "Вакансии для разработчиков ботов" });
   await expect(channel.getByRole("button", { name: "Добавить" })).toBeVisible();
   await channel.getByRole("button", { name: "Добавить" }).click();
   await expect(page.getByText(/Канал @job_for_bots добавлен/i)).toBeVisible();
+  await page.locator(".source-group-summary").filter({ hasText: "Показать подключённые источники" }).click();
   await expect(page.locator(".sub-list-row").filter({ hasText: "@job_for_bots" }).getByText(/Добавлен|Включён/).first()).toBeVisible();
   await page.goto("/agent");
   await page.getByRole("button", { name: "Включить агента" }).click();
@@ -162,19 +167,21 @@ test("settings save action sits below the payment fields and persists preference
   await expect(page.getByText("Email", { exact: true })).toHaveCount(0);
   await expect(page.locator(".account-detail").filter({ hasText: "Способ входа" }).locator("strong")).toHaveText("Telegram");
   await page.getByRole("button", { name: "Открыть аккаунт" }).click();
-  const paymentInput = page.getByLabel("Способы выплат");
+  const paymentOptions = page.getByRole("group", { name: "Предпочтительные способы оплаты" });
   const saveButton = page.getByRole("button", { name: "Сохранить настройки" });
-  await expect(paymentInput).toBeVisible();
+  await expect(paymentOptions).toBeVisible();
   await expect(saveButton).toBeVisible();
-  const paymentBox = await paymentInput.boundingBox();
+  const paymentBox = await paymentOptions.boundingBox();
   const saveBox = await saveButton.boundingBox();
   expect(paymentBox).not.toBeNull();
   expect(saveBox).not.toBeNull();
   expect(saveBox!.y).toBeGreaterThan(paymentBox!.y + paymentBox!.height);
-  await page.getByLabel("Skills (comma-separated)").fill("Python, FastAPI");
+  await page.getByLabel("Криптовалюта").check();
+  await page.getByLabel("Навыки и специализация").fill("Python, FastAPI");
   await saveButton.click();
   await expect(page.getByText(/Настройки сохранены/i)).toBeVisible();
   expect(savedProfile.skills).toEqual(["Python", "FastAPI"]);
+  expect(savedProfile.payment_preferences).toEqual(["crypto"]);
 });
 
 
