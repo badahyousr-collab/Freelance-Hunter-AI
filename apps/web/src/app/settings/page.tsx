@@ -102,7 +102,7 @@ export default function SettingsPage() {
     {loading && <div className="sub-muted">Загружаем профиль…</div>}
     <section className="content-card">
       <h2>Как агент отбирает проекты</h2>
-      <p>Сначала применяются обязательные фильтры. Затем объявления с совпадением по навыкам получают более высокий рейтинг. Навыки не нужно вводить как точные поисковые запросы.</p>
+      <p>Сначала применяются обязательные фильтры. Навыки не отправляются биржам как поисковый запрос: сейчас агент проверяет, встречается ли указанная фраза в названии или описании объявления. Синонимы автоматически не распознаются, поэтому укажи распространённые варианты через запятую.</p>
       <div className="sub-list">
         <div className="sub-list-row"><div className="sub-list-main"><strong>Навыки</strong><span>{profile.skills.length ? profile.skills.join(", ") : "Пока не указаны"}</span></div></div>
         <div className="sub-list-row"><div className="sub-list-main"><strong>Языки</strong><span>{profile.languages.join(", ") || "Не указаны"}</span></div></div>
