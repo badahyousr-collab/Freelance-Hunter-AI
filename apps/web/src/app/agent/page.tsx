@@ -6,12 +6,8 @@ import { Bot, Pause, Play, Settings2, Workflow } from "lucide-react";
 import WorkspacePage from "@/components/WorkspacePage";
 
 const API = "/api/backend";
-type Profile = { skills: string[]; languages: string[]; payment_preferences: string[]; min_budget: number | null };
-type Source = { is_enabled: boolean; source: string };
 type AgentSettings = { enabled: boolean; auto_draft?: boolean; auto_submit?: boolean; daily_submission_limit?: number; telegram_linked: boolean; notify_application_updates?: boolean };
 export default function AgentPage() {
-  const [profile, setProfile] = useState<Profile | null>(null);
-  const [sources, setSources] = useState(0);
   const [agent, setAgent] = useState<AgentSettings | null>(null);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
@@ -21,17 +17,11 @@ export default function AgentPage() {
     setError("");
     try {
       const rs = await Promise.all([
-        fetch(API + "/profile", { credentials: "include" }),
-        fetch(API + "/sources", { credentials: "include" }),
         fetch(API + "/agent/settings", { credentials: "include" })
       ]);
       if (rs.some(r => r.status === 401)) { window.location.assign("/login"); return; }
-      const p = await rs[0].json();
-      const s = await rs[1].json();
-      const a = await rs[2].json();
+      const a = await rs[0].json();
       if (rs.some(response => !response.ok)) throw new Error("Не удалось загрузить состояние AI-агента");
-      setProfile(p);
-      setSources(s.filter((item: Source) => item.is_enabled && (item.source === "telegram" || item.source === "freelancehunt")).length);
       setAgent(a);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Ошибка соединения с API");
