@@ -63,6 +63,15 @@
 .chart:after { content: ""; position: absolute; left: 28px; right: 0; top: 0; bottom: 0; pointer-events: none; background: repeating-linear-gradient(to bottom,transparent 0,transparent 36px,#282d3a 37px,#282d3a 38px); z-index: 0; opacity: .6; }
 .chart svg { z-index: 1; }
 .chart-days { display: flex; justify-content: space-between; margin: 8px 0 0 28px; color: #70788b; font-size: 9px; }
+.activity-chart { height: 142px; display: flex; align-items: flex-end; justify-content: space-around; gap: 8px; padding: 10px 3px 0; border-bottom: 1px solid #303443; background: repeating-linear-gradient(to bottom,transparent 0,transparent 34px,#282d3a 35px,#282d3a 36px); }
+.activity-chart-column { height: 100%; min-width: 0; flex: 1; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; gap: 7px; }
+.activity-chart-column span { width: min(100%,32px); min-height: 3px; border-radius: 5px 5px 2px 2px; background: linear-gradient(180deg,#b29bff,#7569dd); box-shadow: 0 0 12px #8c73ff25; }
+.activity-chart-column small { height: 14px; color: #81899b; font-size: 9px; }
+.source-counts { grid-template-columns: repeat(3,minmax(0,1fr)); gap: 6px; }
+.source-counts div + div { border-left: 1px solid var(--border); padding-left: 9px; }
+.source-counts span { font-size: 8px; }
+.source-counts strong { font-size: 14px; }
+.last-scan { color: var(--muted); font-size: 9px; text-align: center; margin: -4px 0 12px; }
 .agent-panel { display: flex; flex-direction: column; }
 .status-pill { display: inline-flex; align-items: center; gap: 6px; color: #7bd9b2; background: #1a332b; border: 1px solid #2c5746; border-radius: 30px; padding: 6px 9px; font-size: 9px; }
 .agent-orb { position: relative; height: 106px; display: grid; place-items: center; margin-top: 5px; }

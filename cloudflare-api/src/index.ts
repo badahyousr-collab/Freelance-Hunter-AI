@@ -157,20 +157,11 @@ async function linkedTelegramAccount(env: Env, telegramUserId: string): Promise<
 }
 
 const sourceCatalog = [
-  { source: "telegram", label: "Public Telegram channels", kind: "telegram", capabilities: ["read_public_posts"], setup_note: "Public channel previews are scanned on demand and every 15 minutes while the AI agent is enabled. Private channels are not supported." },
-  { source: "kwork", label: "Kwork", kind: "marketplace", capabilities: [], setup_note: "Pending integration. Project discovery is disabled until an official, permitted adapter passes integration tests." },
-  { source: "freelancehunt", label: "Freelancehunt", kind: "marketplace", capabilities: ["discover_projects", "submit_bid"], setup_note: "Uses the official API. Connect a Freelancehunt API token in Integrations; discovery and bid submission require a verified token." },
-  { source: "upwork", label: "Upwork", kind: "marketplace", capabilities: [], setup_note: "Pending provider approval and integration. Project discovery is disabled until access and an adapter are verified." },
-  { source: "fl_ru", label: "FL.ru", kind: "marketplace", capabilities: [], setup_note: "Pending integration. Project discovery is disabled until an official, permitted adapter passes integration tests." }
+  { source: "telegram", label: "Telegram", kind: "telegram", capabilities: ["read_public_posts"], setup_note: "Добавь публичный канал с заказами. Агент будет проверять новые публикации до 72 часов." }
 ];
 
 const integrationCatalog = [
-  { provider: "upwork", label: "Upwork", description: "Marketplace account integration is not implemented yet.", setup_note: "Credential storage and account adapter are not enabled yet." },
-  { provider: "kwork", label: "Kwork", description: "Marketplace account integration is not implemented yet.", setup_note: "Credential storage and account adapter are not enabled yet." },
-  { provider: "freelancehunt", label: "Freelancehunt", description: "Official API integration for project discovery and explicitly confirmed bids.", setup_note: "Create an API token in your Freelancehunt account. The token is validated and encrypted before storage." },
-  { provider: "fl_ru", label: "FL.ru", description: "Marketplace account integration is not implemented yet.", setup_note: "Credential storage and account adapter are not enabled yet." },
-  { provider: "telegram", label: "Telegram bot", description: "Link the Telegram bot to control the agent and view projects.", setup_note: "Cloudflare Worker webhook mode needs TELEGRAM_BOT_TOKEN, TELEGRAM_WEBHOOK_SECRET, and BOT_API_SECRET Worker secrets." },
-  { provider: "llm", label: "AI provider", description: "AI drafting integration is not connected yet.", setup_note: "Configure AI_API_KEY, AI_MODEL, and optionally AI_API_BASE_URL as Worker secrets/variables to generate profile-grounded proposal drafts." }
+  { provider: "freelancehunt", label: "Freelancehunt", description: "Подключение для поиска заказов и отправки откликов.", setup_note: "Вставь API-токен Freelancehunt. Он проверяется и хранится зашифрованным." }
 ];
 
 async function isRateLimitedIdentity(env: Env, endpoint: string, identity: string, limit: number): Promise<boolean> {
@@ -213,7 +204,7 @@ function decodeHtml(value: string): string {
     .replace(/[ \t]+/g, " ").replace(/ *\n */g, "\n").trim();
 }
 
-const MAX_LISTING_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+const MAX_LISTING_AGE_MS = 72 * 60 * 60 * 1000;
 
 function isRecentListing(publishedAt: unknown, now = Date.now()): boolean {
   if (typeof publishedAt !== "string" || !publishedAt.trim()) return false;
@@ -580,7 +571,7 @@ async function autoDraftPendingProjects(env: Env, userId: string): Promise<numbe
   const rows = await env.DB.prepare(`SELECT p.id,p.source,p.source_project_id,p.url,p.title,p.description,p.language,p.budget_min,p.budget_max,p.currency,p.payment_method
     FROM projects p LEFT JOIN applications a ON a.user_id=p.user_id AND a.project_id=p.id
     WHERE p.user_id=? AND a.id IS NULL AND p.match_score>=?
-      AND julianday(p.published_at) BETWEEN julianday('now','-7 days') AND julianday('now','+5 minutes')
+      AND julianday(p.published_at) BETWEEN julianday('now','-3 days') AND julianday('now','+5 minutes')
     ORDER BY p.match_score DESC,p.published_at DESC LIMIT 10`).bind(userId, threshold).all<any>();
   if (!rows.results?.length) return 0;
   const profile = await env.DB.prepare("SELECT display_name,skills,languages,payment_preferences,min_budget,currency FROM profiles WHERE user_id=?").bind(userId).first<any>() ?? {};
@@ -637,7 +628,7 @@ async function autoSubmitPendingFreelancehuntDrafts(env: Env, userId: string): P
   if (Number(settings?.is_enabled) !== 1 || Number(settings?.auto_submit ?? 1) !== 1) return 0;
   if (!env.INTEGRATION_ENCRYPTION_KEY || env.INTEGRATION_ENCRYPTION_KEY.trim().length < 32) return 0;
   const threshold = Math.max(0, Math.min(100, Number(settings.min_match_score ?? 60)));
-  const rows = await env.DB.prepare("SELECT a.id AS application_id,p.id,p.source,p.source_project_id,p.budget_min,p.budget_max,p.currency FROM applications a JOIN projects p ON p.id=a.project_id AND p.user_id=a.user_id WHERE a.user_id=? AND a.status='draft' AND p.source='freelancehunt' AND p.match_score>=? AND julianday(p.published_at) BETWEEN julianday('now','-7 days') AND julianday('now','+5 minutes') ORDER BY p.match_score DESC,p.published_at DESC LIMIT 10").bind(userId,threshold).all<any>();
+  const rows = await env.DB.prepare("SELECT a.id AS application_id,p.id,p.source,p.source_project_id,p.budget_min,p.budget_max,p.currency FROM applications a JOIN projects p ON p.id=a.project_id AND p.user_id=a.user_id WHERE a.user_id=? AND a.status='draft' AND p.source='freelancehunt' AND p.match_score>=? AND julianday(p.published_at) BETWEEN julianday('now','-3 days') AND julianday('now','+5 minutes') ORDER BY p.match_score DESC,p.published_at DESC LIMIT 10").bind(userId,threshold).all<any>();
   const profile = await env.DB.prepare("SELECT min_budget,currency FROM profiles WHERE user_id=?").bind(userId).first<any>() ?? {};
   let submitted = 0;
   for (const project of rows.results ?? []) {
@@ -939,7 +930,7 @@ async function handleTelegramWebhook(request: Request, env: Env): Promise<Respon
     return response(request, { ok: true });
   }
   if (isProjects) {
-    const rows = await env.DB.prepare("SELECT p.title,p.url,p.source,p.budget_min,p.currency FROM projects p WHERE p.user_id=? AND julianday(p.published_at) BETWEEN julianday('now','-7 days') AND julianday('now','+5 minutes') AND EXISTS (SELECT 1 FROM sources s WHERE s.user_id=p.user_id AND s.is_enabled=1 AND s.source=p.source AND (s.source<>'telegram' OR p.source_project_id LIKE substr(s.identifier,2) || ':%')) ORDER BY p.published_at DESC LIMIT 5").bind(linked.user_id).all<any>();
+    const rows = await env.DB.prepare("SELECT p.title,p.url,p.source,p.budget_min,p.currency FROM projects p WHERE p.user_id=? AND julianday(p.published_at) BETWEEN julianday('now','-3 days') AND julianday('now','+5 minutes') AND EXISTS (SELECT 1 FROM sources s WHERE s.user_id=p.user_id AND s.is_enabled=1 AND s.source=p.source AND (s.source<>'telegram' OR p.source_project_id LIKE substr(s.identifier,2) || ':%')) ORDER BY p.published_at DESC LIMIT 5").bind(linked.user_id).all<any>();
     const items = rows.results ?? [];
     const text = items.length ? "<b>Последние заказы</b>\n\n" + items.map((p: any) => {
       const budget = p.budget_min != null ? `\nБюджет: ${p.budget_min} ${escapeTelegramHtml(String(p.currency ?? ""))}` : "";
@@ -1170,7 +1161,7 @@ async function handle(request: Request, env: Env): Promise<Response> {
     if (!linked) return response(request, { detail: "Telegram account is not linked." }, 404);
     const requestedLimit = Number(url.searchParams.get("limit") ?? 5);
     if (!Number.isInteger(requestedLimit) || requestedLimit < 1 || requestedLimit > 10) return response(request, { detail: "Limit must be between 1 and 10." }, 400);
-    const rows = await env.DB.prepare("SELECT p.title,p.url,p.source,p.budget_min,p.budget_max,p.currency,p.published_at FROM projects p WHERE p.user_id=? AND julianday(p.published_at) BETWEEN julianday('now','-7 days') AND julianday('now','+5 minutes') AND EXISTS (SELECT 1 FROM sources s WHERE s.user_id=p.user_id AND s.is_enabled=1 AND s.source=p.source AND (s.source<>'telegram' OR p.source_project_id LIKE substr(s.identifier,2) || ':%')) ORDER BY p.published_at DESC LIMIT ?").bind(linked.id, requestedLimit).all<any>();
+    const rows = await env.DB.prepare("SELECT p.title,p.url,p.source,p.budget_min,p.budget_max,p.currency,p.published_at FROM projects p WHERE p.user_id=? AND julianday(p.published_at) BETWEEN julianday('now','-3 days') AND julianday('now','+5 minutes') AND EXISTS (SELECT 1 FROM sources s WHERE s.user_id=p.user_id AND s.is_enabled=1 AND s.source=p.source AND (s.source<>'telegram' OR p.source_project_id LIKE substr(s.identifier,2) || ':%')) ORDER BY p.published_at DESC LIMIT ?").bind(linked.id, requestedLimit).all<any>();
     return response(request, { items: rows.results ?? [] });
   }
 
@@ -1236,8 +1227,22 @@ async function handle(request: Request, env: Env): Promise<Response> {
       (SELECT COUNT(*) FROM projects WHERE user_id=?) AS projects_found,
       (SELECT COUNT(*) FROM projects WHERE user_id=? AND match_score IS NOT NULL AND match_score >= 60) AS matched_projects,
       (SELECT COUNT(*) FROM applications WHERE user_id=? AND status='sent') AS proposals_sent,
-      (SELECT COUNT(*) FROM applications WHERE user_id=? AND replied_at IS NOT NULL) AS client_replies`).bind(uid,uid,uid,uid).first<any>();
-    return response(request, row ?? { projects_found: 0, matched_projects: 0, proposals_sent: 0, client_replies: 0 });
+      (SELECT COUNT(*) FROM applications WHERE user_id=? AND replied_at IS NOT NULL) AS client_replies,
+      (SELECT COUNT(*) FROM sources WHERE user_id=? AND source='telegram' AND is_enabled=1) AS telegram_channels_connected,
+      (SELECT COUNT(*) FROM integrations WHERE user_id=? AND provider='freelancehunt' AND status='connected') AS marketplaces_connected,
+      (SELECT COUNT(*) FROM telegram_links WHERE user_id=? AND telegram_user_id IS NOT NULL) AS telegram_bots_connected,
+      (SELECT COALESCE(MAX(is_enabled),0) FROM agent_settings WHERE user_id=?) AS agent_enabled`).bind(uid,uid,uid,uid,uid,uid,uid,uid).first<any>();
+    const activityResult = await env.DB.prepare(`SELECT date(discovered_at) AS day,COUNT(*) AS projects_found
+      FROM projects WHERE user_id=? AND discovered_at >= datetime('now','-6 days')
+      GROUP BY date(discovered_at) ORDER BY day`).bind(uid).all<any>();
+    const byDay = new Map((activityResult.results ?? []).map((item: any) => [String(item.day), Number(item.projects_found ?? 0)]));
+    const dailyActivity = Array.from({ length: 7 }, (_, index) => {
+      const day = new Date(Date.now() - (6 - index) * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+      return { day, projects_found: byDay.get(day) ?? 0 };
+    });
+    return response(request, { projects_found: 0, matched_projects: 0, proposals_sent: 0, client_replies: 0,
+      telegram_channels_connected: 0, marketplaces_connected: 0, telegram_bots_connected: 0, agent_enabled: 0,
+      ...(row ?? {}), daily_activity: dailyActivity });
   }
 
   if (path === "/projects" && method === "GET") {
@@ -1245,7 +1250,7 @@ async function handle(request: Request, env: Env): Promise<Response> {
     const sourceFilter = String(url.searchParams.get("source") ?? "").trim().slice(0, 40);
     const query = String(url.searchParams.get("q") ?? "").trim().slice(0, 120);
     const pattern = "%" + query + "%";
-    const rows = await env.DB.prepare("SELECT * FROM projects WHERE user_id=? AND julianday(published_at) BETWEEN julianday('now','-7 days') AND julianday('now','+5 minutes') AND (?='' OR source=?) AND (?='' OR lower(title) LIKE lower(?) OR lower(description) LIKE lower(?)) ORDER BY published_at DESC LIMIT ?")
+    const rows = await env.DB.prepare("SELECT * FROM projects WHERE user_id=? AND julianday(published_at) BETWEEN julianday('now','-3 days') AND julianday('now','+5 minutes') AND (?='' OR source=?) AND (?='' OR lower(title) LIKE lower(?) OR lower(description) LIKE lower(?)) ORDER BY published_at DESC LIMIT ?")
       .bind(uid, sourceFilter, sourceFilter, query, pattern, pattern, limit).all<any>();
     return response(request, (rows.results ?? []).map((p:any) => ({ ...p, match_reasons: safeJson(p.match_reasons, []) })));
   }

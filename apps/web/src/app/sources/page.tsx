@@ -26,7 +26,6 @@ const recommendedChannels: RecommendedChannel[] = [
 export default function SourcesPage() {
   const [catalog, setCatalog] = useState<Catalog[]>([]);
   const [items, setItems] = useState<Source[]>([]);
-  const [source, setSource] = useState("telegram");
   const [identifier, setIdentifier] = useState("");
   const [busy, setBusy] = useState(false);
   const [addingChannel, setAddingChannel] = useState("");
@@ -52,12 +51,12 @@ export default function SourcesPage() {
 
   useEffect(() => { void load(); }, []);
 
-  async function saveSource(sourceType: string, channel: string) {
+  async function saveSource(channel: string) {
     const r = await fetch(API + "/sources", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       credentials: "include",
-      body: JSON.stringify({ source: sourceType, identifier: channel, is_enabled: true })
+      body: JSON.stringify({ source: "telegram", identifier: channel, is_enabled: true })
     });
     const d = await r.json();
     if (!r.ok) throw new Error(d.detail ?? "Не удалось добавить источник");
@@ -67,7 +66,7 @@ export default function SourcesPage() {
   async function add(e: FormEvent) {
     e.preventDefault(); setBusy(true); setMessage(""); setError("");
     try {
-      await saveSource(source, identifier.trim());
+      await saveSource(identifier.trim());
       setMessage("Источник добавлен. Агент проверит его автоматически при следующем запуске по расписанию, если он включён.");
       setIdentifier(""); await load();
     } catch (e) {
@@ -78,7 +77,7 @@ export default function SourcesPage() {
   async function addRecommended(channel: RecommendedChannel) {
     setAddingChannel(channel.handle); setError(""); setMessage("");
     try {
-      await saveSource("telegram", "@" + channel.handle);
+      await saveSource("@" + channel.handle);
       setMessage("Канал @" + channel.handle + " добавлен. Агент проверит его автоматически при следующем запуске по расписанию, если он включён.");
       await load();
     } catch (e) {
@@ -112,7 +111,7 @@ export default function SourcesPage() {
     } catch (e) { setError(e instanceof Error ? e.message : "Не удалось удалить источник"); }
   }
 
-  const selected = catalog.find(c => c.source === source);
+  const selected = catalog.find(c => c.source === "telegram");
   const configuredHandles = new Set(items.filter(item => item.source === "telegram").map(item => item.identifier.replace(/^@/, "").toLowerCase()));
 
   return <WorkspacePage title="Источники" subtitle="Собирай заказы из публичных Telegram-каналов и официального Freelancehunt API.">
@@ -143,11 +142,10 @@ export default function SourcesPage() {
     </section>
 
     <section className="content-card">
-      <div className="panel-heading"><div><h2>Биржи и другие источники</h2><p>Биржи будут отмечаться рабочими только после реализации адаптера и теста получения реальных объявлений.</p></div><Link className="sub-button" href="/integrations">Подключения ↗</Link></div>
+      <div className="panel-heading"><div><h2>Подключить Telegram-канал</h2><p>Добавь публичный канал с заказами, чтобы AI-агент отслеживал новые публикации.</p></div><Link className="sub-button" href="/integrations">Подключить Freelancehunt ↗</Link></div>
       <form className="sub-form" onSubmit={add}>
         <div className="sub-form-grid">
-          <div className="sub-form-field"><label htmlFor="source-kind">Тип источника</label><select id="source-kind" className="sub-select" value={source} onChange={e => setSource(e.target.value)}>{catalog.map(c => <option key={c.source} value={c.source}>{c.label}</option>)}</select></div>
-          <div className="sub-form-field"><label htmlFor="source-id">{source === "telegram" ? "Имя публичного канала" : source === "freelancehunt" ? "Для Freelancehunt не требуется" : "Идентификатор (если нужен)"}</label><input id="source-id" className="sub-input" value={identifier} onChange={e => setIdentifier(e.target.value)} placeholder={source === "telegram" ? "@python_jobs" : source === "freelancehunt" ? "Оставь пустым" : "Необязательно"} required={source === "telegram"}/></div>
+          <div className="sub-form-field"><label htmlFor="source-id">Имя публичного канала</label><input id="source-id" className="sub-input" value={identifier} onChange={e => setIdentifier(e.target.value)} placeholder="@python_jobs" required /></div>
         </div>
         {selected && <div className="sub-muted">{selected.setup_note}</div>}
         <button className="sub-button primary" disabled={busy} type="submit"><Plus size={15}/>{busy ? "Сохраняем…" : "Добавить источник"}</button>
@@ -181,10 +179,5 @@ export default function SourcesPage() {
         </details>)}</div>}
     </section>
 
-    <section className="content-card">
-      <h2>Статус адаптеров</h2>
-      <p>Публичные Telegram-каналы поддерживаются сканером превью. Freelancehunt требует подключённый и проверенный API-токен; остальные площадки не будут помечаться как активные до реализации разрешённого адаптера.</p>
-      <div className="sub-list">{catalog.map(c => <div className="sub-list-row" key={c.source}><div className="sub-list-main"><strong>{c.label}</strong><span>{c.setup_note}</span></div><span className={"sub-badge " + (["telegram","freelancehunt"].includes(c.source) ? "" : "pending")}>{c.source === "telegram" ? "Сканер реализован" : c.source === "freelancehunt" ? "Официальный API адаптер" : "Адаптер ожидается"}</span></div>)}</div>
-    </section>
   </WorkspacePage>;
 }

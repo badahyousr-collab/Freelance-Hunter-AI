@@ -230,11 +230,14 @@ test("unknown API route returns a structured 404", async () => {
 
 
 
-test("scan ignores Telegram listings older than seven days and listings without a publication date", async () => {
+test("scan ignores Telegram listings older than 72 hours and listings without a publication date", async () => {
   const originalFetch = globalThis.fetch;
+  const oldDate = new Date(Date.now() - 73 * 60 * 60 * 1000).toISOString();
+  const freshDate = new Date(Date.now() - 71 * 60 * 60 * 1000).toISOString();
   const html = [
-    '<div class="tgme_widget_message_wrap" data-post="python_jobs/201"><div class="tgme_widget_message_text js-message_text" dir="auto">We need a Python developer for a freelance project. Budget 500 USD.</div><time datetime="2026-10-01T10:00:00+00:00"></time></div>',
-    '<div class="tgme_widget_message_wrap" data-post="python_jobs/202"><div class="tgme_widget_message_text js-message_text" dir="auto">We need a Python developer for a freelance project. Budget 500 USD.</div></div>'
+    `<div class="tgme_widget_message_wrap" data-post="python_jobs/201"><div class="tgme_widget_message_text js-message_text" dir="auto">We need a Python developer for a freelance project. Budget 500 USD.</div><time datetime="${oldDate}"></time></div>`,
+    '<div class="tgme_widget_message_wrap" data-post="python_jobs/202"><div class="tgme_widget_message_text js-message_text" dir="auto">We need a Python developer for a freelance project. Budget 500 USD.</div></div>',
+    `<div class="tgme_widget_message_wrap" data-post="python_jobs/203"><div class="tgme_widget_message_text js-message_text" dir="auto">We need a Python developer for a freelance project. Budget 500 USD.</div><time datetime="${freshDate}"></time></div>`
   ].join("");
   globalThis.fetch = async input => String(input).startsWith("https://t.me/s/python_jobs")
     ? new Response(html, { status: 200, headers: { "Content-Type": "text/html" } })
@@ -246,7 +249,7 @@ test("scan ignores Telegram listings older than seven days and listings without 
       body: "{}"
     }), { DB: fakeDb({ scan: true }) });
     assert.equal(response.status, 200);
-    assert.equal((await response.json()).newProjects, 0);
+    assert.equal((await response.json()).newProjects, 1);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -262,7 +265,7 @@ test("source creation has no arbitrary per-account limit", async () => {
   assert.notEqual(response.status, 429);
 });
 
-test("scheduled scan automatically saves AI proposal drafts for fresh matching projects", async () => {
+test("scheduled scan automatically saves AI proposal drafts for matching projects published within 72 hours", async () => {
   const originalFetch = globalThis.fetch;
   const html = '<div class="tgme_widget_message_wrap" data-post="python_jobs/203"><div class="tgme_widget_message_text js-message_text" dir="auto">We need a Python developer for a freelance project. Budget 500 USD.</div><time datetime="2026-10-16T10:00:00+00:00"></time></div>';
   globalThis.fetch = async input => {
@@ -295,7 +298,7 @@ test("scheduled scan automatically saves AI proposal drafts for fresh matching p
 
 test("manual scan ingests and normalizes a public Telegram listing", async () => {
   const originalFetch = globalThis.fetch;
-  const html = '<div class="tgme_widget_message_wrap" data-post="python_jobs/123"><div class="tgme_widget_message_text js-message_text" dir="auto">We need a Python developer to build a Telegram bot for a freelance project. Budget 500 USD.</div><time datetime="2026-10-15T10:00:00+00:00"></time></div>';
+  const html = '<div class="tgme_widget_message_wrap" data-post="python_jobs/123"><div class="tgme_widget_message_text js-message_text" dir="auto">We need a Python developer to build a Telegram bot for a freelance project. Budget 500 USD.</div><time datetime="2026-10-17T10:00:00+00:00"></time></div>';
   globalThis.fetch = async (input, init) => {
     if (String(input).startsWith("https://t.me/s/python_jobs")) return new Response(html, { status: 200, headers: { "Content-Type": "text/html" } });
     return originalFetch(input, init);
@@ -1367,6 +1370,52 @@ test("expired website sessions are rejected before user data is read", async () 
   assert.notEqual(sessionQuery.values[0], "expired-session-token");
 });
 
+test("dashboard summary includes user-scoped source counts and a seven-day discovery series", async () => {
+  const statements = [];
+  const today = new Date().toISOString().slice(0, 10);
+  const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const DB = {
+    prepare(sql) {
+      let values = [];
+      return {
+        bind(...args) { values = args; return this; },
+        async first() {
+          statements.push({ sql, values: [...values] });
+          if (sql.includes("FROM sessions s JOIN users")) return { id: "user-1", created_at: "2026-10-16 10:00:00" };
+          if (sql.includes("AS telegram_channels_connected")) return {
+            projects_found: 11, matched_projects: 5, proposals_sent: 2, client_replies: 1,
+            telegram_channels_connected: 3, marketplaces_connected: 1, telegram_bots_connected: 1, agent_enabled: 1
+          };
+          return null;
+        },
+        async all() {
+          statements.push({ sql, values: [...values] });
+          if (sql.includes("date(discovered_at) AS day")) return { results: [
+            { day: yesterday, projects_found: 2 }, { day: today, projects_found: 4 }
+          ] };
+          return { results: [] };
+        }
+      };
+    }
+  };
+  const response = await worker.fetch(new Request("https://api.example/dashboard/summary", {
+    headers: { Cookie: "fh_session=test-session-token" }
+  }), { DB });
+  assert.equal(response.status, 200);
+  const summary = await response.json();
+  assert.equal(summary.telegram_channels_connected, 3);
+  assert.equal(summary.marketplaces_connected, 1);
+  assert.equal(summary.telegram_bots_connected, 1);
+  assert.equal(summary.agent_enabled, 1);
+  assert.equal(summary.daily_activity.length, 7);
+  assert.equal(summary.daily_activity.at(-2).projects_found, 2);
+  assert.equal(summary.daily_activity.at(-1).projects_found, 4);
+  const metricsQuery = statements.find(entry => entry.sql.includes("AS telegram_channels_connected"));
+  assert.deepEqual(metricsQuery.values, Array(8).fill("user-1"));
+  const activityQuery = statements.find(entry => entry.sql.includes("date(discovered_at) AS day"));
+  assert.deepEqual(activityQuery.values, ["user-1"]);
+});
+
 test("Telegram bot summary, project list, and agent control use the linked user's data", async () => {
   const statements = [];
   const DB = {
@@ -1427,9 +1476,6 @@ test("source catalog advertises only implemented discovery adapters", async () =
   assert.equal(response.status, 200);
   const catalog = await response.json();
   const bySource = Object.fromEntries(catalog.map(item => [item.source, item]));
+  assert.deepEqual(Object.keys(bySource), ["telegram"]);
   assert.ok(bySource.telegram.capabilities.includes("read_public_posts"));
-  assert.ok(bySource.freelancehunt.capabilities.includes("discover_projects"));
-  for (const source of ["kwork", "upwork", "fl_ru"]) {
-    assert.ok(!bySource[source].capabilities.includes("discover_projects"), source + " must not claim discovery before its adapter is tested");
-  }
 });

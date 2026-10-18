@@ -16,18 +16,19 @@
 - [x] Add a D1 migration that replaces email/password identity fields with Telegram identity keys and anonymizes old email-only identities.
 - [x] Remove email/password fields from the FastAPI user model and add an Alembic migration.
 - [x] Verify the PostgreSQL identity migration and FastAPI startup through the Docker Compose smoke test in CI.
-- [ ] Apply pending D1 migrations to the deployed Cloudflare database after a verified backup. Confirm existing Telegram accounts still sign in and `/health` reports a ready schema; the Worker reports missing identity, notification, or provider-submission migrations until they are applied.
+- [x] Deployed `/health` reports a connected D1 database and ready schema, including required migration `0012_auto_submission.sql`.
 - [ ] Verify Telegram sign-in, session expiry, logout, and cross-account data isolation against the deployed environment.
 
 ## Source ingestion
 - [x] Telegram posts normalize to the common project model.
 - [x] Duplicate Telegram posts are deduplicated per user and channel.
 - [x] Scan failures and last-scan metadata are persisted; scheduled scans retry on the next Cron interval.
+- [x] Telegram and Freelancehunt listings require a known publication time within the previous 72 hours for ingestion and display.
 - [x] Excluded-keyword filtering and basic detected-budget filtering are implemented in the Cloudflare scanner.
-- [x] Authenticated manual scan runs against the current user's enabled public Telegram sources.
+- [x] Authenticated scans run against the current user's enabled public Telegram sources; agent startup also triggers an initial scan.
 - [x] Curated public Telegram job-channel catalog is populated with public URLs and category/language labels.
 - [ ] Verify a real public channel scan and scheduled Cron execution against the deployed Worker.
-- [x] Freelancehunt official API token validation, project ingestion, explicit bid submission, provider-confirmed bid status sync, and optional Telegram reply notifications have mocked regression tests. Live account verification remains pending. Other marketplace adapters and message-thread reply sync remain pending.
+- [x] Freelancehunt official API token validation, project ingestion, automatic bid submission controls, provider-confirmed bid status sync, and optional Telegram reply notifications have mocked regression tests. Live account verification remains pending. Other marketplace adapters and message-thread reply sync remain pending.
 
 ## AI and proposals
 - [x] Draft endpoint requires authentication and verifies project ownership.
@@ -43,11 +44,11 @@
 - [x] Loading, empty, and error states are present on core pages.
 - [x] Telegram account linking is expiring, single-use, and verified server-side.
 - [x] Bot setup and server-to-server endpoints require a shared secret.
-- [ ] Configure a newly issued BotFather token and webhook secret, apply migrations `0007` through `0011`, then test real Telegram messages, new-project notifications, and reply notifications.
-- [x] CI Playwright smoke tests cover Telegram auth, project search, source setup/manual scan, and settings save/layout.
+- [ ] Configure a newly issued BotFather token and webhook secret, apply migrations `0007` through `0012`, then test real Telegram commands and provider-confirmed reply notifications.
+- [x] CI Playwright smoke tests cover Telegram auth, project search, Telegram source setup, agent startup scan, and settings save/layout.
 - [x] CI browser end-to-end tests cover dashboard, logout, and session expiry.
 - [ ] Full browser end-to-end flows are tested on the deployed site.
-- [ ] Every visible button and form has a verified action or is explicitly marked unavailable. Freelancehunt proposals can be edited, prepared for confirmation, and submitted after explicit confirmation; other marketplace providers remain unavailable. Critical user-scoped Worker reads and proposal mutation isolation have regression tests.
+- [ ] Verify all visible controls in the deployed site. Freelancehunt proposals can be prepared and automatically submitted when the user enables that setting; Telegram public channels can be scanned. Other marketplace providers remain unavailable. Critical user-scoped Worker reads and proposal mutation isolation have regression tests.
 
 ## Operations and recovery
 - [x] Structured scan logs include duration, scanned sources, new-project counts, and failure counts.
@@ -66,5 +67,5 @@
 ## Verification record
 - CI verifies backend tests/migrations, frontend lint/build, Playwright smoke tests, and Cloudflare Worker typecheck/tests. CodeQL and weekly Dependabot checks are configured.
 - [x] Document D1 export, migration, and test-database restore commands in [Operations and recovery](OPERATIONS.md). The backup/restore drill itself remains unverified.
-- Live service verification is pending until Telegram secrets, AI provider configuration, and public channel scans are tested.
+- Live health checks confirm the Worker and D1 schema are ready. Telegram channel scans, bot commands, AI provider quality, Freelancehunt submission, and reply notifications still need end-to-end verification.
 - Known limitations: Freelancehunt API discovery/submission/status sync and optional Telegram reply notifications are implemented with mocked tests but need a real user token test, the Worker encryption secret, migrations, and live Telegram verification. Message-thread synchronization and other marketplace adapters are not implemented. Telegram ingestion currently reads public channel previews only.

@@ -25,8 +25,8 @@
 - [x] Projects, applications, sources, AI agent, analytics, settings, integrations, security, registration, and login pages.
 - [x] Dashboard statistics and project lists use persisted API data rather than fabricated counts.
 - [x] Profile preferences and source configuration forms call the API.
-- [x] Add Playwright smoke tests for Telegram auth, project search, source setup/manual scan, and settings save/layout.
-- [x] Complete CI browser end-to-end tests for dashboard, session expiry, logout, source setup/manual scan, settings, agent controls, and proposal review.
+- [x] Add Playwright smoke tests for Telegram auth, project search, source setup, agent startup scan, and settings save/layout.
+- [x] Complete CI browser end-to-end tests for dashboard, session expiry, logout, source setup, settings, agent controls, and proposal review.
 - [x] Add Playwright mobile-width overflow checks for integrations, agent settings, applications, and sources.
 - [x] Add regression checks for expired sessions and Telegram-linked data isolation.
 - [ ] Verify empty states and every visible control in the deployed app.
@@ -35,6 +35,7 @@
 ## Phase 4 - Source ingestion
 - [x] Normalized source adapter contract.
 - [x] Telegram post parser, public channel adapter, scheduled worker, retry behavior, deduplication, and per-source scan health.
+- [x] Reject listings without a publication date or older than 72 hours at ingestion and when they are shown on the site or in Telegram summaries.
 - [x] Per-user source subscriptions and enabled-agent filtering.
 - [x] Authenticated user-scoped manual scan endpoint.
 - [x] Build a curated catalog of ten public Telegram job channels, with URLs, languages, and focus areas.
@@ -59,7 +60,7 @@
 - [x] Per-user integration records with encrypted-credential design and API responses that do not expose secrets.
 - [x] Validate and encrypt Freelancehunt API tokens through the official profile endpoint; show connection status without exposing credentials.
 - [ ] Implement and verify official OAuth/API authorization for additional providers where permitted.
-- [x] Implement explicit, provider-confirmed bid submission through the Freelancehunt official API, with a concurrency guard and no automatic retry after ambiguous provider failures.
+- [x] Implement optional automatic provider-confirmed bid submission through the Freelancehunt official API, with a daily cap, concurrency guard, and no automatic retry after ambiguous provider failures.
 - [x] Add editable proposal drafts and an awaiting-confirmation/closed review workflow that cannot falsely mark a proposal as sent.
 - [x] Prevent duplicate Freelancehunt submissions with a status claim and require a provider bid ID before marking an application sent.
 - [x] Synchronize Freelancehunt bid status when the provider confirms rejection or winner selection.
@@ -71,7 +72,7 @@
 - [x] Statistics, project listing, pause/resume, and help commands.
 - [x] Cloudflare Worker webhook mode and server-side secret checks.
 - [ ] Configure and verify the deployed bot token/webhook secrets and real Telegram messages.
-- [x] Add opt-out Telegram notifications for newly inserted projects, with deduplication and a three-listing message cap.
+- [x] Provide a compact Telegram project summary and count statistics without sending a separate message for every new listing.
 - [x] Send optional Telegram notifications when the Freelancehunt status sync confirms a rejection or winner selection; user can disable these in agent settings.
 - [ ] Verify that site and bot show the same persisted state.
 

@@ -87,6 +87,11 @@ test("source catalog can add a public Telegram job channel", async ({ page }) =>
       body: JSON.stringify({ scannedSources: 1, newProjects: 3, errors: [], message: "Scan completed." })
     });
   });
+  let agentEnabled = false;
+  await page.route("**/api/backend/agent/settings", async route => {
+    if (route.request().method() === "PATCH") agentEnabled = Boolean(route.request().postDataJSON().enabled);
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ enabled: agentEnabled, auto_draft: false, auto_submit: false, daily_submission_limit: 10, notify_application_updates: true, telegram_linked: true }) });
+  });
 
   await page.goto("/sources");
   const channel = page.locator(".sub-list-row").filter({ hasText: "Вакансии для разработчиков ботов" });
@@ -94,8 +99,9 @@ test("source catalog can add a public Telegram job channel", async ({ page }) =>
   await channel.getByRole("button", { name: "Добавить" }).click();
   await expect(page.getByText(/Канал @job_for_bots добавлен/i)).toBeVisible();
   await expect(page.locator(".sub-list-row").filter({ hasText: "@job_for_bots" }).getByText(/Добавлен|Включён/).first()).toBeVisible();
-  await page.getByRole("button", { name: /Сканировать сейчас/i }).click();
-  await expect(page.getByText(/Источников: 1, новых проектов: 3/i)).toBeVisible();
+  await page.goto("/agent");
+  await page.getByRole("button", { name: "Включить агента" }).click();
+  await expect(page.getByText(/Агент включён\. Первый проход завершён: новых проектов 3/i)).toBeVisible();
 });
 
 
@@ -218,42 +224,25 @@ test("expired session redirects a protected settings page to Telegram login", as
   await expect(page.getByRole("button", { name: /Продолжить через Telegram/ })).toBeVisible();
 });
 
-test("AI agent toggle and manual scan call the API and show results", async ({ page }) => {
+test("AI agent starts a first scan and application reply notifications persist", async ({ page }) => {
   await mockAuthenticatedAccount(page);
   let enabled = false;
-  let notifyNewProjects = true;
   let notifyApplicationUpdates = true;
-  await page.route("**/api/backend/profile", async route => {
-    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ display_name: "Dev", skills: ["Python"], languages: ["ru", "en"], payment_preferences: [], excluded_keywords: [], min_budget: null, currency: "ALL" }) });
-  });
-  await page.route("**/api/backend/sources", async route => {
-    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([{ id: 1, source: "telegram", identifier: "@job_for_bots", is_enabled: true, status: "active", last_scan_at: null, last_discovered_count: 0 }]) });
-  });
   await page.route("**/api/backend/agent/settings", async route => {
     if (route.request().method() === "PATCH") {
-      const payload = route.request().postDataJSON() as { enabled?: boolean; notify_new_projects?: boolean; notify_application_updates?: boolean };
+      const payload = route.request().postDataJSON() as { enabled?: boolean; notify_application_updates?: boolean };
       if (payload.enabled !== undefined) enabled = payload.enabled;
-      if (payload.notify_new_projects !== undefined) notifyNewProjects = payload.notify_new_projects;
       if (payload.notify_application_updates !== undefined) notifyApplicationUpdates = payload.notify_application_updates;
-      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ enabled, notify_new_projects: notifyNewProjects, notify_application_updates: notifyApplicationUpdates, telegram_linked: true }) });
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ enabled, auto_draft: true, auto_submit: false, daily_submission_limit: 10, notify_application_updates: notifyApplicationUpdates, telegram_linked: true }) });
       return;
     }
-    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ enabled, notify_new_projects: notifyNewProjects, notify_application_updates: notifyApplicationUpdates, telegram_linked: true }) });
-  });
-  await page.route("**/api/backend/agent/readiness", async route => {
-    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ worker_runtime: true, cron_configured: true, telegram_bot_configured: true, ai_provider_configured: false, marketplace_adapters: [] }) });
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ enabled, auto_draft: true, auto_submit: false, daily_submission_limit: 10, notify_application_updates: notifyApplicationUpdates, telegram_linked: true }) });
   });
   await page.route("**/api/backend/agent/scan", async route => {
-    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ scannedSources: 1, newProjects: 2, errors: [] }) });
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ scannedSources: 1, newProjects: 2, draftedApplications: 1, errors: [] }) });
   });
 
   await page.goto("/agent");
-  const notifications = page.getByRole("checkbox", { name: /Уведомлять о новых заказах в Telegram/i });
-  await expect(notifications).toBeChecked();
-  await notifications.click();
-  await expect(notifications).not.toBeChecked();
-  await expect(page.getByText(/Уведомления о новых проектах отключены/i)).toBeVisible();
-  expect(notifyNewProjects).toBe(false);
   const replyNotifications = page.getByRole("checkbox", { name: /Уведомлять об ответах на отклики в Telegram/i });
   await expect(replyNotifications).toBeChecked();
   await replyNotifications.click();
@@ -261,21 +250,18 @@ test("AI agent toggle and manual scan call the API and show results", async ({ p
   await expect(page.getByText(/Уведомления об ответах на отклики отключены/i)).toBeVisible();
   expect(notifyApplicationUpdates).toBe(false);
   await page.getByRole("button", { name: "Включить агента" }).click();
-  await expect(page.getByText(/AI-агент включён/i)).toBeVisible();
+  await expect(page.getByText(/Агент включён\. Первый проход завершён: новых проектов 2, подготовлено откликов 1/i)).toBeVisible();
   await expect(page.getByRole("button", { name: "Приостановить агента" })).toBeVisible();
-  await page.getByRole("button", { name: "Сканировать источники" }).click();
-  await expect(page.getByText(/новых проектов 2, источников 1/i)).toBeVisible();
 });
 
-test("integrations page does not ask for marketplace passwords or pretend to connect accounts", async ({ page }) => {
+test("integrations page offers only the verified Freelancehunt connection", async ({ page }) => {
   await mockAuthenticatedAccount(page);
   await page.route("**/api/backend/integrations/catalog", async route => {
     await route.fulfill({
       status: 200,
       contentType: "application/json",
       body: JSON.stringify([
-        { provider: "upwork", label: "Upwork", status: "pending", setup_note: "OAuth adapter is not ready." },
-        { provider: "kwork", label: "Kwork", status: "pending", setup_note: "Adapter is not ready." }
+        { provider: "freelancehunt", label: "Freelancehunt", status: "pending", setup_note: "Вставь API-токен Freelancehunt." }
       ])
     });
   });
@@ -285,10 +271,10 @@ test("integrations page does not ask for marketplace passwords or pretend to con
 
   await page.goto("/integrations");
   await expect(page.getByRole("heading", { name: "Биржи фриланса" })).toBeVisible();
-  await expect(page.getByRole("link", { name: /Открыть биржу/ })).toHaveCount(2);
-  await expect(page.locator('input[type="password"], input[name="secret"]')).toHaveCount(0);
+  await expect(page.getByRole("link", { name: /Открыть биржу/ })).toHaveCount(1);
+  await expect(page.getByLabel("API-токен Freelancehunt")).toBeVisible();
   await expect(page.getByRole("button", { name: /Подключить|Добавить в список/ })).toHaveCount(0);
-  await expect(page.getByText(/Интеграция в разработке/).first()).toBeVisible();
+  await expect(page.getByText(/Интеграция в разработке|адаптер ожидается/i)).toHaveCount(0);
 });
 
 test("security page logs out and returns to Telegram login", async ({ page }) => {

@@ -392,6 +392,7 @@ h1, .page-heading h1, .sub-page-heading h1, .auth-card h1 {
   transition: transform .16s ease-out;
   animation: molecule-drift 8s ease-in-out infinite;
 }
+.auth-molecule-canvas { width: min(100%,660px); height: 100%; display: block; filter: drop-shadow(0 22px 65px #0008); }
 .molecule-bond { stroke: #a9b2aa; stroke-width: 1.35; stroke-opacity: .42; vector-effect: non-scaling-stroke; }
 .molecule-bond-bright { stroke: #e1e6dc; stroke-opacity: .78; stroke-width: 1.8; }
 .molecule-orbit { fill: none; stroke: #aeb7ac; stroke-opacity: .25; stroke-width: 1; stroke-dasharray: 2 7; }
