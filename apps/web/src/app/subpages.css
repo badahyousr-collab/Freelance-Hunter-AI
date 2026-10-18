@@ -53,6 +53,16 @@
 
 /* Compact, aligned source accordions */
 .source-accordion-list { gap: 8px; }
+.source-group-accordion { min-width: 0; }
+.source-group-summary { display: flex; justify-content: space-between; align-items: center; gap: 14px; padding: 12px 14px; border: 1px solid #2b3040; border-radius: 10px; background: #12151d; cursor: pointer; list-style: none; }
+.source-group-summary::-webkit-details-marker { display: none; }
+.source-group-summary::marker { content: ""; }
+.source-group-summary strong,.source-group-summary small { display: block; }
+.source-group-summary strong { font-size: 11px; }
+.source-group-summary small { margin-top: 4px; color: var(--muted); font-size: 10px; line-height: 1.4; }
+.source-group-accordion[open] > .source-group-summary { border-radius: 10px 10px 0 0; }
+.source-group-accordion[open] > .source-group-summary .source-chevron { transform: rotate(180deg); }
+.source-group-content { padding-top: 10px; }
 .source-accordion { min-width: 0; border: 1px solid #2b3040; border-radius: 10px; background: #12151d; overflow: hidden; }
 .source-accordion-summary { display: grid; grid-template-columns: minmax(0,1fr) 100px 18px; align-items: center; gap: 12px; padding: 13px 14px; cursor: pointer; list-style: none; }
 .source-accordion-summary::-webkit-details-marker { display: none; }
@@ -66,8 +76,14 @@
 .source-accordion-content { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 12px 14px 14px; border-top: 1px solid #292e3a; }
 .source-details { min-width: 0; display: grid; gap: 5px; color: var(--muted); font-size: 10px; line-height: 1.5; overflow-wrap: anywhere; }
 .source-error-text { color: #ffb7c4; }
+.payment-options { min-width: 0; margin: 0; padding: 0; border: 0; }
+.payment-options legend { margin-bottom: 8px; color: #d4d8e4; font-size: 11px; font-weight: 600; }
+.payment-option { display: flex; align-items: center; gap: 9px; margin: 8px 0; color: #d4d8e4; font-size: 11px; }
+.payment-option input { width: 15px; height: 15px; accent-color: #9578ff; }
+.payment-options .sub-muted { display: block; margin-top: 7px; line-height: 1.5; }
 @media (max-width: 480px) {
   .source-accordion-summary { grid-template-columns: minmax(0,1fr) 74px 16px; gap: 7px; padding: 12px 10px; }
   .source-status-column { width: 74px; font-size: 8px; padding: 5px 3px; }
   .source-accordion-content { align-items: flex-start; flex-direction: column; padding: 12px 10px; }
+  .source-group-summary { padding: 12px 10px; }
 }

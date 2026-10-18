@@ -8,6 +8,7 @@ import WorkspacePage from "@/components/WorkspacePage";
 const API = "/api/backend";
 type Catalog = { source: string; label: string; kind: string; capabilities: string[]; setup_note: string };
 type Source = { id: number; source: string; identifier: string; is_enabled: boolean; status: string; created_at: string; last_scan_at: string | null; last_error: string | null; last_discovered_count: number };
+type Integration = { id: number; provider: string; label: string; status: string };
 type RecommendedChannel = { handle: string; label: string; focus: string; language: string };
 
 const recommendedChannels: RecommendedChannel[] = [
@@ -26,6 +27,7 @@ const recommendedChannels: RecommendedChannel[] = [
 export default function SourcesPage() {
   const [catalog, setCatalog] = useState<Catalog[]>([]);
   const [items, setItems] = useState<Source[]>([]);
+  const [integrations, setIntegrations] = useState<Integration[]>([]);
   const [identifier, setIdentifier] = useState("");
   const [busy, setBusy] = useState(false);
   const [addingChannel, setAddingChannel] = useState("");
@@ -38,12 +40,13 @@ export default function SourcesPage() {
     try {
       const pair = await Promise.all([
         fetch(API + "/sources/catalog", { credentials: "include" }),
-        fetch(API + "/sources", { credentials: "include" })
+        fetch(API + "/sources", { credentials: "include" }),
+        fetch(API + "/integrations", { credentials: "include" })
       ]);
       if (pair.some(r => r.status === 401)) { window.location.assign("/login"); return; }
-      const cd = await pair[0].json(); const sd = await pair[1].json();
-      if (!pair[0].ok || !pair[1].ok) throw new Error(cd.detail ?? sd.detail ?? "Не удалось загрузить источники");
-      setCatalog(cd); setItems(sd);
+      const cd = await pair[0].json(); const sd = await pair[1].json(); const id = await pair[2].json();
+      if (pair.some(r => !r.ok)) throw new Error(cd.detail ?? sd.detail ?? id.detail ?? "Не удалось загрузить источники");
+      setCatalog(cd); setItems(sd); setIntegrations(id);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Ошибка соединения с API");
     } finally { setLoading(false); }
@@ -114,12 +117,27 @@ export default function SourcesPage() {
   const selected = catalog.find(c => c.source === "telegram");
   const configuredHandles = new Set(items.filter(item => item.source === "telegram").map(item => item.identifier.replace(/^@/, "").toLowerCase()));
 
-  return <WorkspacePage title="Источники" subtitle="Собирай заказы из публичных Telegram-каналов и официального Freelancehunt API.">
+  const marketplace = integrations.find(item => item.provider === "freelancehunt");
+
+  return <WorkspacePage title="Источники" subtitle="Подключай фриланс-биржи и публичные Telegram-каналы для поиска заказов.">
     {error && <div className="sub-alert error" role="alert">{error}</div>}
     {message && <div className="sub-alert" role="status">{message}</div>}
 
     <section className="content-card">
-      <div className="panel-heading"><div><h2>Подборка Telegram-каналов</h2><p>Каналы с заказами и проектами. Агент проверяет новые публикации автоматически каждые 15 минут, если включён.</p></div><Radio size={18}/></div>
+      <div className="panel-heading"><div><h2>Фриланс-биржи</h2><p>Подключение через официальный API площадки и личный токен.</p></div><Workflow size={18}/></div>
+      <div className="sub-list">
+        <article className="sub-list-row">
+          <div className="sub-list-main"><strong>Freelancehunt</strong><span>{marketplace?.status === "connected" ? "Подключён" : "Доступно подключение"} · поиск заказов и отправка откликов</span><span>На сайте Freelancehunt создай API-токен, затем вставь его в форме подключения. Пароль от аккаунта не нужен.</span></div>
+          <div className="sub-actions"><Link className="sub-button primary" href="/integrations">{marketplace?.status === "connected" ? "Настройки" : "Как подключить"} ↗</Link></div>
+        </article>
+        <p className="sub-muted">Сейчас доступна интеграция с Freelancehunt. Для других бирж подключение появится после проверки их API и правил отправки заявок.</p>
+      </div>
+    </section>
+
+    <section className="content-card">
+      <details className="source-group-accordion">
+        <summary className="source-group-summary"><span><strong>Подборка Telegram-каналов</strong><small>10 публичных каналов · агент проверяет новые публикации каждые 15 минут, если включён</small></span><ChevronDown className="source-chevron" size={16} aria-hidden="true"/></summary>
+        <div className="source-group-content">
       <div className="sub-list">
         {recommendedChannels.map(channel => {
           const configured = configuredHandles.has(channel.handle.toLowerCase());
@@ -139,10 +157,12 @@ export default function SourcesPage() {
         })}
       </div>
       <p className="sub-muted">Каналы отобраны по публичным страницам и описаниям, доступным на момент проверки. Часть публикаций может быть обычными вакансиями, рекламой или неподходящими заказами. Такие результаты нужно отсеивать фильтрами и проверять после каждого сканирования.</p>
+        </div>
+      </details>
     </section>
 
     <section className="content-card">
-      <div className="panel-heading"><div><h2>Подключить Telegram-канал</h2><p>Добавь публичный канал с заказами, чтобы AI-агент отслеживал новые публикации.</p></div><Link className="sub-button" href="/integrations">Подключить Freelancehunt ↗</Link></div>
+      <div className="panel-heading"><div><h2>Подключить Telegram-канал</h2><p>Добавь публичный канал с заказами, чтобы AI-агент отслеживал новые публикации.</p></div><Radio size={18}/></div>
       <form className="sub-form" onSubmit={add}>
         <div className="sub-form-grid">
           <div className="sub-form-field"><label htmlFor="source-id">Имя публичного канала</label><input id="source-id" className="sub-input" value={identifier} onChange={e => setIdentifier(e.target.value)} placeholder="@python_jobs" required /></div>
@@ -153,9 +173,11 @@ export default function SourcesPage() {
     </section>
 
     <section className="content-card">
-      <div className="panel-heading"><div><h2>Подключённые источники</h2><p>Источники свёрнуты, чтобы список оставался компактным. Нажми на строку, чтобы посмотреть статус и детали.</p></div><div className="sub-actions"><button className="sub-button" onClick={() => void load()} disabled={loading}><RefreshCw size={14}/>Обновить</button></div></div>
-      {loading ? <div className="sub-empty">Загружаем источники…</div> : items.length === 0 ? <div className="sub-empty"><Workflow size={25}/><strong>Источники пока не добавлены</strong><span>Добавь канал из подборки выше или укажи публичный Telegram-канал вручную.</span></div> :
-        <div className="sub-list source-accordion-list">{items.map(item => <details className="source-accordion" key={item.id}>
+      <div className="panel-heading"><div><h2>Мои источники</h2><p>{items.length} подключено · раскрывай список, чтобы проверить состояние и управлять источниками.</p></div><div className="sub-actions"><button className="sub-button" onClick={() => void load()} disabled={loading}><RefreshCw size={14}/>Обновить</button></div></div>
+      {loading ? <div className="sub-empty">Загружаем источники…</div> : items.length === 0 ? <div className="sub-empty"><Workflow size={25}/><strong>Источники пока не добавлены</strong><span>Подключи Freelancehunt или добавь Telegram-канал выше.</span></div> :
+        <details className="source-group-accordion">
+          <summary className="source-group-summary"><span><strong>Показать подключённые источники</strong><small>{items.length} · {items.filter(item => item.is_enabled).length} включено</small></span><ChevronDown className="source-chevron" size={16} aria-hidden="true"/></summary>
+          <div className="source-group-content"><div className="sub-list source-accordion-list">{items.map(item => <details className="source-accordion" key={item.id}>
           <summary className="source-accordion-summary">
             <div className="source-summary-title">
               <strong>{(catalog.find(c => c.source === item.source)?.label ?? item.source) + (item.source === "telegram" ? " · @" + item.identifier.replace(/^@/, "") : "")}</strong>
@@ -176,7 +198,8 @@ export default function SourcesPage() {
               <button className="sub-button danger" aria-label="Удалить источник" onClick={() => void remove(item)}><Trash2 size={14}/></button>
             </div>
           </div>
-        </details>)}</div>}
+        </details>)}</div></div>
+        </details>}
     </section>
 
   </WorkspacePage>;
