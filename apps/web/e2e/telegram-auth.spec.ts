@@ -180,8 +180,8 @@ test("projects search sends filters to the API and renders returned projects", a
   });
 
   await page.goto("/projects");
-  await page.getByLabel("Search projects").fill("python");
-  await page.getByRole("button", { name: /Apply filters/i }).click();
+  await page.getByLabel("Поиск заказов").fill("python");
+  await page.getByRole("button", { name: /Применить/i }).click();
   await expect.poll(() => lastQuery).toBe("python");
   await expect(page.getByText("Telegram bot lead collector")).toBeVisible();
 });
