@@ -10,6 +10,7 @@ migrations_dir = "migrations"
 
 [vars]
 APP_ENV = "production"
+AI_MODEL = "gpt-4o-mini"
 
 [triggers]
 crons = ["*/15 * * * *"]
