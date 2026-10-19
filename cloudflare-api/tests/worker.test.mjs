@@ -323,7 +323,8 @@ test("manual scan ingests and normalizes a public Telegram listing", async () =>
 
 test("manual scan persists low-relevance listings for the matching stage", async () => {
   const originalFetch = globalThis.fetch;
-  const html = '<div class="tgme_widget_message_wrap" data-post="python_jobs/124"><div class="tgme_widget_message_text js-message_text" dir="auto">We need a Python developer to build a Telegram bot for a freelance project. Budget 500 USD.</div><time datetime="2026-10-16T10:00:00+00:00"></time></div>';
+  const publishedAt = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+  const html = `<div class="tgme_widget_message_wrap" data-post="python_jobs/124"><div class="tgme_widget_message_text js-message_text" dir="auto">We need a Python developer to build a Telegram bot for a freelance project. Budget 500 USD.</div><time datetime="${publishedAt}"></time></div>`;
   globalThis.fetch = async (input, init) => {
     if (String(input).startsWith("https://t.me/s/python_jobs")) return new Response(html, { status: 200, headers: { "Content-Type": "text/html" } });
     return originalFetch(input, init);
@@ -1567,3 +1568,4 @@ test("manual scan fetches only public Freelance.ru tasks", async () => {
     globalThis.fetch = originalFetch;
   }
 });
+

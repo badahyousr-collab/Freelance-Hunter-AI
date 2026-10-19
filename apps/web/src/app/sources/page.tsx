@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
-import { Plus, RefreshCw, Trash2, Workflow, ExternalLink, Radio, ChevronDown } from "lucide-react";
+import { Plus, RefreshCw, Trash2, Workflow, ExternalLink, Radio, ChevronDown, Check } from "lucide-react";
 import Link from "next/link";
 import WorkspacePage from "@/components/WorkspacePage";
 
@@ -141,11 +141,11 @@ export default function SourcesPage() {
     {message && <div className="sub-alert" role="status">{message}</div>}
 
     <section className="content-card">
-      <div className="panel-heading"><div><h2>Фриланс-биржи</h2><p>Публичный поиск и подключение официального API, когда площадка его предоставляет.</p></div><Workflow size={18}/></div>
+      <div className="panel-heading"><div><h2>Фриланс-биржи</h2><p>FL.ru и Freelance.ru ищутся по публичным объявлениям без регистрации. Чтобы отправить подготовленный AI черновик, войди в свой аккаунт на бирже.</p></div><Workflow size={18}/></div>
       <div className="sub-list">
         <article className="sub-list-row">
-          <div className="sub-list-main"><strong>Freelancehunt</strong><span>{marketplace?.status === "connected" ? "Подключён" : "Доступно подключение"} · поиск заказов и отправка откликов через официальный API</span><span>На сайте Freelancehunt создай API-токен, затем вставь его в форме подключения. Пароль от аккаунта не нужен.</span></div>
-          <div className="sub-actions"><Link className="sub-button primary" href="/integrations">{marketplace?.status === "connected" ? "Настройки" : "Как подключить"} ↗</Link></div>
+          <div className="sub-list-main"><strong>Freelancehunt</strong><span>{marketplace?.status === "connected" ? "Подключён" : "Нужно подключить API"} · агент ищет проекты и отправляет отклики через официальный API</span><span>Создай API-токен Freelancehunt и добавь его в настройках интеграций. Пароль от аккаунта не нужен.</span></div>
+          <div className="sub-actions"><Link className="sub-button primary" href="/integrations">{marketplace?.status === "connected" ? "Настройки API" : "Подключить API"} ↗</Link></div>
         </article>
         {marketplaceSources.map(source => {
           const configured = configuredMarketplaces.has(source.source);
@@ -153,18 +153,17 @@ export default function SourcesPage() {
           return <article className="sub-list-row" key={source.source}>
             <div className="sub-list-main">
               <strong>{source.label}</strong>
-              <span>{configured ? "Подключён" : "Доступен для поиска"} · только публичные заказы и проекты не старше 72 часов</span>
-              <span>{source.setup_note}</span>
+              <span>{configured ? "Поиск подключён" : "Поиск можно подключить"} · публичные объявления не старше 72 часов</span>
+              <span>{source.source === "fl_ru" ? "Сбор идёт из публичной RSS-ленты." : "Сбор идёт из публичного каталога заданий."} AI подготовит текст отклика; отправить его нужно вручную в аккаунте биржи.</span>
             </div>
             <div className="sub-actions">
-              <a className="sub-button" href={externalUrl} target="_blank" rel="noreferrer"><ExternalLink size={14}/>Открыть</a>
-              <button className="sub-button primary" type="button" disabled={configured || Boolean(addingChannel)} onClick={() => void addMarketplace(source)}>
-                <Plus size={14}/>{addingChannel === source.source ? "Подключаем…" : configured ? "Добавлен" : "Подключить"}
-              </button>
+              <a className="sub-button" href={externalUrl} target="_blank" rel="noreferrer"><ExternalLink size={14}/>Открыть биржу</a>
+              {configured ? <span className="sub-badge source-connected"><Check size={13}/>Поиск подключён</span> : <button className="sub-button primary" type="button" disabled={Boolean(addingChannel)} onClick={() => void addMarketplace(source)}>
+                <Plus size={14}/>{addingChannel === source.source ? "Подключаем…" : "Подключить поиск"}
+              </button>}
             </div>
           </article>;
         })}
-        <p className="sub-muted">На FL.ru и Freelance.ru агент ищет заказы и готовит персональный черновик. Отправить его можно вручную на самой бирже; автоматическая отправка там отключена.</p>
       </div>
     </section>
 
