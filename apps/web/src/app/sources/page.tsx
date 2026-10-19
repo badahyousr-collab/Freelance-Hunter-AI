@@ -144,8 +144,8 @@ export default function SourcesPage() {
       <div className="panel-heading"><div><h2>Фриланс-биржи</h2><p>FL.ru и Freelance.ru ищутся по публичным объявлениям без регистрации. Чтобы отправить подготовленный AI черновик, войди в свой аккаунт на бирже.</p></div><Workflow size={18}/></div>
       <div className="sub-list">
         <article className="sub-list-row">
-          <div className="sub-list-main"><strong>Freelancehunt</strong><span>{marketplace?.status === "connected" ? "Подключён" : "Нужно подключить API"} · агент ищет проекты и отправляет отклики через официальный API</span><span>Создай API-токен Freelancehunt и добавь его в настройках интеграций. Пароль от аккаунта не нужен.</span></div>
-          <div className="sub-actions"><Link className="sub-button primary" href="/integrations">{marketplace?.status === "connected" ? "Настройки API" : "Подключить API"} ↗</Link></div>
+          <div className="sub-list-main"><strong>Freelancehunt</strong><span>{marketplace?.status === "connected" ? "Подключён" : "Нужно подключить API"} · агент ищет проекты и отправляет отклики через официальный API</span><span>На Freelancehunt открой «Приложения и API», создай API-ключ и добавь его в настройках интеграций.</span></div>
+          <div className="sub-actions"><a className="sub-button" href="https://freelancehunt.com/my/api" target="_blank" rel="noreferrer"><ExternalLink size={14}/>Где взять API-токен</a><Link className="sub-button primary" href="/integrations">{marketplace?.status === "connected" ? "Настройки API" : "Подключить API"} ↗</Link></div>
         </article>
         {marketplaceSources.map(source => {
           const configured = configuredMarketplaces.has(source.source);
@@ -237,3 +237,4 @@ export default function SourcesPage() {
 
   </WorkspacePage>;
 }
+
