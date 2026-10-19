@@ -45,6 +45,13 @@ function response(request: Request, data: unknown, status = 200, extra: HeadersI
   return new Response(JSON.stringify(data), { status, headers });
 }
 
+function aiProviderErrorDetail(status: number): string {
+  if (status === 401 || status === 403) return `AI provider rejected AI_API_KEY (HTTP ${status}). Replace the provider key in Worker secrets.`;
+  if (status === 404) return "AI provider returned HTTP 404. Check AI_MODEL and AI_API_BASE_URL.";
+  if (status === 429) return "AI provider returned HTTP 429. Check provider quota, billing, and rate limits.";
+  return `AI provider returned HTTP ${status}. Check the model, key, base URL, and provider quota.`;
+}
+
 function cookie(value: string, maxAge: number): string {
   return `${COOKIE}=${value}; HttpOnly; Secure; SameSite=None; Path=/; Max-Age=${maxAge}`;
 }
@@ -1567,7 +1574,7 @@ async function handle(request: Request, env: Env): Promise<Response> {
         body: JSON.stringify({ model: env.AI_MODEL, temperature: 0, max_tokens: 8, messages: [{ role: "user", content: "Reply with OK only." }] }),
         signal: AbortSignal.timeout(15000)
       });
-      if (!upstream.ok) return response(request, { ok: false, detail: "AI provider returned HTTP " + upstream.status + ". Check the key, model and base URL." }, 502);
+      if (!upstream.ok) return response(request, { ok: false, detail: aiProviderErrorDetail(upstream.status) }, 502);
       const data = await upstream.json<any>();
       if (!String(data?.choices?.[0]?.message?.content ?? "").trim()) return response(request, { ok: false, detail: "AI provider responded but returned no text." }, 502);
       return response(request, { ok: true, model: env.AI_MODEL, message: "AI provider responded successfully." });
@@ -1751,16 +1758,7 @@ async function handle(request: Request, env: Env): Promise<Response> {
         signal: AbortSignal.timeout(25000)
       });
       const data = await upstream.json<any>();
-      if (!upstream.ok) {
-        const detail = upstream.status === 401 || upstream.status === 403
-          ? `AI provider rejected AI_API_KEY (HTTP ${upstream.status}). Replace the provider key in Worker secrets.`
-          : upstream.status === 404
-            ? "AI provider returned HTTP 404. Check AI_MODEL and AI_API_BASE_URL."
-            : upstream.status === 429
-              ? "AI provider returned HTTP 429. Check provider quota, billing, and rate limits."
-              : `AI provider returned HTTP ${upstream.status}. Check the model, key, base URL, and provider quota.`;
-        return response(request, { detail }, 502);
-      }
+      if (!upstream.ok) return response(request, { detail: aiProviderErrorDetail(upstream.status) }, 502);
       draftText = String(data?.choices?.[0]?.message?.content ?? "").trim();
     } catch {
       return response(request, { detail: "Could not reach the AI provider. Check the endpoint and try again." }, 502);
