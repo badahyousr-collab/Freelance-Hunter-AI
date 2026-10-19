@@ -146,7 +146,7 @@ export default function IntegrationsPage() {
                           <li>Вставь ключ в поле ниже и нажми «Проверить и подключить».</li>
                         </ol>
                         <p className="sub-muted" style={{ lineHeight: 1.6, margin: "8px 0" }}>
-                          Перед поиском укажи навыки и специализацию в <Link href="/settings">настройках Pipisso</Link> — по ним агент отбирает проекты. Заполни также раздел «Обо мне» и добавь реальные работы в портфолио Freelancehunt, чтобы заказчики могли оценить твой опыт. Данные профиля и портфолио Freelancehunt пока не импортируются в Pipisso автоматически.
+                          Перед поиском укажи навыки и специализацию в <Link href="/settings">настройках ByteCraft</Link> — по ним агент отбирает проекты. Заполни также раздел «Обо мне» и добавь реальные работы в портфолио Freelancehunt, чтобы заказчики могли оценить твой опыт. Данные профиля и портфолио Freelancehunt пока не импортируются в ByteCraft автоматически.
                         </p>
                         <label htmlFor="freelancehunt-api-token">API-токен Freelancehunt</label>
                         <input id="freelancehunt-api-token" className="sub-input" type="password" autoComplete="new-password" value={freelancehuntToken} onChange={event => setFreelancehuntToken(event.target.value)} placeholder="Вставь API-токен, не пароль от аккаунта" />
