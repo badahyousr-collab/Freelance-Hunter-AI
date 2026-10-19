@@ -33,6 +33,7 @@
 .sub-list-main span { display: block; margin-top: 5px; color: var(--muted); font-size: 10px; line-height: 1.5; overflow-wrap: anywhere; }
 .sub-badge { display: inline-flex; align-items: center; gap: 5px; border-radius: 20px; padding: 5px 8px; font-size: 9px; color: #c9baff; background: #8b70ff19; border: 1px solid #8b70ff35; white-space: nowrap; }
 .sub-badge.pending { color: #f2d7a2; background: #4a381c44; border-color: #796032; }
+.sub-badge.source-connected { color: #b9ffe9; background: #173328; border-color: #2b6950; }
 .sub-empty { display: grid; justify-items: center; text-align: center; padding: 28px 14px; gap: 9px; color: var(--muted); font-size: 11px; line-height: 1.6; }
 .sub-empty svg { color: #b6a5ff; }
 .sub-empty strong { color: var(--text); font-size: 12px; }

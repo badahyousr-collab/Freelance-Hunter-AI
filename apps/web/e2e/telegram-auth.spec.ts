@@ -139,10 +139,15 @@ test("source catalog can connect FL.ru and Freelance.ru as draft-only sources", 
   await page.goto("/sources");
   await expect(page.locator("article.sub-list-row").filter({ hasText: "FL.ru" })).toBeVisible();
   await expect(page.locator("article.sub-list-row").filter({ hasText: "Freelance.ru" })).toBeVisible();
-  await expect(page.getByText(/Отправить его можно вручную/)).toBeVisible();
-  await page.locator("article.sub-list-row").filter({ hasText: "FL.ru" }).getByRole("button", { name: "Подключить" }).click();
+  await expect(page.getByText(/без регистрации/)).toBeVisible();
+  await expect(page.getByText(/отправить его нужно вручную/)).toHaveCount(2);
+  const flRow = page.locator("article.sub-list-row").filter({ hasText: "FL.ru" });
+  await expect(flRow.getByRole("link", { name: "Открыть биржу" })).toHaveAttribute("href", "https://www.fl.ru/projects/");
+  await flRow.getByRole("button", { name: "Подключить поиск" }).click();
   await expect(page.getByText(/FL\.ru подключён для поиска новых заказов/)).toBeVisible();
-  await page.locator("article.sub-list-row").filter({ hasText: "Freelance.ru" }).getByRole("button", { name: "Подключить" }).click();
+  await expect(flRow.getByText("Поиск подключён", { exact: true })).toBeVisible();
+  await expect(flRow.getByRole("button", { name: "Подключить поиск" })).toHaveCount(0);
+  await page.locator("article.sub-list-row").filter({ hasText: "Freelance.ru" }).getByRole("button", { name: "Подключить поиск" }).click();
   expect(submitted).toEqual([
     { source: "fl_ru", identifier: "all", is_enabled: true },
     { source: "freelance_ru", identifier: "public", is_enabled: true }
