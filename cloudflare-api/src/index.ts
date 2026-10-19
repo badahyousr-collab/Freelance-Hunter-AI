@@ -1549,7 +1549,7 @@ async function handle(request: Request, env: Env): Promise<Response> {
       worker_runtime: true,
       cron_configured: true,
       telegram_bot_configured: Boolean(env.TELEGRAM_BOT_TOKEN && env.TELEGRAM_WEBHOOK_SECRET && env.BOT_API_SECRET),
-      ai_provider_configured: Boolean(env.AI_API_KEY && env.AI_MODEL && env.AI_API_BASE_URL),
+      ai_provider_configured: Boolean(env.AI_API_KEY && env.AI_MODEL),
       marketplace_adapters: ["freelancehunt"],
       freelancehunt_connected: freelancehuntIntegration?.status === "connected" && Boolean(env.INTEGRATION_ENCRYPTION_KEY && env.INTEGRATION_ENCRYPTION_KEY.trim().length >= 32),
       worker_alerting_configured: Boolean(env.TELEGRAM_BOT_TOKEN && env.WORKER_ALERT_CHAT_ID)
@@ -1751,7 +1751,16 @@ async function handle(request: Request, env: Env): Promise<Response> {
         signal: AbortSignal.timeout(25000)
       });
       const data = await upstream.json<any>();
-      if (!upstream.ok) return response(request, { detail: "AI provider request failed. Check the API endpoint, model, key, and provider quota." }, 502);
+      if (!upstream.ok) {
+        const detail = upstream.status === 401 || upstream.status === 403
+          ? `AI provider rejected AI_API_KEY (HTTP ${upstream.status}). Replace the provider key in Worker secrets.`
+          : upstream.status === 404
+            ? "AI provider returned HTTP 404. Check AI_MODEL and AI_API_BASE_URL."
+            : upstream.status === 429
+              ? "AI provider returned HTTP 429. Check provider quota, billing, and rate limits."
+              : `AI provider returned HTTP ${upstream.status}. Check the model, key, base URL, and provider quota.`;
+        return response(request, { detail }, 502);
+      }
       draftText = String(data?.choices?.[0]?.message?.content ?? "").trim();
     } catch {
       return response(request, { detail: "Could not reach the AI provider. Check the endpoint and try again." }, 502);
@@ -2085,3 +2094,4 @@ export default {
     ctx.waitUntil(runScheduledScan(env));
   }
 };
+
