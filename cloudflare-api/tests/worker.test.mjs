@@ -90,7 +90,7 @@ function fakeDb({ scan = false, freelancehuntScan = false, marketplaceSource = n
             if (scan) return { results: [{ id: 7, user_id: "user-1", source: "telegram", identifier: "@python_jobs", is_enabled: 1 }] };
           }
           if (sql.includes("FROM projects p LEFT JOIN applications a ON a.user_id=p.user_id AND a.project_id=p.id") && sql.includes("p.match_score>=COALESCE")) return { results: telegramProjects };
-          if (sql.includes("FROM projects WHERE projects.user_id=?")) return { results: recentProjects };
+          if (sql.includes("FROM projects") && sql.includes("julianday(")) return { results: recentProjects };
           return { results: [] };
         }
       };
