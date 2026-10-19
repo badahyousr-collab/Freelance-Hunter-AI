@@ -757,6 +757,49 @@ test("protected project data is not returned without a session", async () => {
   assert.match((await response.json()).detail, /authentication required/i);
 });
 
+test("projects page filters fresh listings by the user match threshold unless all listings are requested", async () => {
+  const statements = [];
+  const allProjects = [
+    { id: 1, title: "Good match", match_score: 82, match_reasons: "[]" },
+    { id: 2, title: "Weak match", match_score: 24, match_reasons: "[]" },
+    { id: 3, title: "Not evaluated", match_score: null, match_reasons: "[]" }
+  ];
+  const DB = {
+    prepare(sql) {
+      let values = [];
+      return {
+        bind(...args) { values = args; return this; },
+        async first() {
+          statements.push({ sql, values: [...values] });
+          if (sql.includes("FROM sessions s JOIN users")) return { id: "user-1", created_at: "2026-10-16 10:00:00" };
+          if (sql.includes("SELECT min_match_score FROM agent_settings")) return { min_match_score: 55 };
+          return null;
+        },
+        async all() {
+          statements.push({ sql, values: [...values] });
+          if (!sql.includes("FROM projects WHERE user_id=? AND julianday(published_at)")) return { results: [] };
+          const scoreIndex = values.length - 2;
+          return { results: sql.includes("match_score>=?")
+            ? allProjects.filter(project => project.match_score !== null && project.match_score >= values[scoreIndex])
+            : allProjects };
+        },
+        async run() { return { meta: { changes: 1 } }; }
+      };
+    }
+  };
+  const headers = { Cookie: "fh_session=test-session-token" };
+  const matchedResponse = await worker.fetch(new Request("https://api.example/projects", { headers }), { DB });
+  assert.equal(matchedResponse.status, 200);
+  assert.deepEqual((await matchedResponse.json()).map(project => project.id), [1]);
+  const defaultQuery = statements.findLast(item => item.sql.includes("FROM projects WHERE user_id=? AND julianday(published_at)"));
+  assert.match(defaultQuery.sql, /match_score IS NOT NULL AND match_score>=\?/);
+  assert.equal(defaultQuery.values.at(-2), 55);
+
+  const allResponse = await worker.fetch(new Request("https://api.example/projects?matched_only=false", { headers }), { DB });
+  assert.equal(allResponse.status, 200);
+  assert.deepEqual((await allResponse.json()).map(project => project.id), [1, 2, 3]);
+});
+
 
 test("Freelancehunt token is validated, encrypted, and used to ingest official API projects", async () => {
   const originalFetch = globalThis.fetch;
@@ -1677,5 +1720,6 @@ test("manual scan fetches only public Freelance.ru tasks", async () => {
     globalThis.fetch = originalFetch;
   }
 });
+
 
 
