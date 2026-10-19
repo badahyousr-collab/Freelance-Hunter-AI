@@ -55,7 +55,9 @@ function aiProviderErrorDetail(status: number): string {
 function aiCompletionCompatibilityOptions(apiBase: string, model?: string): Record<string, unknown> {
   try {
     const hostname = new URL(apiBase).hostname.toLowerCase();
-    if (hostname === "api.groq.com" && /^openai\\/gpt-oss-(?:20|120)b$/i.test(String(model ?? ""))) {
+    const normalizedModel = String(model ?? "").trim().toLowerCase();
+    const usesGptOss = normalizedModel === "openai/gpt-oss-20b" || normalizedModel === "openai/gpt-oss-120b";
+    if (hostname === "api.groq.com" && usesGptOss) {
       return { include_reasoning: false, reasoning_effort: "low" };
     }
   } catch {}
