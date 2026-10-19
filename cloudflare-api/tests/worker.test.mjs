@@ -152,6 +152,14 @@ test("agent readiness reflects provider and bot configuration", async () => {
   });
 });
 
+test("agent readiness treats the AI base URL as optional", async () => {
+  const response = await worker.fetch(new Request("https://api.example/agent/readiness", {
+    headers: { Cookie: "fh_session=test-session-token" }
+  }), { DB: fakeDb(), AI_API_KEY: "configured-ai-key", AI_MODEL: "configured-model" });
+  assert.equal(response.status, 200);
+  assert.equal((await response.json()).ai_provider_configured, true);
+});
+
 test("email registration is disabled in favor of Telegram authentication", async () => {
   const response = await worker.fetch(new Request("https://api.example/auth/register", {
     method: "POST",
@@ -1048,7 +1056,7 @@ test("proposal drafting reports missing provider configuration and upstream fail
       method: "POST", headers: { Cookie: "fh_session=test-session-token", "CF-Connecting-IP": "198.51.100.83" }
     }), { DB: fakeDb({ project, profile }), AI_API_KEY: "test-key", AI_MODEL: "test-model" });
     assert.equal(failed.status, 502);
-    assert.match((await failed.json()).detail, /AI provider request failed/i);
+    assert.match((await failed.json()).detail, /HTTP 429.*quota/i);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -1669,4 +1677,5 @@ test("manual scan fetches only public Freelance.ru tasks", async () => {
     globalThis.fetch = originalFetch;
   }
 });
+
 
