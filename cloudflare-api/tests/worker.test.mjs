@@ -777,7 +777,7 @@ test("projects page filters fresh listings by the user match threshold unless al
         },
         async all() {
           statements.push({ sql, values: [...values] });
-          if (!sql.includes("FROM projects WHERE projects.user_id=?")) return { results: [] };
+          if (!sql.includes("FROM projects") || !sql.includes("julianday(")) return { results: [] };
           const scoreIndex = values.length - 2;
           return { results: sql.includes("match_score>=?")
             ? allProjects.filter(project => project.match_score !== null && project.match_score >= values[scoreIndex])
@@ -791,7 +791,7 @@ test("projects page filters fresh listings by the user match threshold unless al
   const matchedResponse = await worker.fetch(new Request("https://api.example/projects", { headers }), { DB });
   assert.equal(matchedResponse.status, 200);
   assert.deepEqual((await matchedResponse.json()).map(project => project.id), [1]);
-  const defaultQuery = statements.findLast(item => item.sql.includes("FROM projects WHERE projects.user_id=?"));
+  const defaultQuery = statements.findLast(item => item.sql.includes("FROM projects") && item.sql.includes("julianday("));
   assert.match(defaultQuery.sql, /match_score IS NOT NULL AND match_score>=\?/);
   assert.equal(defaultQuery.values.at(-2), 55);
 
@@ -1068,6 +1068,7 @@ test("proposal drafting creates Russian and English drafts from profile-grounded
     assert.equal(requests.length, 2);
     for (const request of requests) {
       assert.equal(request.model, "test-model");
+      assert.equal(request.include_reasoning, undefined);
       assert.equal(request.temperature, 0.35);
       assert.match(request.messages[0].content, /untrusted data/i);
       assert.match(request.messages[0].content, /Never invent experience/i);
@@ -1723,5 +1724,33 @@ test("manual scan fetches only public Freelance.ru tasks", async () => {
   }
 });
 
-
-
+test("Groq GPT-OSS proposal requests disable exposed reasoning and use low effort", async () => {
+  const originalFetch = globalThis.fetch;
+  let requestBody;
+  globalThis.fetch = async (input, init) => {
+    if (String(input) === "https://api.groq.com/openai/v1/chat/completions") {
+      requestBody = JSON.parse(init.body);
+      return Response.json({ choices: [{ message: { content: "Могу помочь с этим проектом. Какой срок выполнения вы ожидаете?" } }] });
+    }
+    return originalFetch(input, init);
+  };
+  try {
+    const response = await worker.fetch(new Request("https://api.example/applications/19/draft", {
+      method: "POST",
+      headers: { Cookie: "fh_session=test-session-token", "CF-Connecting-IP": "198.51.100.82" }
+    }), {
+      DB: fakeDb({
+        project: { id: 19, source: "telegram", url: "https://t.me/example/19", title: "AI automation", description: "Need an automation project.", language: "ru", budget_min: null, budget_max: null, currency: "RUB" },
+        profile: { display_name: "Developer", skills: JSON.stringify(["Python", "Automation"]), languages: JSON.stringify(["ru"]), payment_preferences: "[]", min_budget: null, currency: "RUB" }
+      }),
+      AI_API_KEY: "test-key",
+      AI_API_BASE_URL: "https://api.groq.com/openai/v1",
+      AI_MODEL: "openai/gpt-oss-20b"
+    });
+    assert.equal(response.status, 201);
+    assert.equal(requestBody.include_reasoning, false);
+    assert.equal(requestBody.reasoning_effort, "low");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
