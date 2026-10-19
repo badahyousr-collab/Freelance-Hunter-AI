@@ -60,6 +60,18 @@ export default function AgentPage() {
     } finally { setBusy(false); }
   }
 
+  async function testAi() {
+    setBusy(true); setError(""); setMessage("");
+    try {
+      const r = await fetch(API + "/agent/test-ai", { method: "POST", credentials: "include" });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.detail ?? "AI-провайдер не ответил");
+      setMessage("AI-провайдер подключён. Генерация откликов доступна.");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Не удалось проверить AI-провайдера");
+    } finally { setBusy(false); }
+  }
+
   async function toggleAutoDraft() {
     if (!agent) return;
     const nextValue = !Boolean(agent.auto_draft);
@@ -150,6 +162,7 @@ export default function AgentPage() {
         {agent?.enabled ? <Pause size={15} /> : <Play size={15} />}{busy ? "Сохраняем…" : agent?.enabled ? "Приостановить агента" : "Включить агента"}
       </button>
       <p style={{ marginTop: 12 }}>После запуска агент проверяет подключённые источники и продолжает искать подходящие заказы по расписанию.</p>
+      <button className="sub-button" style={{ marginTop: 8 }} disabled={busy || !agent} onClick={() => void testAi()}>Проверить AI</button>
       <label style={{ display: "flex", alignItems: "flex-start", gap: 10, marginTop: 16 }}>
         <input type="checkbox" checked={Boolean(agent?.auto_draft)} disabled={busy || !agent} onChange={() => void toggleAutoDraft()} />
         <span><strong>Автоматически готовить отклики</strong><br/><span className="sub-muted">AI пишет персональные сообщения для свежих подходящих заказов. Там, где подключённый адаптер поддерживает отправку, агент может отправить их сам.</span></span>
@@ -180,3 +193,4 @@ export default function AgentPage() {
     <section className="content-card"><h2>Безопасность откликов</h2><p>Агент отправляет подходящие отклики без подтверждения каждой заявки, соблюдает дневной лимит и сохраняет результат. Статус «Отправлен» выставляется только после подтверждения со стороны биржи. Если бюджет, валюта или доступ к API не подходят для отправки, сообщение останется в «Откликах». AI не выдумывает опыт, клиентов или результаты.</p></section>
   </WorkspacePage>;
 }
+

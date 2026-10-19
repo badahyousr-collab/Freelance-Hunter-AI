@@ -79,7 +79,7 @@ export default function SettingsPage() {
         <p>Добавляй реальные навыки: агент использует их для отбора и персонализации откликов.</p>
         <div className="sub-form">
           <div className="sub-form-field"><label htmlFor="display-name">Имя для откликов (необязательно)</label><input id="display-name" className="sub-input" value={name} onChange={event => setName(event.target.value)} placeholder="Как к тебе обращаться" /></div>
-          <div className="sub-form-field"><label htmlFor="skills">Навыки и специализация</label><textarea id="skills" className="sub-textarea" value={skills} onChange={event => setSkills(event.target.value)} placeholder="Python, Telegram-боты, Mini Apps, REST API" /><span className="sub-muted">Перечисли через запятую. Совпадение навыков помогает ранжировать объявления.</span></div>
+          <div className="sub-form-field"><label htmlFor="skills">Навыки и специализация</label><textarea id="skills" className="sub-textarea" value={skills} onChange={event => setSkills(event.target.value)} placeholder="Python, Telegram-боты, Mini Apps, REST API" /><span className="sub-muted">Перечисли через запятую. Популярные сокращения и варианты написания, например JavaScript и JS, распознаются автоматически.</span></div>
           <div className="sub-form-field"><label htmlFor="languages">Языки объявлений</label><input id="languages" className="sub-input" value={languages} onChange={event => setLanguages(event.target.value)} placeholder="ru, en" /><span className="sub-muted">Укажи коды языков через запятую, например ru, en.</span></div>
         </div>
       </section>
@@ -102,7 +102,7 @@ export default function SettingsPage() {
     {loading && <div className="sub-muted">Загружаем профиль…</div>}
     <section className="content-card">
       <h2>Как агент отбирает проекты</h2>
-      <p>Сначала применяются обязательные фильтры. Навыки не отправляются биржам как поисковый запрос: сейчас агент проверяет, встречается ли указанная фраза в названии или описании объявления. Синонимы автоматически не распознаются, поэтому укажи распространённые варианты через запятую.</p>
+      <p>Сначала применяются обязательные фильтры. Навыки не отправляются биржам как поисковый запрос: агент сравнивает название и описание объявления с навыками профиля и распознаёт частые сокращения, варианты написания и окончания слов. Это не смысловой поиск, поэтому для редких технологий укажи также распространённые варианты через запятую.</p>
       <div className="sub-list">
         <div className="sub-list-row"><div className="sub-list-main"><strong>Навыки</strong><span>{profile.skills.length ? profile.skills.join(", ") : "Пока не указаны"}</span></div></div>
         <div className="sub-list-row"><div className="sub-list-main"><strong>Языки</strong><span>{profile.languages.join(", ") || "Не указаны"}</span></div></div>

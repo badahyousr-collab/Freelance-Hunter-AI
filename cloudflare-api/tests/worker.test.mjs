@@ -1,15 +1,17 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import worker, { detectedBudget, evaluateProjectMatch, parseFlRuRss, parseFreelanceRuTasks } from "../.test-dist/src/index.js";
+import worker, { detectProjectTimeline, detectedBudget, evaluateProjectMatch, findTelegramEmployerUsername, parseFlRuRss, parseFreelanceRuTasks } from "../.test-dist/src/index.js";
 
-function fakeDb({ scan = false, freelancehuntScan = false, marketplaceSource = null, skills = ["python", "telegram"], telegramAuth = null, telegramCode = null, linkedAccount = null, application = null, project = null, profile = null, integration = null, notificationTarget = null, agentSettings = null, pendingDraftProjects = [], sourceCount = 0, insertChanges = 1, projectInserts = [], telegramIdentitySchema = true, notificationsSchema = true, submissionSchema = true, providerStatusSchema = true, applicationUpdateNotificationsSchema = true, autoSubmissionSchema = true } = {}) {
+function fakeDb({ scan = false, freelancehuntScan = false, marketplaceSource = null, skills = ["python", "telegram"], telegramAuth = null, telegramCode = null, linkedAccount = null, application = null, fallbackApplication = null, telegramProjects = [], telegramLinkedUserId = null, project = null, recentProjects = [], profile = null, integration = null, notificationTarget = null, agentSettings = null, pendingDraftProjects = [], sourceCount = 0, insertChanges = 1, projectInserts = [], telegramIdentitySchema = true, notificationsSchema = true, submissionSchema = true, providerStatusSchema = true, applicationUpdateNotificationsSchema = true, autoSubmissionSchema = true } = {}) {
+  const profileRecalculations = [];
   return {
     get storedIntegration() { return integration; },
     set storedIntegration(value) { integration = value; },
     get applicationRecord() { return application; },
     set applicationRecord(value) { application = value; },
     get insertedProjects() { return projectInserts; },
-    async batch(statements) { return statements.map(() => ({ meta: { changes: 1 } })); },
+    get profileRecalculations() { return profileRecalculations; },
+    async batch(statements) { profileRecalculations.push(statements.length); return statements.map(() => ({ meta: { changes: 1 } })); },
     prepare(sql) {
       let values = [];
       return {
@@ -44,6 +46,11 @@ function fakeDb({ scan = false, freelancehuntScan = false, marketplaceSource = n
         },
         async first() {
           if (sql.includes("SELECT tl.telegram_user_id,a.notify_new_projects")) return notificationTarget;
+          if (sql.includes("SELECT COALESCE(notify_new_projects,1) AS notify_new_projects")) return { notify_new_projects: 1 };
+          if (sql.includes("SELECT telegram_user_id FROM telegram_links WHERE user_id=?")) return telegramLinkedUserId ? { telegram_user_id: telegramLinkedUserId } : null;
+          if (sql.includes("SELECT a.id,a.status,a.draft_text,p.source,p.source_project_id,p.url,p.title,p.description,p.budget_min,p.budget_max,p.currency,p.match_score")) return fallbackApplication;
+          if (sql.includes("SELECT id FROM applications WHERE user_id=? AND project_id=?")) return application;
+          if (sql.includes("SELECT * FROM profiles WHERE user_id=?")) return profile;
           if (sql.includes("SELECT credentials_json FROM integrations WHERE user_id=? AND provider='freelancehunt'")) return integration?.status === "connected" ? integration : null;
           if (sql.includes("SELECT id,provider,label,status,created_at FROM integrations WHERE user_id=? AND provider=?")) return integration ? { id: integration.id, provider: integration.provider, label: integration.label, status: integration.status, created_at: integration.created_at } : null;
           if (sql.includes("SELECT a.id,a.project_id,a.status,a.draft_text,p.source,p.source_project_id,p.url FROM applications a JOIN projects")) return application;
@@ -76,12 +83,14 @@ function fakeDb({ scan = false, freelancehuntScan = false, marketplaceSource = n
           if (sql.includes("sqlite_master") && sql.includes("auth_rate_limits")) {
             return { results: ["users", "sessions", "telegram_auth_codes", "auth_rate_limits", "profiles", "agent_settings", "sources", "projects", "applications", "integrations", "telegram_links"].map(name => ({ name })) };
           }
-          if (sql.includes("LEFT JOIN applications a ON a.user_id=p.user_id AND a.project_id=p.id")) return { results: pendingDraftProjects };
+          if (sql.includes("LEFT JOIN applications a ON a.user_id=p.user_id AND a.project_id=p.id") && sql.includes("AND a.id IS NULL")) return { results: pendingDraftProjects };
           if (sql.includes("SELECT * FROM sources WHERE user_id=? AND is_enabled=1")) {
             if (marketplaceSource) return { results: [{ id: 9, user_id: "user-1", identifier: marketplaceSource === "fl_ru" ? "all" : "public", is_enabled: 1, source: marketplaceSource }] };
             if (freelancehuntScan) return { results: [{ id: 8, user_id: "user-1", source: "freelancehunt", identifier: "", is_enabled: 1 }] };
             if (scan) return { results: [{ id: 7, user_id: "user-1", source: "telegram", identifier: "@python_jobs", is_enabled: 1 }] };
           }
+          if (sql.includes("FROM projects p LEFT JOIN applications a ON a.user_id=p.user_id AND a.project_id=p.id") && sql.includes("p.match_score>=COALESCE")) return { results: telegramProjects };
+          if (sql.includes("FROM projects WHERE user_id=? AND julianday(published_at)")) return { results: recentProjects };
           return { results: [] };
         }
       };
@@ -141,6 +150,14 @@ test("agent readiness reflects provider and bot configuration", async () => {
     freelancehunt_connected: false,
     worker_alerting_configured: false
   });
+});
+
+test("agent readiness treats the AI base URL as optional", async () => {
+  const response = await worker.fetch(new Request("https://api.example/agent/readiness", {
+    headers: { Cookie: "fh_session=test-session-token" }
+  }), { DB: fakeDb(), AI_API_KEY: "configured-ai-key", AI_MODEL: "configured-model" });
+  assert.equal(response.status, 200);
+  assert.equal((await response.json()).ai_provider_configured, true);
 });
 
 test("email registration is disabled in favor of Telegram authentication", async () => {
@@ -266,14 +283,16 @@ test("source creation has no arbitrary per-account limit", async () => {
   assert.notEqual(response.status, 429);
 });
 
-test("scheduled scan automatically saves AI proposal drafts for matching projects published within 72 hours", async () => {
+test("scheduled scan saves AI drafts and sends a fallback Telegram card when no supported sender can contact the employer", async () => {
   const originalFetch = globalThis.fetch;
+  const telegramPayloads = [];
   const html = '<div class="tgme_widget_message_wrap" data-post="python_jobs/203"><div class="tgme_widget_message_text js-message_text" dir="auto">We need a Python developer for a freelance project. Budget 500 USD.</div><time datetime="2026-10-16T10:00:00+00:00"></time></div>';
-  globalThis.fetch = async input => {
+  globalThis.fetch = async (input, init) => {
     const url = String(input);
     if (url.startsWith("https://t.me/s/python_jobs")) return new Response(html, { status: 200, headers: { "Content-Type": "text/html" } });
     if (url.includes("/chat/completions")) return Response.json({ choices: [{ message: { content: "Здравствуйте! Могу помочь с разработкой Telegram-бота на Python. Предлагаю сначала согласовать требования и объём работ." } }] });
-    return originalFetch(input);
+    if (url.includes("api.telegram.org/botTEST_TOKEN/sendMessage")) { telegramPayloads.push(JSON.parse(init?.body ?? "{}")); return Response.json({ ok: true, result: { message_id: 77 } }); }
+    return originalFetch(input, init);
   };
   try {
     const response = await worker.fetch(new Request("https://api.example/agent/scan", {
@@ -284,14 +303,24 @@ test("scheduled scan automatically saves AI proposal drafts for matching project
       DB: fakeDb({
         scan: true,
         agentSettings: { is_enabled: 1, auto_draft: 1, min_match_score: 60 },
-        pendingDraftProjects: [{ id: 301, source: "telegram", url: "https://t.me/python_jobs/203", title: "Python developer", description: "Telegram bot project", language: "en", budget_min: 500, budget_max: 500, currency: "USD", payment_method: null }]
+        pendingDraftProjects: [{ id: 301, source: "telegram", url: "https://t.me/python_jobs/203", title: "Python developer", description: "Telegram bot project", language: "en", budget_min: 500, budget_max: 500, currency: "USD", payment_method: null }],
+        telegramLinkedUserId: "12345",
+        fallbackApplication: { id: 42, status: "draft", source: "telegram", source_project_id: "python_jobs:203", url: "https://t.me/python_jobs/203", title: "Python developer", description: "Build a Python Telegram bot. Contact @client_person", budget_min: 500, budget_max: 500, currency: "USD", match_score: 84, draft_text: "Здравствуйте! Могу помочь с ботом. Подскажите, пожалуйста, какой срок вы ожидаете?" }
       }),
       AI_API_KEY: "test-key",
-      AI_MODEL: "test-model"
+      AI_MODEL: "test-model",
+      TELEGRAM_BOT_TOKEN: "TEST_TOKEN"
     });
     assert.equal(response.status, 200);
     const result = await response.json();
     assert.equal(result.draftedApplications, 1);
+    assert.equal(result.notifiedApplications, 1);
+    assert.equal(telegramPayloads.length, 1);
+    assert.match(telegramPayloads[0].text, /<blockquote>/);
+    assert.match(telegramPayloads[0].text, /500 USD/);
+    assert.match(telegramPayloads[0].text, /По договорённости/);
+    assert.match(telegramPayloads[0].text, /Здравствуйте! Могу помочь с ботом/);
+    assert.equal(telegramPayloads[0].reply_markup.inline_keyboard[0][0].url, "https://t.me/client_person");
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -452,6 +481,82 @@ test("Telegram help command sends readable multiline text and keyboard", async (
     assert.match(sentPayload.text, /обычным сообщением/);
     assert.doesNotMatch(sentPayload.text, /Команды:\\n/);
     assert.equal(sentPayload.reply_markup.keyboard.length, 3);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("skill matching recognizes common spelling, abbreviation, and Russian inflection variants", () => {
+  const result = evaluateProjectMatch({
+    title: "Ищем JS-разработчика для Telegram bot на ReactJS",
+    description: "Нужны серверная разработка и интеграция с API.",
+    language: "ru",
+    profile: { skills: ["JavaScript", "React", "backend-разработка", "Telegram боты", "интеграция API"], languages: ["ru"] }
+  });
+  assert.equal(result.score >= 60, true);
+  assert.deepEqual(result.reasons.filter(reason => reason.startsWith("Совпавшие навыки:")), [
+    "Совпавшие навыки: javascript, react, backend-разработка, telegram боты, интеграция api"
+  ]);
+});
+
+test("updating profile skills immediately recalculates matches for recent projects", async () => {
+  const db = fakeDb({
+    recentProjects: [{ id: 71, title: "Ищем JS-разработчика", description: "Разработка интерфейса на React", language: "ru", budget_min: null, budget_max: null, currency: "" }]
+  });
+  const response = await worker.fetch(new Request("https://api.example/profile", {
+    method: "PATCH",
+    headers: { Cookie: "fh_session=test-session-token", "Content-Type": "application/json" },
+    body: JSON.stringify({ skills: ["JavaScript", "React"], languages: ["ru"] })
+  }), { DB: db });
+  assert.equal(response.status, 200);
+  assert.deepEqual(db.profileRecalculations, [1]);
+});
+
+test("project timeline parser reports agreed timing when absent and reads common Russian and English deadlines", () => {
+  assert.equal(detectProjectTimeline("Нужен сайт на React"), "По договорённости");
+  assert.equal(detectProjectTimeline("Срок выполнения: 2 недели"), "2 недели");
+  assert.equal(detectProjectTimeline("Please deliver within 5 days"), "5 days");
+  assert.equal(detectProjectTimeline("Работы нужно завершить до 20.11.2026"), "до 20.11.2026");
+});
+
+test("Telegram employer contact extraction ignores the source channel and accepts explicit usernames", () => {
+  assert.equal(findTelegramEmployerUsername("Канал @python_jobs. Контакт: @client_person", "python_jobs:45"), "client_person");
+  assert.equal(findTelegramEmployerUsername("Ищем разработчика, пишите https://t.me/client_person", "python_jobs:45"), "client_person");
+  assert.equal(findTelegramEmployerUsername("Пишите в комментариях канала", "python_jobs:45"), null);
+});
+
+test("Telegram projects command sends a full match card with budget, timeline, AI reply, and safe source fallback", async () => {
+  const originalFetch = globalThis.fetch;
+  const sent = [];
+  globalThis.fetch = async (input, init) => {
+    if (String(input).includes("api.telegram.org/botTEST_TOKEN/sendMessage")) {
+      sent.push(JSON.parse(init.body));
+      return Response.json({ ok: true, result: { message_id: sent.length } });
+    }
+    return originalFetch(input, init);
+  };
+  try {
+    const response = await worker.fetch(new Request("https://api.example/telegram/webhook", {
+      method: "POST",
+      headers: { "X-Telegram-Bot-Api-Secret-Token": "webhook-secret", "Content-Type": "application/json" },
+      body: JSON.stringify({ message: { chat: { id: 123, type: "private" }, from: { id: 123 }, text: "/projects" } })
+    }), {
+      DB: fakeDb({
+        linkedAccount: { user_id: "user-1" },
+        telegramProjects: [{ id: 8, title: "Python bot", description: "Нужен Telegram-бот на Python, срок выполнения 2 недели", url: "https://fl.ru/projects/123", source: "fl_ru", source_project_id: "123", budget_min: 25000, budget_max: 30000, currency: "RUB", match_score: 83, draft_text: "Здравствуйте! Могу помочь с ботом. Какой срок вам подходит?" }]
+      }),
+      TELEGRAM_BOT_TOKEN: "TEST_TOKEN",
+      TELEGRAM_WEBHOOK_SECRET: "webhook-secret"
+    });
+    assert.equal(response.status, 200);
+    assert.equal(sent.length, 1);
+    assert.match(sent[0].text, /Python bot/);
+    assert.match(sent[0].text, /<blockquote>/);
+    assert.match(sent[0].text, /25 000–30 000 RUB/);
+    assert.match(sent[0].text, /2 недели/);
+    assert.match(sent[0].text, /Какой срок вам подходит/);
+    assert.match(sent[0].text, /fl\.ru\/projects\/123/);
+    assert.deepEqual(sent[0].reply_markup.inline_keyboard[0][0], { text: "Открыть заказ", url: "https://fl.ru/projects/123" });
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -921,11 +1026,14 @@ test("proposal drafting creates Russian and English drafts from profile-grounded
       assert.equal(request.temperature, 0.35);
       assert.match(request.messages[0].content, /untrusted data/i);
       assert.match(request.messages[0].content, /Never invent experience/i);
+      assert.match(request.messages[0].content, /ask the client first what delivery date or timeframe they expect/i);
+      assert.match(request.messages[0].content, /when both are missing, ask about timing before budget/i);
       assert.match(request.messages[0].content, /Do not claim the proposal has been sent/i);
       assert.equal(request.messages[1].role, "user");
       const facts = JSON.parse(request.messages[1].content);
       assert.deepEqual(facts.user_profile.skills, ["Python", "Telegram bots"]);
       assert.ok(facts.project.listing_url.startsWith("https://t.me/example/"));
+      assert.equal(facts.project.expected_timeline, "По договорённости");
     }
   } finally {
     globalThis.fetch = originalFetch;
@@ -948,7 +1056,7 @@ test("proposal drafting reports missing provider configuration and upstream fail
       method: "POST", headers: { Cookie: "fh_session=test-session-token", "CF-Connecting-IP": "198.51.100.83" }
     }), { DB: fakeDb({ project, profile }), AI_API_KEY: "test-key", AI_MODEL: "test-model" });
     assert.equal(failed.status, 502);
-    assert.match((await failed.json()).detail, /AI provider request failed/i);
+    assert.match((await failed.json()).detail, /HTTP 429.*quota/i);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -1386,7 +1494,7 @@ test("dashboard summary includes user-scoped source counts and a seven-day disco
           if (sql.includes("FROM sessions s JOIN users")) return { id: "user-1", created_at: "2026-10-16 10:00:00" };
           if (sql.includes("AS telegram_channels_connected")) return {
             projects_found: 11, matched_projects: 5, proposals_sent: 2, client_replies: 1,
-            telegram_channels_connected: 3, marketplaces_connected: 1, telegram_bots_connected: 1, agent_enabled: 1
+            telegram_channels_connected: 3, marketplaces_connected: 3, telegram_bots_connected: 1, agent_enabled: 1
           };
           return null;
         },
@@ -1406,14 +1514,15 @@ test("dashboard summary includes user-scoped source counts and a seven-day disco
   assert.equal(response.status, 200);
   const summary = await response.json();
   assert.equal(summary.telegram_channels_connected, 3);
-  assert.equal(summary.marketplaces_connected, 1);
+  assert.equal(summary.marketplaces_connected, 3);
   assert.equal(summary.telegram_bots_connected, 1);
   assert.equal(summary.agent_enabled, 1);
   assert.equal(summary.daily_activity.length, 7);
   assert.equal(summary.daily_activity.at(-2).projects_found, 2);
   assert.equal(summary.daily_activity.at(-1).projects_found, 4);
   const metricsQuery = statements.find(entry => entry.sql.includes("AS telegram_channels_connected"));
-  assert.deepEqual(metricsQuery.values, Array(8).fill("user-1"));
+  assert.match(metricsQuery.sql, /COUNT\(DISTINCT source\).*fl_ru.*freelance_ru/s);
+  assert.deepEqual(metricsQuery.values, Array(9).fill("user-1"));
   const activityQuery = statements.find(entry => entry.sql.includes("date(discovered_at) AS day"));
   assert.deepEqual(activityQuery.values, ["user-1"]);
 });
@@ -1568,4 +1677,5 @@ test("manual scan fetches only public Freelance.ru tasks", async () => {
     globalThis.fetch = originalFetch;
   }
 });
+
 
