@@ -1,4 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
-  <rect x="2" y="2" width="60" height="60" rx="16" fill="#efefe9"/>
-  <text x="32" y="34" text-anchor="middle" dominant-baseline="central" font-family="Segoe UI Symbol, Arial Unicode MS, sans-serif" font-size="34" fill="#121310">⌘</text>
+  <rect width="64" height="64" rx="18" fill="#10131b"/>
+  <path d="M20 46V18h27M20 31h20" fill="none" stroke="#b7a2ff" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="44" cy="45" r="6" fill="#63d8ff"/>
 </svg>
