@@ -5,9 +5,9 @@ export const metadata: Metadata = {
   title: "Freelance Hunter | Pipisso",
   description: "Поиск фриланс-заказов, подбор проектов по навыкам и управление откликами.",
   icons: {
-    icon: "/icon.svg?v=2",
-    shortcut: "/icon.svg?v=2",
-    apple: "/icon.svg?v=2",
+    icon: "/icon.svg?v=3",
+    shortcut: "/icon.svg?v=3",
+    apple: "/icon.svg?v=3",
   },
 };
 
