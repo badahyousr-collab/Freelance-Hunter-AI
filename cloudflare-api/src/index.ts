@@ -1620,7 +1620,7 @@ async function handle(request: Request, env: Env): Promise<Response> {
     }
     const pattern = "%" + query + "%";
     const matchFilter = matchedOnly ? " AND match_score IS NOT NULL AND match_score>=?" : "";
-    const rows = await env.DB.prepare("SELECT * FROM projects WHERE user_id=? AND julianday(published_at) BETWEEN julianday('now','-3 days') AND julianday('now','+5 minutes') AND (?='' OR source=?) AND (?='' OR lower(title) LIKE lower(?) OR lower(description) LIKE lower(?))" + matchFilter + " ORDER BY published_at DESC LIMIT ?")
+    const rows = await env.DB.prepare("SELECT projects.*, (SELECT applications.status FROM applications WHERE applications.user_id=projects.user_id AND applications.project_id=projects.id ORDER BY applications.created_at DESC LIMIT 1) AS application_status FROM projects WHERE projects.user_id=? AND julianday(projects.published_at) BETWEEN julianday('now','-3 days') AND julianday('now','+5 minutes') AND (?='' OR projects.source=?) AND (?='' OR lower(projects.title) LIKE lower(?) OR lower(projects.description) LIKE lower(?))" + matchFilter + " ORDER BY published_at DESC LIMIT ?")
       .bind(uid, sourceFilter, sourceFilter, query, pattern, pattern, ...(matchedOnly ? [minMatchScore] : []), limit).all<any>();
     return response(request, (rows.results ?? []).map((p:any) => ({ ...p, match_reasons: safeJson(p.match_reasons, []) })));
   }
@@ -1729,7 +1729,7 @@ async function handle(request: Request, env: Env): Promise<Response> {
     const profile = await env.DB.prepare("SELECT display_name,skills,languages,payment_preferences,min_budget,currency FROM profiles WHERE user_id=?").bind(uid).first<any>() ?? {};
     const existing = await env.DB.prepare("SELECT id,status FROM applications WHERE user_id=? AND project_id=?").bind(uid, project.id).first<any>();
     if (existing && ["sent","replied","closed"].includes(String(existing.status))) {
-      return response(request, { detail: "This application is already tracked as submitted or closed. Its status will not be overwritten." }, 409);
+      return response(request, { detail: "По этому заказу отклик уже отправлен или закрыт. Открой страницу «Отклики», чтобы посмотреть его статус." }, 409);
     }
     const profileFacts = {
       display_name: profile.display_name ?? null,

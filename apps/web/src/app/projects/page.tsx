@@ -6,7 +6,7 @@ import { ArrowUpRight, Search, SlidersHorizontal } from "lucide-react";
 import WorkspacePage from "@/components/WorkspacePage";
 
 const API = "/api/backend";
-type Project = { id:number; source:string; url:string; title:string; description:string; language:string|null; budget_min:number|null; budget_max:number|null; currency:string|null; payment_method:string|null; discovered_at:string; match_score:number|null; match_reasons:string[] };
+type Project = { id:number; source:string; url:string; title:string; description:string; language:string|null; budget_min:number|null; budget_max:number|null; currency:string|null; payment_method:string|null; discovered_at:string; match_score:number|null; match_reasons:string[]; application_status?:string|null };
 
 function budget(p: Project) {
   if (p.budget_min == null && p.budget_max == null) return "Не указан";
@@ -18,6 +18,15 @@ function budget(p: Project) {
 
 function sourceName(source: string) {
   return ({ telegram: "Telegram", freelancehunt: "Freelancehunt", fl_ru: "FL.ru", freelance_ru: "Freelance.ru" } as Record<string, string>)[source] ?? source;
+}
+
+function applicationStatusLabel(status: string) {
+  const labels: Record<string,string> = {
+    draft: "Черновик", awaiting_confirmation: "Отклик готов", submitting: "Отправляется",
+    submission_unknown: "Проверь статус на бирже", sent: "Уже отправлен", replied: "Есть ответ",
+    failed: "Ошибка отправки", closed: "Закрыт"
+  };
+  return labels[status] ?? "Отклик уже создан";
 }
 
 export default function ProjectsPage() {
@@ -55,7 +64,7 @@ export default function ProjectsPage() {
     {error && <div className="sub-alert error">{error}</div>}{message && <div className="sub-alert">{message}</div>}
     <section className="content-card"><h2>Найденные заказы</h2><p>{loading ? "Загружаем заказы…" : `Показано: ${items.length}`}</p>
       {!loading && items.length===0 ? <div className="sub-empty"><Search size={25}/><strong>Подходящих заказов пока нет</strong><span>Добавь Telegram-канал или включи поиск по FL.ru, Freelance.ru или Freelancehunt. Агент показывает публикации не старше 72 часов.</span><Link className="sub-button" href="/sources">Подключить источники</Link></div> :
-      <div className="sub-table-wrap"><table className="sub-table"><thead><tr><th>ЗАКАЗ</th><th>ИСТОЧНИК</th><th>БЮДЖЕТ</th><th>СОВПАДЕНИЕ</th><th>НАЙДЕН</th><th>ДЕЙСТВИЕ</th></tr></thead><tbody>{items.map(p=><tr key={p.id}><td><strong>{p.title}</strong><div className="sub-muted">{String(p.description ?? "").slice(0,140) || "Описание не указано"}</div><a className="text-link" href={p.url} target="_blank" rel="noreferrer">Открыть заказ <ArrowUpRight size={13}/></a></td><td>{sourceName(p.source)}</td><td>{budget(p)}<div className="sub-muted">{p.payment_method??"Способ оплаты не указан"}</div></td><td>{p.match_score==null?"Не оценён":p.match_score+"%"}</td><td>{new Date(p.discovered_at).toLocaleDateString("ru-RU")}</td><td><button className="sub-button" disabled={draftingId!==null} onClick={()=>void draft(p)}>{draftingId===p.id?"Готовим…":"Подготовить отклик"}</button></td></tr>)}</tbody></table></div>}
+      <div className="sub-table-wrap"><table className="sub-table"><thead><tr><th>ЗАКАЗ</th><th>ИСТОЧНИК</th><th>БЮДЖЕТ</th><th>СОВПАДЕНИЕ</th><th>НАЙДЕН</th><th>ДЕЙСТВИЕ</th></tr></thead><tbody>{items.map(p=><tr key={p.id}><td><strong>{p.title}</strong><div className="sub-muted">{String(p.description ?? "").slice(0,140) || "Описание не указано"}</div><a className="text-link" href={p.url} target="_blank" rel="noreferrer">Открыть заказ <ArrowUpRight size={13}/></a></td><td>{sourceName(p.source)}</td><td>{budget(p)}<div className="sub-muted">{p.payment_method??"Способ оплаты не указан"}</div></td><td>{p.match_score==null?"Не оценён":p.match_score+"%"}</td><td>{new Date(p.discovered_at).toLocaleDateString("ru-RU")}</td><td>{p.application_status && p.application_status !== "draft" ? <><span className="sub-badge">{applicationStatusLabel(p.application_status)}</span><div><Link className="text-link" href="/applications">Открыть отклик</Link></div></> : <button className="sub-button" disabled={draftingId!==null} onClick={()=>void draft(p)}>{draftingId===p.id?"Готовим…":p.application_status==="draft"?"Перегенерировать отклик":"Подготовить отклик"}</button>}</td></tr>)}</tbody></table></div>}
     </section>
   </WorkspacePage>;
 }
