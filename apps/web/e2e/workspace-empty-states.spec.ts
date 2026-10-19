@@ -52,4 +52,3 @@ test("projects page keeps the search controls usable after an API error and show
   await expect(page.getByText("Подходящих заказов пока нет")).toBeVisible();
   expect(requestCount).toBeGreaterThanOrEqual(2);
 });
-
