@@ -10,8 +10,8 @@ migrations_dir = "migrations"
 
 [vars]
 APP_ENV = "production"
-AI_API_BASE_URL = "https://tokenharbor.ai/v1"
-AI_MODEL = "deepseek-v4.1-flash:free"
+AI_API_BASE_URL = "https://api.groq.com/openai/v1"
+AI_MODEL = "openai/gpt-oss-20b"
 
 [triggers]
 crons = ["*/15 * * * *"]
