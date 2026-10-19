@@ -2,7 +2,7 @@
 
 import { useRef, useState } from "react";
 import Link from "next/link";
-import { ArrowRight, Command, LoaderCircle, Send, Copy, Check, RefreshCw } from "lucide-react";
+import { ArrowRight, Code2, LoaderCircle, Send, Copy, Check, RefreshCw } from "lucide-react";
 import AuthMolecule from "@/components/AuthMolecule";
 
 const API = "/api/backend";
@@ -121,8 +121,8 @@ export default function TelegramAuth({ mode }: Props) {
       <div className="auth-layout">
         <section className="auth-card">
           <Link href="/" className="auth-brand">
-            <span className="brand-mark"><Command size={21} /></span>
-            <span>Pipisso<small>FREELANCE HUNTER</small></span>
+            <span className="brand-mark"><Code2 size={21} /></span>
+            <span>ByteCraft<small>САЙТЫ · БОТЫ · АВТОМАТИЗАЦИЯ</small></span>
           </Link>
           <div className="auth-eyebrow"><Send size={14} /> TELEGRAM AUTHENTICATION</div>
           <h1>{isRegister ? "Создай аккаунт" : "Войди в аккаунт"}</h1>
