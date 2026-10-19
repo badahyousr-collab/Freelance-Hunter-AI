@@ -133,6 +133,8 @@ export default function SourcesPage() {
   const configuredHandles = new Set(items.filter(item => item.source === "telegram").map(item => item.identifier.replace(/^@/, "").toLowerCase()));
 
   const marketplace = integrations.find(item => item.provider === "freelancehunt");
+  const marketplaceConnected = marketplace?.status === "connected";
+  const marketplaceChecking = loading && integrations.length === 0;
   const marketplaceSources = catalog.filter(item => item.kind === "marketplace");
   const configuredMarketplaces = new Set(items.filter(item => item.source !== "telegram").map(item => item.source));
 
@@ -144,8 +146,8 @@ export default function SourcesPage() {
       <div className="panel-heading"><div><h2>Фриланс-биржи</h2><p>FL.ru и Freelance.ru ищутся по публичным объявлениям без регистрации. Чтобы отправить подготовленный AI черновик, войди в свой аккаунт на бирже.</p></div><Workflow size={18}/></div>
       <div className="sub-list">
         <article className="sub-list-row">
-          <div className="sub-list-main"><strong>Freelancehunt</strong><span>{marketplace?.status === "connected" ? "Подключён" : "Нужно подключить API"} · агент ищет проекты и отправляет отклики через официальный API</span><span>На Freelancehunt открой «Приложения и API», создай API-ключ и добавь его в настройках интеграций.</span></div>
-          <div className="sub-actions"><a className="sub-button" href="https://freelancehunt.com/my/api" target="_blank" rel="noreferrer"><ExternalLink size={14}/>Где взять API-токен</a><Link className="sub-button primary" href="/integrations">{marketplace?.status === "connected" ? "Настройки API" : "Подключить API"} ↗</Link></div>
+          <div className="sub-list-main"><strong>Freelancehunt</strong><span>{marketplaceChecking ? "Проверяем подключение…" : marketplaceConnected ? "Подключён · агент ищет проекты и отправляет отклики через официальный API" : "Не подключён · добавь API-ключ для поиска и отправки откликов"}</span>{marketplaceChecking ? <span>Загружаем состояние подключения.</span> : marketplaceConnected ? <span>Подключение активно. Управляй API-ключом в настройках интеграций.</span> : <span>На Freelancehunt открой «Приложения и API», создай API-ключ и добавь его в настройках интеграций.</span>}</div>
+          <div className="sub-actions">{marketplaceChecking ? <span className="sub-muted">Проверяем…</span> : <>{!marketplaceConnected && <a className="sub-button" href="https://freelancehunt.com/my/api" target="_blank" rel="noreferrer"><ExternalLink size={14}/>Где взять API-токен</a>}<Link className="sub-button primary" href="/integrations">{marketplaceConnected ? "Настройки API" : "Подключить API"} ↗</Link></>}</div>
         </article>
         {marketplaceSources.map(source => {
           const configured = configuredMarketplaces.has(source.source);
@@ -237,4 +239,5 @@ export default function SourcesPage() {
 
   </WorkspacePage>;
 }
+
 
