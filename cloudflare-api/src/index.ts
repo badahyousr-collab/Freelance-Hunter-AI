@@ -1611,9 +1611,17 @@ async function handle(request: Request, env: Env): Promise<Response> {
     const limit = Math.min(100, Math.max(1, Number(url.searchParams.get("limit") ?? 50) || 50));
     const sourceFilter = String(url.searchParams.get("source") ?? "").trim().slice(0, 40);
     const query = String(url.searchParams.get("q") ?? "").trim().slice(0, 120);
+    const matchedOnly = !["false", "0"].includes(String(url.searchParams.get("matched_only") ?? "true").toLowerCase());
+    let minMatchScore = 60;
+    if (matchedOnly) {
+      const settings = await env.DB.prepare("SELECT min_match_score FROM agent_settings WHERE user_id=?").bind(uid).first<any>();
+      const configuredScore = Number(settings?.min_match_score);
+      if (Number.isFinite(configuredScore)) minMatchScore = Math.max(0, Math.min(100, Math.round(configuredScore)));
+    }
     const pattern = "%" + query + "%";
-    const rows = await env.DB.prepare("SELECT * FROM projects WHERE user_id=? AND julianday(published_at) BETWEEN julianday('now','-3 days') AND julianday('now','+5 minutes') AND (?='' OR source=?) AND (?='' OR lower(title) LIKE lower(?) OR lower(description) LIKE lower(?)) ORDER BY published_at DESC LIMIT ?")
-      .bind(uid, sourceFilter, sourceFilter, query, pattern, pattern, limit).all<any>();
+    const matchFilter = matchedOnly ? " AND match_score IS NOT NULL AND match_score>=?" : "";
+    const rows = await env.DB.prepare("SELECT * FROM projects WHERE user_id=? AND julianday(published_at) BETWEEN julianday('now','-3 days') AND julianday('now','+5 minutes') AND (?='' OR source=?) AND (?='' OR lower(title) LIKE lower(?) OR lower(description) LIKE lower(?))" + matchFilter + " ORDER BY published_at DESC LIMIT ?")
+      .bind(uid, sourceFilter, sourceFilter, query, pattern, pattern, ...(matchedOnly ? [minMatchScore] : []), limit).all<any>();
     return response(request, (rows.results ?? []).map((p:any) => ({ ...p, match_reasons: safeJson(p.match_reasons, []) })));
   }
 
@@ -2092,4 +2100,5 @@ export default {
     ctx.waitUntil(runScheduledScan(env));
   }
 };
+
 
