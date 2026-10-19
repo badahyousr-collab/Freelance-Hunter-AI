@@ -9,7 +9,7 @@ type Catalog = { provider: string; label: string; status: string; setup_note: st
 type Integration = { id: number; provider: string; label: string; status: string; created_at: string };
 
 const publicUrls: Record<string, string> = {
-  freelancehunt: "https://freelancehunt.com/",
+  freelancehunt: "https://freelancehunt.com/my/api",
 };
 
 export default function IntegrationsPage() {
@@ -123,7 +123,7 @@ export default function IntegrationsPage() {
 
       <section className="content-card">
         <h2><Plug size={16} style={{ verticalAlign: "middle", marginRight: 8 }} />Биржи фриланса</h2>
-        <p>Токен проверяется перед сохранением. Пароль от аккаунта не нужен.</p>
+        <p>Для Freelancehunt нужен API-токен. Получи его в своём аккаунте на бирже и вставь ниже — пароль от аккаунта вводить не нужно.</p>
         {loading ? (
           <div className="sub-empty">Загружаем список площадок…</div>
         ) : (
@@ -139,6 +139,11 @@ export default function IntegrationsPage() {
                     {integration && <span>Запись: {integration.status.replaceAll("_", " ")}</span>}
                     {entry.provider === "freelancehunt" && (
                       <div className="sub-form" style={{ marginTop: 12, maxWidth: 520 }}>
+                        <ol style={{ margin: "0 0 4px", paddingLeft: 20, lineHeight: 1.7 }}>
+                          <li>Открой <a href="https://freelancehunt.com/my/api" target="_blank" rel="noreferrer">«Приложения и API» на Freelancehunt</a> и войди в аккаунт.</li>
+                          <li>Создай API-ключ на этой странице и скопируй его.</li>
+                          <li>Вставь ключ в поле ниже и нажми «Проверить и подключить».</li>
+                        </ol>
                         <label htmlFor="freelancehunt-api-token">API-токен Freelancehunt</label>
                         <input id="freelancehunt-api-token" className="sub-input" type="password" autoComplete="new-password" value={freelancehuntToken} onChange={event => setFreelancehuntToken(event.target.value)} placeholder="Вставь API-токен, не пароль от аккаунта" />
                         <button className="sub-button primary" type="button" disabled={connecting || !freelancehuntToken.trim()} onClick={() => void connectFreelancehunt()}>{connecting ? "Проверяем токен…" : integration?.status === "connected" ? "Проверить и обновить токен" : "Проверить и подключить"}</button>
@@ -150,7 +155,7 @@ export default function IntegrationsPage() {
                   </span>
                   {externalUrl && (
                     <a className="sub-button" href={externalUrl} target="_blank" rel="noreferrer">
-                      <ExternalLink size={14} /> Открыть биржу
+                      <ExternalLink size={14} /> Получить API-токен
                     </a>
                   )}
                   {integration?.provider === "freelancehunt" && integration.status === "connected" && (
@@ -190,3 +195,4 @@ export default function IntegrationsPage() {
     </WorkspacePage>
   );
 }
+
