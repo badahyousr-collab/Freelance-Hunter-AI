@@ -47,8 +47,9 @@ test("projects page keeps the search controls usable after an API error and show
 
   await page.goto("/projects");
   await expect(page.getByText("API temporarily unavailable.")).toBeVisible();
-  await page.getByLabel("Search projects").fill("Telegram bot");
-  await page.getByRole("button", { name: /Apply filters/i }).click();
+  await page.getByLabel("Поиск заказов").fill("Telegram bot");
+  await page.getByRole("button", { name: /Применить/i }).click();
   await expect(page.getByText("Подходящих заказов пока нет")).toBeVisible();
   expect(requestCount).toBeGreaterThanOrEqual(2);
 });
+
