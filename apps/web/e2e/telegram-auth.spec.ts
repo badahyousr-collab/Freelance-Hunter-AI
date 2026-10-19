@@ -322,7 +322,8 @@ test("integrations page offers only the verified Freelancehunt connection", asyn
 
   await page.goto("/integrations");
   await expect(page.getByRole("heading", { name: "Биржи фриланса" })).toBeVisible();
-  await expect(page.getByRole("link", { name: /Открыть биржу/ })).toHaveCount(1);
+  await expect(page.getByRole("link", { name: /Получить API-токен/ })).toHaveAttribute("href", "https://freelancehunt.com/my/api");
+  await expect(page.getByText(/Создай API-ключ на этой странице и скопируй его\./)).toBeVisible();
   await expect(page.getByLabel("API-токен Freelancehunt")).toBeVisible();
   await expect(page.getByRole("button", { name: /Подключить|Добавить в список/ })).toHaveCount(0);
   await expect(page.getByText(/Интеграция в разработке|адаптер ожидается/i)).toHaveCount(0);
