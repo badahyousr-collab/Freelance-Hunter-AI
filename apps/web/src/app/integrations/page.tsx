@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { ExternalLink, Plug, Trash2 } from "lucide-react";
+import Link from "next/link";
 import WorkspacePage from "@/components/WorkspacePage";
 
 const API = "/api/backend";
@@ -144,6 +145,9 @@ export default function IntegrationsPage() {
                           <li>Создай API-ключ на этой странице и скопируй его.</li>
                           <li>Вставь ключ в поле ниже и нажми «Проверить и подключить».</li>
                         </ol>
+                        <p className="sub-muted" style={{ lineHeight: 1.6, margin: "8px 0" }}>
+                          Перед поиском укажи навыки и специализацию в <Link href="/settings">настройках Pipisso</Link> — по ним агент отбирает проекты. Заполни также раздел «Обо мне» и добавь реальные работы в портфолио Freelancehunt, чтобы заказчики могли оценить твой опыт. Данные профиля и портфолио Freelancehunt пока не импортируются в Pipisso автоматически.
+                        </p>
                         <label htmlFor="freelancehunt-api-token">API-токен Freelancehunt</label>
                         <input id="freelancehunt-api-token" className="sub-input" type="password" autoComplete="new-password" value={freelancehuntToken} onChange={event => setFreelancehuntToken(event.target.value)} placeholder="Вставь API-токен, не пароль от аккаунта" />
                         <button className="sub-button primary" type="button" disabled={connecting || !freelancehuntToken.trim()} onClick={() => void connectFreelancehunt()}>{connecting ? "Проверяем токен…" : integration?.status === "connected" ? "Проверить и обновить токен" : "Проверить и подключить"}</button>
