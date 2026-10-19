@@ -477,4 +477,3 @@ test("core workspace pages fit a phone viewport without horizontal overflow", as
     expect(dimensions.document, path + " should not overflow horizontally").toBeLessThanOrEqual(dimensions.viewport + 1);
   }
 });
-
