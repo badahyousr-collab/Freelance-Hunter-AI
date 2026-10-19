@@ -5,7 +5,7 @@ import Link from "next/link";
 import AccountMenu from "@/components/AccountMenu";
 import {
   Activity, ArrowDownRight, Bot, BriefcaseBusiness, ChartNoAxesCombined,
-  CircleHelp, Clock3, Command, FileText, LayoutDashboard, LogOut,
+  CircleHelp, Clock3, Code2, FileText, LayoutDashboard, LogOut,
   Search, Send, Settings2, Sparkles, Workflow,
 } from "lucide-react";
 
@@ -93,7 +93,7 @@ export default function DashboardPage() {
   return (
     <main className="shell">
       <aside className="sidebar">
-        <Link className="brand" href="/dashboard"><span className="brand-mark"><Command size={21} /></span><span>Pipisso<small>FREELANCE HUNTER</small></span></Link>
+        <Link className="brand" href="/dashboard"><span className="brand-mark"><Code2 size={21} /></span><span>ByteCraft<small>САЙТЫ · БОТЫ · АВТОМАТИЗАЦИЯ</small></span></Link>
         <div className="workspace-label">РАБОЧЕЕ ПРОСТРАНСТВО</div>
         <nav className="nav">
           <Link className="nav-item active" href="/dashboard"><LayoutDashboard size={18} />Обзор</Link>
@@ -110,7 +110,7 @@ export default function DashboardPage() {
 
       <section className="content">
         <header className="topbar"><div className="breadcrumbs">Рабочее пространство <span>/</span> <strong>Обзор</strong></div><div className="top-actions"><span className="live-status preview-status"><i />{loading ? "Проверяем сессию" : user ? "Аккаунт подключён" : "Сессия недоступна"}</span><Link className="icon-button" href="/analytics" aria-label="Open analytics" title="Analytics"><ChartNoAxesCombined size={17} /></Link><button className="icon-button" aria-label="Refresh dashboard" onClick={() => window.location.reload()}><Activity size={18} /></button><AccountMenu /></div></header>
-        <div className="page-heading"><div><div className="eyebrow"><Sparkles size={14} /> PIPISSO ECOSYSTEM · FREELANCE HUNTER</div><h1>Welcome back <span>✦</span></h1><p>Freelance Hunter — one of the systems inside Pipisso.</p></div><Link className="primary-button" href="/sources"><Search size={17} />Set up sources</Link></div>
+        <div className="page-heading"><div><div className="eyebrow"><Sparkles size={14} /> BYTECRAFT · FREELANCE HUNTER</div><h1>Welcome back <span>✦</span></h1><p>Freelance Hunter — поиск заказов и AI-отклики от ByteCraft.</p></div><Link className="primary-button" href="/sources"><Search size={17} />Set up sources</Link></div>
 
         {error && <div className="dashboard-alert" role="alert">{error}. Check that the backend is running and try refreshing.</div>}
         <section className="metric-grid" aria-label="Summary statistics">
@@ -130,7 +130,7 @@ export default function DashboardPage() {
             {!loading && projects.length === 0 && <tr><td colSpan={6}><div className="table-empty"><FileText size={22} /><strong>No projects yet</strong><span>Connect a marketplace or Telegram channel to begin collecting listings.</span><Link href="/sources">Connect sources <ArrowDownRight size={14} /></Link></div></td></tr>}
           </tbody></table></div>
         </section>
-        <footer>Pipisso <span>·</span> Freelance Hunter — one ecosystem, connected systems</footer>
+        <footer>ByteCraft <span>·</span> Поиск фриланс-заказов и автоматизация откликов</footer>
       </section>
     </main>
   );
