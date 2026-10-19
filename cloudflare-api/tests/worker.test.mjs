@@ -90,7 +90,7 @@ function fakeDb({ scan = false, freelancehuntScan = false, marketplaceSource = n
             if (scan) return { results: [{ id: 7, user_id: "user-1", source: "telegram", identifier: "@python_jobs", is_enabled: 1 }] };
           }
           if (sql.includes("FROM projects p LEFT JOIN applications a ON a.user_id=p.user_id AND a.project_id=p.id") && sql.includes("p.match_score>=COALESCE")) return { results: telegramProjects };
-          if (sql.includes("FROM projects WHERE user_id=? AND julianday(published_at)")) return { results: recentProjects };
+          if (sql.includes("FROM projects WHERE projects.user_id=? AND julianday(projects.published_at)")) return { results: recentProjects };
           return { results: [] };
         }
       };
@@ -760,9 +760,9 @@ test("protected project data is not returned without a session", async () => {
 test("projects page filters fresh listings by the user match threshold unless all listings are requested", async () => {
   const statements = [];
   const allProjects = [
-    { id: 1, title: "Good match", match_score: 82, match_reasons: "[]" },
-    { id: 2, title: "Weak match", match_score: 24, match_reasons: "[]" },
-    { id: 3, title: "Not evaluated", match_score: null, match_reasons: "[]" }
+    { id: 1, title: "Good match", match_score: 82, match_reasons: "[]", application_status: "draft" },
+    { id: 2, title: "Weak match", match_score: 24, match_reasons: "[]", application_status: "sent" },
+    { id: 3, title: "Not evaluated", match_score: null, match_reasons: "[]", application_status: null }
   ];
   const DB = {
     prepare(sql) {
@@ -777,7 +777,7 @@ test("projects page filters fresh listings by the user match threshold unless al
         },
         async all() {
           statements.push({ sql, values: [...values] });
-          if (!sql.includes("FROM projects WHERE user_id=? AND julianday(published_at)")) return { results: [] };
+          if (!sql.includes("FROM projects WHERE projects.user_id=? AND julianday(projects.published_at)")) return { results: [] };
           const scoreIndex = values.length - 2;
           return { results: sql.includes("match_score>=?")
             ? allProjects.filter(project => project.match_score !== null && project.match_score >= values[scoreIndex])
@@ -791,13 +791,15 @@ test("projects page filters fresh listings by the user match threshold unless al
   const matchedResponse = await worker.fetch(new Request("https://api.example/projects", { headers }), { DB });
   assert.equal(matchedResponse.status, 200);
   assert.deepEqual((await matchedResponse.json()).map(project => project.id), [1]);
-  const defaultQuery = statements.findLast(item => item.sql.includes("FROM projects WHERE user_id=? AND julianday(published_at)"));
+  const defaultQuery = statements.findLast(item => item.sql.includes("FROM projects WHERE projects.user_id=? AND julianday(projects.published_at)"));
   assert.match(defaultQuery.sql, /match_score IS NOT NULL AND match_score>=\?/);
   assert.equal(defaultQuery.values.at(-2), 55);
 
   const allResponse = await worker.fetch(new Request("https://api.example/projects?matched_only=false", { headers }), { DB });
   assert.equal(allResponse.status, 200);
-  assert.deepEqual((await allResponse.json()).map(project => project.id), [1, 2, 3]);
+  const allProjectsResponse = await allResponse.json();
+  assert.deepEqual(allProjectsResponse.map(project => project.id), [1, 2, 3]);
+  assert.deepEqual(allProjectsResponse.map(project => project.application_status), ["draft", "sent", null]);
 });
 
 
