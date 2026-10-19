@@ -1,1569 +1,6 @@
-import test from "node:test";
-import assert from "node:assert/strict";
-import worker, { detectedBudget, evaluateProjectMatch, parseFlRuRss, parseFreelanceRuTasks } from "../.test-dist/src/index.js";
-
-function fakeDb({ scan = false, freelancehuntScan = false, marketplaceSource = null, skills = ["python", "telegram"], telegramAuth = null, telegramCode = null, linkedAccount = null, application = null, project = null, profile = null, integration = null, notificationTarget = null, agentSettings = null, pendingDraftProjects = [], sourceCount = 0, insertChanges = 1, projectInserts = [], telegramIdentitySchema = true, notificationsSchema = true, submissionSchema = true, providerStatusSchema = true, applicationUpdateNotificationsSchema = true, autoSubmissionSchema = true } = {}) {
-  return {
-    get storedIntegration() { return integration; },
-    set storedIntegration(value) { integration = value; },
-    get applicationRecord() { return application; },
-    set applicationRecord(value) { application = value; },
-    get insertedProjects() { return projectInserts; },
-    async batch(statements) { return statements.map(() => ({ meta: { changes: 1 } })); },
-    prepare(sql) {
-      let values = [];
-      return {
-        bind(...args) { values = args; return this; },
-        async run() {
-          if (sql.includes("UPDATE applications SET draft_text=?,status=?")) {
-            application = application ? { ...application, draft_text: values[0], status: values[1] } : application;
-          }
-          if (sql.includes("INSERT INTO applications (user_id,project_id,status,draft_text)")) {
-            application = { id: 42, project_id: values[1], status: "draft", draft_text: values[2], created_at: "2026-10-17 10:00:00", submitted_at: null, replied_at: null };
-          }
-          if (sql.includes("UPDATE applications SET status='submitting'")) {
-            application = application ? { ...application, status: "submitting", submission_error: null } : application;
-          }
-          if (sql.includes("UPDATE applications SET status='sent'")) {
-            application = application ? { ...application, status: "sent", submitted_at: "2026-10-17 10:30:00", provider_submission_id: values[0], submission_error: null } : application;
-          }
-          if (sql.includes("UPDATE applications SET status=?,submission_error=?")) {
-            application = application ? { ...application, status: values[0], submission_error: values[1] } : application;
-          }
-          if (sql.includes("UPDATE applications SET submission_error=NULL")) {
-            application = application ? { ...application, submission_error: null } : application;
-          }
-          if (sql.includes("UPDATE integrations SET status='reauth_required'")) {
-            integration = integration ? { ...integration, status: "reauth_required" } : integration;
-          }
-          if (sql.includes("INSERT INTO integrations")) {
-            integration = { id: 1, user_id: "user-1", provider: values[1], label: values[2], status: values[3], credentials_json: values[4] ?? "{}", created_at: "2026-10-17 10:00:00" };
-          }
-          if (sql.includes("INSERT INTO projects")) projectInserts.push({ sql, values: [...values] });
-          return { meta: { changes: sql.includes("INSERT INTO projects") ? insertChanges : 1 } };
-        },
-        async first() {
-          if (sql.includes("SELECT tl.telegram_user_id,a.notify_new_projects")) return notificationTarget;
-          if (sql.includes("SELECT credentials_json FROM integrations WHERE user_id=? AND provider='freelancehunt'")) return integration?.status === "connected" ? integration : null;
-          if (sql.includes("SELECT id,provider,label,status,created_at FROM integrations WHERE user_id=? AND provider=?")) return integration ? { id: integration.id, provider: integration.provider, label: integration.label, status: integration.status, created_at: integration.created_at } : null;
-          if (sql.includes("SELECT a.id,a.project_id,a.status,a.draft_text,p.source,p.source_project_id,p.url FROM applications a JOIN projects")) return application;
-          if (sql.includes("SELECT id,project_id,status,draft_text,created_at,submitted_at,replied_at,provider_submission_id,submission_error FROM applications WHERE id=? AND user_id=?")) return application;
-          if (sql.includes("SELECT id,project_id,status,draft_text FROM applications WHERE id=? AND user_id=?")) return application;
-          if (sql.includes("SELECT id,project_id,status,draft_text,created_at,submitted_at,replied_at FROM applications WHERE id=? AND user_id=?")) return application;
-          if (sql.includes("SELECT id,project_id,status,draft_text,created_at,submitted_at,replied_at FROM applications WHERE user_id=? AND project_id=?")) return application;
-          if (sql.includes("SELECT id,source,url,title,description,language,budget_min,budget_max,currency,payment_method FROM projects WHERE id=? AND user_id=?")) return project;
-          if (sql.includes("SELECT display_name,skills,languages,payment_preferences,min_budget,currency FROM profiles WHERE user_id=?")) return profile;
-          if (sql.includes("SELECT attempts FROM auth_rate_limits")) return { attempts: 1 };
-          if (sql.includes("SELECT user_id,authenticated_at,session_issued_at,error_message FROM telegram_auth_codes")) return telegramAuth;
-          if (sql.includes("SELECT code_hash,auth_mode FROM telegram_auth_codes")) return telegramCode;
-          if (sql.includes("SELECT user_id FROM telegram_links WHERE telegram_user_id=?")) return linkedAccount;
-          if (sql.includes("FROM sessions s JOIN users")) return { id: "user-1", created_at: "2026-10-16 10:00:00" };
-          if (sql.includes("SELECT COUNT(*) AS total FROM sources")) return { total: sourceCount };
-          if (sql.includes("SELECT is_enabled,auto_draft,auto_submit,daily_submission_limit,min_match_score FROM agent_settings WHERE user_id=?")) return agentSettings;
-          if (sql.includes("SELECT skills,languages,payment_preferences,min_budget,currency,excluded_keywords")) return { skills: JSON.stringify(skills), languages: '["ru","en"]', payment_preferences: "[]", min_budget: null, currency: "RUB", excluded_keywords: "[]" };
-          if (sql.includes("SELECT skills, min_budget, currency, excluded_keywords")) return { skills: JSON.stringify(skills), min_budget: null, currency: "USD", excluded_keywords: "[]" };
-          if (sql.includes("SELECT min_match_score FROM agent_settings")) return { min_match_score: 60 };
-          if (sql.includes("SELECT 1 AS ok")) return { ok: 1 };
-          return null;
-        },
-        async all() {
-          if (sql.includes("SELECT telegram_identity,identity_provider,telegram_verified FROM users LIMIT 0") && !telegramIdentitySchema) throw new Error("no such column: telegram_identity");
-          if (sql.includes("SELECT notify_new_projects FROM agent_settings LIMIT 0") && !notificationsSchema) throw new Error("no such column: notify_new_projects");
-          if (sql.includes("SELECT provider_submission_id,submission_error FROM applications LIMIT 0") && !submissionSchema) throw new Error("no such column: provider_submission_id");
-          if (sql.includes("SELECT provider_status FROM applications LIMIT 0") && !providerStatusSchema) throw new Error("no such column: provider_status");
-          if (sql.includes("SELECT notify_application_updates FROM agent_settings LIMIT 0") && !applicationUpdateNotificationsSchema) throw new Error("no such column: notify_application_updates");
-          if (sql.includes("SELECT auto_submit,daily_submission_limit FROM agent_settings LIMIT 0") && !autoSubmissionSchema) throw new Error("no such column: auto_submit");
-          if (sql.includes("sqlite_master") && sql.includes("auth_rate_limits")) {
-            return { results: ["users", "sessions", "telegram_auth_codes", "auth_rate_limits", "profiles", "agent_settings", "sources", "projects", "applications", "integrations", "telegram_links"].map(name => ({ name })) };
-          }
-          if (sql.includes("LEFT JOIN applications a ON a.user_id=p.user_id AND a.project_id=p.id")) return { results: pendingDraftProjects };
-          if (sql.includes("SELECT * FROM sources WHERE user_id=? AND is_enabled=1")) {
-            if (marketplaceSource) return { results: [{ id: 9, user_id: "user-1", identifier: marketplaceSource === "fl_ru" ? "all" : "public", is_enabled: 1, source: marketplaceSource }] };
-            if (freelancehuntScan) return { results: [{ id: 8, user_id: "user-1", source: "freelancehunt", identifier: "", is_enabled: 1 }] };
-            if (scan) return { results: [{ id: 7, user_id: "user-1", source: "telegram", identifier: "@python_jobs", is_enabled: 1 }] };
-          }
-          return { results: [] };
-        }
-      };
-    }
-  };
-}
-
-test("health endpoint confirms a reachable D1 binding and required schema", async () => {
-  const response = await worker.fetch(new Request("https://api.example/health"), { DB: fakeDb() });
-  assert.equal(response.status, 200);
-  assert.deepEqual(await response.json(), { status: "ok", database: "connected", schema: "ready", service: "freelance-hunter-api" });
-});
-
-test("health endpoint reports missing Telegram identity and notification migrations", async () => {
-  const response = await worker.fetch(new Request("https://api.example/health"), { DB: fakeDb({ telegramIdentitySchema: false, notificationsSchema: false, submissionSchema: false, providerStatusSchema: false, applicationUpdateNotificationsSchema: false, autoSubmissionSchema: false }) });
-  assert.equal(response.status, 200);
-  const data = await response.json();
-  assert.equal(data.status, "degraded");
-  assert.equal(data.schema, "incomplete");
-  assert.deepEqual(data.missing_migrations, ["0007_telegram_only_identity.sql", "0008_new_project_notifications.sql", "0009_provider_submission_tracking.sql", "0010_freelancehunt_status_sync.sql", "0011_application_update_notifications.sql", "0012_auto_submission.sql"]);
-});
-
-test("Telegram webhook rejects requests when webhook secrets are not configured", async () => {
-  const response = await worker.fetch(new Request("https://api.example/telegram/webhook", { method: "POST", body: "{}" }), { DB: fakeDb() });
-  assert.equal(response.status, 503);
-  assert.match((await response.json()).detail, /secrets are not configured/i);
-});
-
-test("Telegram webhook rejects an invalid Telegram secret token", async () => {
-  const response = await worker.fetch(new Request("https://api.example/telegram/webhook", {
-    method: "POST",
-    headers: { "X-Telegram-Bot-Api-Secret-Token": "wrong", "Content-Type": "application/json" },
-    body: "{}"
-  }), { DB: fakeDb(), TELEGRAM_BOT_TOKEN: "test-token", TELEGRAM_WEBHOOK_SECRET: "correct-secret" });
-  assert.equal(response.status, 401);
-});
-
-test("agent readiness reflects provider and bot configuration", async () => {
-  const response = await worker.fetch(new Request("https://api.example/agent/readiness", {
-    headers: { Cookie: "fh_session=test-session-token" }
-  }), {
-    DB: fakeDb(),
-    AI_API_KEY: "configured-ai-key",
-    AI_MODEL: "configured-model",
-    AI_API_BASE_URL: "https://provider.example/v1",
-    TELEGRAM_BOT_TOKEN: "configured-bot-token",
-    TELEGRAM_WEBHOOK_SECRET: "configured-webhook-secret",
-    BOT_API_SECRET: "configured-bot-api-secret"
-  });
-  assert.equal(response.status, 200);
-  assert.deepEqual(await response.json(), {
-    worker_runtime: true,
-    cron_configured: true,
-    telegram_bot_configured: true,
-    ai_provider_configured: true,
-    marketplace_adapters: ["freelancehunt"],
-    freelancehunt_connected: false,
-    worker_alerting_configured: false
-  });
-});
-
-test("email registration is disabled in favor of Telegram authentication", async () => {
-  const response = await worker.fetch(new Request("https://api.example/auth/register", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "CF-Connecting-IP": "198.51.100.20" },
-    body: JSON.stringify({ email: "test@example.com", password: "long-enough-password" })
-  }), { DB: fakeDb(), APP_ENV: "production" });
-  assert.equal(response.status, 410);
-  assert.match((await response.json()).detail, /through Telegram|Telegram/i);
-});
-
-test("email login, verification, and password recovery endpoints are disabled", async () => {
-  const paths = [
-    "/auth/login",
-    "/auth/verify-email",
-    "/auth/password-reset/request",
-    "/auth/password-reset/confirm"
-  ];
-  for (const path of paths) {
-    const response = await worker.fetch(new Request("https://api.example" + path, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "CF-Connecting-IP": "198.51.100.25" },
-      body: JSON.stringify({ email: "test@example.com", password: "long-enough-password", token: "old-token" })
-    }), { DB: fakeDb(), APP_ENV: "production" });
-    assert.equal(response.status, 410, path + " should be disabled");
-  }
-});
-
-test("Telegram auth start returns a nine-digit code valid for ten minutes", async () => {
-  const originalFetch = globalThis.fetch;
-  globalThis.fetch = async (input) => {
-    if (String(input).includes("api.telegram.org/botTEST_TOKEN/getMe")) {
-      return Response.json({ ok: true, result: { username: "freelance_hunter_test_bot" } });
-    }
-    return originalFetch(input);
-  };
-  try {
-    const response = await worker.fetch(new Request("https://api.example/auth/telegram/start", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "CF-Connecting-IP": "198.51.100.21" },
-      body: "{}"
-    }), { DB: fakeDb(), TELEGRAM_BOT_TOKEN: "TEST_TOKEN", TELEGRAM_WEBHOOK_SECRET: "webhook-secret" });
-    assert.equal(response.status, 201);
-    const data = await response.json();
-    assert.match(data.code, /^\d{9}$/);
-    assert.equal(data.expires_in_seconds, 600);
-    assert.equal(data.bot_url, "https://t.me/freelance_hunter_test_bot");
-  } finally {
-    globalThis.fetch = originalFetch;
-  }
-});
-
-test("Telegram auth status creates a session after the bot confirms the code", async () => {
-  const response = await worker.fetch(new Request("https://api.example/auth/telegram/status", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "CF-Connecting-IP": "198.51.100.22" },
-    body: JSON.stringify({ code: "123456789" })
-  }), { DB: fakeDb({ telegramAuth: { user_id: "user-1", authenticated_at: "2026-10-15 10:00:00", session_issued_at: null } }) });
-  assert.equal(response.status, 200);
-  assert.deepEqual(await response.json(), { authenticated: true, identity_provider: "telegram" });
-  assert.match(response.headers.get("set-cookie") ?? "", /fh_session=.*HttpOnly/);
-});
-
-
-test("Telegram auth status exposes duplicate-registration errors to the website", async () => {
-  const response = await worker.fetch(new Request("https://api.example/auth/telegram/status", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "CF-Connecting-IP": "198.51.100.23" },
-    body: JSON.stringify({ code: "123456789" })
-  }), {
-    DB: fakeDb({ telegramAuth: {
-      user_id: null,
-      authenticated_at: null,
-      session_issued_at: null,
-      error_message: "Ð­Ñ‚Ð¾Ñ‚ Telegram ÑƒÐ¶Ðµ Ð·Ð°Ñ€ÐµÐ³Ð¸ÑÑ‚Ñ€Ð¸Ñ€Ð¾Ð²Ð°Ð½. ÐŸÐµÑ€ÐµÐ¹Ð´Ð¸ Ð½Ð° ÑÑ‚Ñ€Ð°Ð½Ð¸Ñ†Ñƒ Ð²Ñ…Ð¾Ð´Ð° Ð¸ Ð²Ð¾Ð¹Ð´Ð¸ Ð² ÑÑƒÑ‰ÐµÑÑ‚Ð²ÑƒÑŽÑ‰Ð¸Ð¹ Ð°ÐºÐºÐ°ÑƒÐ½Ñ‚."
-    } })
-  });
-  assert.equal(response.status, 409);
-  assert.match((await response.json()).detail, /ÑƒÐ¶Ðµ Ð·Ð°Ñ€ÐµÐ³Ð¸ÑÑ‚Ñ€Ð¸Ñ€Ð¾Ð²Ð°Ð½/i);
-});
-
-test("unknown API route returns a structured 404", async () => {
-  const response = await worker.fetch(new Request("https://api.example/not-a-route", { headers: { Cookie: "fh_session=test-session-token" } }), { DB: fakeDb() });
-  assert.equal(response.status, 404);
-  assert.equal(typeof (await response.json()).detail, "string");
-});
-
-
-
-test("scan ignores Telegram listings older than 72 hours and listings without a publication date", async () => {
-  const originalFetch = globalThis.fetch;
-  const oldDate = new Date(Date.now() - 73 * 60 * 60 * 1000).toISOString();
-  const freshDate = new Date(Date.now() - 71 * 60 * 60 * 1000).toISOString();
-  const html = [
-    `<div class="tgme_widget_message_wrap" data-post="python_jobs/201"><div class="tgme_widget_message_text js-message_text" dir="auto">We need a Python developer for a freelance project. Budget 500 USD.</div><time datetime="${oldDate}"></time></div>`,
-    '<div class="tgme_widget_message_wrap" data-post="python_jobs/202"><div class="tgme_widget_message_text js-message_text" dir="auto">We need a Python developer for a freelance project. Budget 500 USD.</div></div>',
-    `<div class="tgme_widget_message_wrap" data-post="python_jobs/203"><div class="tgme_widget_message_text js-message_text" dir="auto">We need a Python developer for a freelance project. Budget 500 USD.</div><time datetime="${freshDate}"></time></div>`
-  ].join("");
-  globalThis.fetch = async input => String(input).startsWith("https://t.me/s/python_jobs")
-    ? new Response(html, { status: 200, headers: { "Content-Type": "text/html" } })
-    : originalFetch(input);
-  try {
-    const response = await worker.fetch(new Request("https://api.example/agent/scan", {
-      method: "POST",
-      headers: { Cookie: "fh_session=test-session-token", "Content-Type": "application/json" },
-      body: "{}"
-    }), { DB: fakeDb({ scan: true }) });
-    assert.equal(response.status, 200);
-    assert.equal((await response.json()).newProjects, 1);
-  } finally {
-    globalThis.fetch = originalFetch;
-  }
-});
-
-
-test("source creation has no arbitrary per-account limit", async () => {
-  const response = await worker.fetch(new Request("https://api.example/sources", {
-    method: "POST",
-    headers: { Cookie: "fh_session=test-session-token", "Content-Type": "application/json" },
-    body: JSON.stringify({ source: "telegram", identifier: "@fresh_jobs", is_enabled: true })
-  }), { DB: fakeDb({ sourceCount: 50 }) });
-  assert.notEqual(response.status, 429);
-});
-
-test("scheduled scan automatically saves AI proposal drafts for matching projects published within 72 hours", async () => {
-  const originalFetch = globalThis.fetch;
-  const html = '<div class="tgme_widget_message_wrap" data-post="python_jobs/203"><div class="tgme_widget_message_text js-message_text" dir="auto">We need a Python developer for a freelance project. Budget 500 USD.</div><time datetime="2026-10-16T10:00:00+00:00"></time></div>';
-  globalThis.fetch = async input => {
-    const url = String(input);
-    if (url.startsWith("https://t.me/s/python_jobs")) return new Response(html, { status: 200, headers: { "Content-Type": "text/html" } });
-    if (url.includes("/chat/completions")) return Response.json({ choices: [{ message: { content: "Ð—Ð´Ñ€Ð°Ð²ÑÑ‚Ð²ÑƒÐ¹Ñ‚Ðµ! ÐœÐ¾Ð³Ñƒ Ð¿Ð¾Ð¼Ð¾Ñ‡ÑŒ Ñ Ñ€Ð°Ð·Ñ€Ð°Ð±Ð¾Ñ‚ÐºÐ¾Ð¹ Telegram-Ð±Ð¾Ñ‚Ð° Ð½Ð° Python. ÐŸÑ€ÐµÐ´Ð»Ð°Ð³Ð°ÑŽ ÑÐ½Ð°Ñ‡Ð°Ð»Ð° ÑÐ¾Ð³Ð»Ð°ÑÐ¾Ð²Ð°Ñ‚ÑŒ Ñ‚Ñ€ÐµÐ±Ð¾Ð²Ð°Ð½Ð¸Ñ Ð¸ Ð¾Ð±ÑŠÑ‘Ð¼ Ñ€Ð°Ð±Ð¾Ñ‚." } }] });
-    return originalFetch(input);
-  };
-  try {
-    const response = await worker.fetch(new Request("https://api.example/agent/scan", {
-      method: "POST",
-      headers: { Cookie: "fh_session=test-session-token", "Content-Type": "application/json" },
-      body: "{}"
-    }), {
-      DB: fakeDb({
-        scan: true,
-        agentSettings: { is_enabled: 1, auto_draft: 1, min_match_score: 60 },
-        pendingDraftProjects: [{ id: 301, source: "telegram", url: "https://t.me/python_jobs/203", title: "Python developer", description: "Telegram bot project", language: "en", budget_min: 500, budget_max: 500, currency: "USD", payment_method: null }]
-      }),
-      AI_API_KEY: "test-key",
-      AI_MODEL: "test-model"
-    });
-    assert.equal(response.status, 200);
-    const result = await response.json();
-    assert.equal(result.draftedApplications, 1);
-  } finally {
-    globalThis.fetch = originalFetch;
-  }
-});
-
-test("manual scan ingests and normalizes a public Telegram listing", async () => {
-  const originalFetch = globalThis.fetch;
-  const html = '<div class="tgme_widget_message_wrap" data-post="python_jobs/123"><div class="tgme_widget_message_text js-message_text" dir="auto">We need a Python developer to build a Telegram bot for a freelance project. Budget 500 USD.</div><time datetime="2026-10-17T10:00:00+00:00"></time></div>';
-  globalThis.fetch = async (input, init) => {
-    if (String(input).startsWith("https://t.me/s/python_jobs")) return new Response(html, { status: 200, headers: { "Content-Type": "text/html" } });
-    return originalFetch(input, init);
-  };
-  try {
-    const response = await worker.fetch(new Request("https://api.example/agent/scan", {
-      method: "POST",
-      headers: { Cookie: "fh_session=test-session-token", "Content-Type": "application/json" },
-      body: "{}"
-    }), { DB: fakeDb({ scan: true }) });
-    assert.equal(response.status, 200);
-    const result = await response.json();
-    assert.equal(result.scannedSources, 1);
-    assert.equal(result.newProjects, 1);
-    assert.deepEqual(result.errors, []);
-  } finally {
-    globalThis.fetch = originalFetch;
-  }
-});
-
-
-test("manual scan persists low-relevance listings for the matching stage", async () => {
-  const originalFetch = globalThis.fetch;
-  const html = '<div class="tgme_widget_message_wrap" data-post="python_jobs/124"><div class="tgme_widget_message_text js-message_text" dir="auto">We need a Python developer to build a Telegram bot for a freelance project. Budget 500 USD.</div><time datetime="2026-10-16T10:00:00+00:00"></time></div>';
-  globalThis.fetch = async (input, init) => {
-    if (String(input).startsWith("https://t.me/s/python_jobs")) return new Response(html, { status: 200, headers: { "Content-Type": "text/html" } });
-    return originalFetch(input, init);
-  };
-  try {
-    const response = await worker.fetch(new Request("https://api.example/agent/scan", {
-      method: "POST",
-      headers: { Cookie: "fh_session=test-session-token", "Content-Type": "application/json" },
-      body: "{}"
-    }), { DB: fakeDb({ scan: true, skills: ["python"] }) });
-    assert.equal(response.status, 200);
-    const result = await response.json();
-    assert.equal(result.scannedSources, 1);
-    assert.equal(result.newProjects, 1);
-    assert.deepEqual(result.errors, []);
-  } finally {
-    globalThis.fetch = originalFetch;
-  }
-});
-
-
-
-test("Telegram /start asks the user to send a plain code without a command", async () => {
-  const originalFetch = globalThis.fetch;
-  let sentPayload;
-  globalThis.fetch = async (input, init) => {
-    if (String(input).includes("api.telegram.org/botTEST_TOKEN/sendMessage")) {
-      sentPayload = JSON.parse(init.body);
-      return Response.json({ ok: true, result: { message_id: 1 } });
-    }
-    return originalFetch(input, init);
-  };
-  try {
-    const response = await worker.fetch(new Request("https://api.example/telegram/webhook", {
-      method: "POST",
-      headers: { "X-Telegram-Bot-Api-Secret-Token": "webhook-secret", "Content-Type": "application/json" },
-      body: JSON.stringify({ message: { chat: { id: 123, type: "private" }, from: { id: 123 }, text: "/start" } })
-    }), { DB: fakeDb(), TELEGRAM_BOT_TOKEN: "TEST_TOKEN", TELEGRAM_WEBHOOK_SECRET: "webhook-secret" });
-    assert.equal(response.status, 200);
-    assert.match(sentPayload.text, /Ð¾Ñ‚Ð¿Ñ€Ð°Ð²ÑŒ ÑÑŽÐ´Ð° 9-Ð·Ð½Ð°Ñ‡Ð½Ñ‹Ð¹ ÐºÐ¾Ð´/i);
-    assert.match(sentPayload.text, /Ð½Ð¸ÐºÐ°ÐºÐ¸Ñ… ÐºÐ¾Ð¼Ð°Ð½Ð´/i);
-    assert.doesNotMatch(sentPayload.text, /\/link/);
-  } finally {
-    globalThis.fetch = originalFetch;
-  }
-});
-
-
-test("Telegram plain code creates a new account when registration is valid", async () => {
-  const originalFetch = globalThis.fetch;
-  let sentPayload;
-  globalThis.fetch = async (input, init) => {
-    if (String(input).includes("api.telegram.org/botTEST_TOKEN/sendMessage")) {
-      sentPayload = JSON.parse(init.body);
-      return Response.json({ ok: true, result: { message_id: 1 } });
-    }
-    return originalFetch(input, init);
-  };
-  try {
-    const response = await worker.fetch(new Request("https://api.example/telegram/webhook", {
-      method: "POST",
-      headers: { "X-Telegram-Bot-Api-Secret-Token": "webhook-secret", "Content-Type": "application/json" },
-      body: JSON.stringify({ message: { chat: { id: 123, type: "private" }, from: { id: 123 }, text: "123456789" } })
-    }), {
-      DB: fakeDb({ telegramCode: { code_hash: "code-hash", auth_mode: "register" } }),
-      TELEGRAM_BOT_TOKEN: "TEST_TOKEN",
-      TELEGRAM_WEBHOOK_SECRET: "webhook-secret"
-    });
-    assert.equal(response.status, 200);
-    assert.match(sentPayload.text, /Ð°ÐºÐºÐ°ÑƒÐ½Ñ‚ ÑÐ¾Ð·Ð´Ð°Ð½/i);
-  } finally {
-    globalThis.fetch = originalFetch;
-  }
-});
-
-test("Telegram plain code detects an already registered account during registration", async () => {
-  const originalFetch = globalThis.fetch;
-  let sentPayload;
-  globalThis.fetch = async (input, init) => {
-    if (String(input).includes("api.telegram.org/botTEST_TOKEN/sendMessage")) {
-      sentPayload = JSON.parse(init.body);
-      return Response.json({ ok: true, result: { message_id: 1 } });
-    }
-    return originalFetch(input, init);
-  };
-  try {
-    const response = await worker.fetch(new Request("https://api.example/telegram/webhook", {
-      method: "POST",
-      headers: { "X-Telegram-Bot-Api-Secret-Token": "webhook-secret", "Content-Type": "application/json" },
-      body: JSON.stringify({ message: { chat: { id: 123, type: "private" }, from: { id: 123 }, text: "123456789" } })
-    }), {
-      DB: fakeDb({
-        telegramCode: { code_hash: "code-hash", auth_mode: "register" },
-        linkedAccount: { user_id: "already-registered-user" }
-      }),
-      TELEGRAM_BOT_TOKEN: "TEST_TOKEN",
-      TELEGRAM_WEBHOOK_SECRET: "webhook-secret"
-    });
-    assert.equal(response.status, 200);
-    assert.match(sentPayload.text, /ÑƒÐ¶Ðµ Ð·Ð°Ñ€ÐµÐ³Ð¸ÑÑ‚Ñ€Ð¸Ñ€Ð¾Ð²Ð°Ð½/i);
-    assert.match(sentPayload.text, /ÑÑ‚Ñ€Ð°Ð½Ð¸Ñ†Ñƒ Ð²Ñ…Ð¾Ð´Ð°/i);
-  } finally {
-    globalThis.fetch = originalFetch;
-  }
-});
-
-test("Telegram help command sends readable multiline text and keyboard", async () => {
-  const originalFetch = globalThis.fetch;
-  let sentPayload;
-  globalThis.fetch = async (input, init) => {
-    if (String(input).includes("api.telegram.org/botTEST_TOKEN/sendMessage")) {
-      sentPayload = JSON.parse(init.body);
-      return Response.json({ ok: true, result: { message_id: 1 } });
-    }
-    return originalFetch(input, init);
-  };
-  try {
-    const response = await worker.fetch(new Request("https://api.example/telegram/webhook", {
-      method: "POST",
-      headers: { "X-Telegram-Bot-Api-Secret-Token": "webhook-secret", "Content-Type": "application/json" },
-      body: JSON.stringify({ message: { chat: { id: 123 }, from: { id: 123 }, text: "/help" } })
-    }), { DB: fakeDb(), TELEGRAM_BOT_TOKEN: "TEST_TOKEN", TELEGRAM_WEBHOOK_SECRET: "webhook-secret" });
-    assert.equal(response.status, 200);
-    assert.match(sentPayload.text, /ÐšÐ°Ðº Ð²Ð¾Ð¹Ñ‚Ð¸/);
-    assert.match(sentPayload.text, /Ð¾Ð±Ñ‹Ñ‡Ð½Ñ‹Ð¼ ÑÐ¾Ð¾Ð±Ñ‰ÐµÐ½Ð¸ÐµÐ¼/);
-    assert.doesNotMatch(sentPayload.text, /ÐšÐ¾Ð¼Ð°Ð½Ð´Ñ‹:\\n/);
-    assert.equal(sentPayload.reply_markup.keyboard.length, 3);
-  } finally {
-    globalThis.fetch = originalFetch;
-  }
-});
-
-test("budget parser handles Russian and international currency formats", () => {
-  const cases = [
-    ["Ð‘ÑŽÐ´Ð¶ÐµÑ‚: 15 000 â‚½", { amount: 15000, currency: "RUB" }],
-    ["Ð¾Ð¿Ð»Ð°Ñ‚Ð° 12,5 Ñ‚Ñ‹Ñ. Ñ€ÑƒÐ±.", { amount: 12500, currency: "RUB" }],
-    ["Ð´Ð¾ 1.500 USD", { amount: 1500, currency: "USD" }],
-    ["$2,500", { amount: 2500, currency: "USD" }],
-    ["â‚¬1 200,50", { amount: 1200.5, currency: "EUR" }],
-    ["Budget 2.5k USD", { amount: 2500, currency: "USD" }],
-    ["ÐžÐ¿Ð»Ð°Ñ‚Ð°: 5000 RUB", { amount: 5000, currency: "RUB" }]
-  ];
-  for (const [input, expected] of cases) {
-    assert.deepEqual(detectedBudget(input), expected, input);
-  }
-});
-
-test("budget parser ignores missing currency, zero, and unreasonable values", () => {
-  assert.equal(detectedBudget("ÐžÐ¿Ñ‹Ñ‚ Ð¾Ñ‚ 2020 Ð³Ð¾Ð´Ð°"), null);
-  assert.equal(detectedBudget("Ð‘ÑŽÐ´Ð¶ÐµÑ‚: 0 â‚½"), null);
-  assert.equal(detectedBudget("ÐžÐ¿Ð»Ð°Ñ‚Ð° 9999999999 RUB"), null);
-});
-
-
-test("application review can edit a draft and move it to awaiting confirmation", async () => {
-  const db = fakeDb({ application: { id: 4, project_id: 9, status: "draft", draft_text: "Initial draft", created_at: "2026-10-17 09:00:00", submitted_at: null, replied_at: null } });
-  const response = await worker.fetch(new Request("https://api.example/applications/4", {
-    method: "PATCH",
-    headers: { Cookie: "fh_session=test-session-token", "Content-Type": "application/json" },
-    body: JSON.stringify({ draft_text: "Edited proposal", status: "awaiting_confirmation" })
-  }), { DB: db });
-  assert.equal(response.status, 200);
-  const result = await response.json();
-  assert.equal(result.status, "awaiting_confirmation");
-  assert.equal(result.draft_text, "Edited proposal");
-});
-
-test("application review cannot fake a provider-confirmed sent status", async () => {
-  const db = fakeDb({ application: { id: 4, project_id: 9, status: "draft", draft_text: "Proposal" } });
-  const response = await worker.fetch(new Request("https://api.example/applications/4", {
-    method: "PATCH",
-    headers: { Cookie: "fh_session=test-session-token", "Content-Type": "application/json" },
-    body: JSON.stringify({ status: "sent" })
-  }), { DB: db });
-  assert.equal(response.status, 400);
-  assert.match((await response.json()).detail, /supported marketplace adapter/i);
-});
-
-test("application review returns not found for records outside the current user's scope", async () => {
-  const response = await worker.fetch(new Request("https://api.example/applications/4", {
-    method: "PATCH",
-    headers: { Cookie: "fh_session=test-session-token", "Content-Type": "application/json" },
-    body: JSON.stringify({ draft_text: "Edited proposal" })
-  }), { DB: fakeDb() });
-  assert.equal(response.status, 404);
-});
-
-
-test("manual scan does not send individual Telegram messages for newly inserted projects", async () => {
-  const originalFetch = globalThis.fetch;
-  const html = '<div class="tgme_widget_message_wrap" data-post="python_jobs/777"><div class="tgme_widget_message_text js-message_text" dir="auto">We need a Python developer to build a Telegram bot for a freelance project. Budget 500 USD.</div><time datetime="2026-10-17T10:00:00+00:00"></time></div>';
-  let sentPayload = null;
-  globalThis.fetch = async (input, init) => {
-    const url = String(input);
-    if (url.startsWith("https://t.me/s/python_jobs")) return new Response(html, { status: 200, headers: { "Content-Type": "text/html" } });
-    if (url.includes("api.telegram.org/botTEST_TOKEN/sendMessage")) {
-      sentPayload = JSON.parse(init.body);
-      return Response.json({ ok: true, result: { message_id: 1 } });
-    }
-    return originalFetch(input, init);
-  };
-  try {
-    const response = await worker.fetch(new Request("https://api.example/agent/scan", {
-      method: "POST",
-      headers: { Cookie: "fh_session=test-session-token", "Content-Type": "application/json" },
-      body: "{}"
-    }), {
-      DB: fakeDb({ scan: true, notificationTarget: { telegram_user_id: "12345", notify_new_projects: 1 } }),
-      TELEGRAM_BOT_TOKEN: "TEST_TOKEN"
-    });
-    assert.equal(response.status, 200);
-    assert.equal((await response.json()).newProjects, 1);
-    assert.equal(sentPayload, null, "new listing details must not be sent as individual Telegram messages");
-  } finally {
-    globalThis.fetch = originalFetch;
-  }
-});
-
-test("manual scan does not send notifications when the user opted out", async () => {
-  const originalFetch = globalThis.fetch;
-  const html = '<div class="tgme_widget_message_wrap" data-post="python_jobs/778"><div class="tgme_widget_message_text js-message_text" dir="auto">We need a Python developer to build a Telegram bot for a freelance project. Budget 500 USD.</div></div>';
-  let sendCount = 0;
-  globalThis.fetch = async (input, init) => {
-    const url = String(input);
-    if (url.startsWith("https://t.me/s/python_jobs")) return new Response(html, { status: 200, headers: { "Content-Type": "text/html" } });
-    if (url.includes("api.telegram.org/botTEST_TOKEN/sendMessage")) {
-      sendCount += 1;
-      return Response.json({ ok: true, result: { message_id: 1 } });
-    }
-    return originalFetch(input, init);
-  };
-  try {
-    const response = await worker.fetch(new Request("https://api.example/agent/scan", {
-      method: "POST",
-      headers: { Cookie: "fh_session=test-session-token", "Content-Type": "application/json" },
-      body: "{}"
-    }), {
-      DB: fakeDb({ scan: true, notificationTarget: { telegram_user_id: "12345", notify_new_projects: 0 } }),
-      TELEGRAM_BOT_TOKEN: "TEST_TOKEN"
-    });
-    assert.equal(response.status, 200);
-    assert.equal(sendCount, 0);
-  } finally {
-    globalThis.fetch = originalFetch;
-  }
-});
-
-
-test("manual scan does not notify about duplicate listings that were not inserted", async () => {
-  const originalFetch = globalThis.fetch;
-  const html = '<div class="tgme_widget_message_wrap" data-post="python_jobs/779"><div class="tgme_widget_message_text js-message_text" dir="auto">We need a Python developer to build a Telegram bot for a freelance project. Budget 500 USD.</div></div>';
-  let sendCount = 0;
-  globalThis.fetch = async (input, init) => {
-    const url = String(input);
-    if (url.startsWith("https://t.me/s/python_jobs")) return new Response(html, { status: 200, headers: { "Content-Type": "text/html" } });
-    if (url.includes("api.telegram.org/botTEST_TOKEN/sendMessage")) {
-      sendCount += 1;
-      return Response.json({ ok: true, result: { message_id: 1 } });
-    }
-    return originalFetch(input, init);
-  };
-  try {
-    const response = await worker.fetch(new Request("https://api.example/agent/scan", {
-      method: "POST",
-      headers: { Cookie: "fh_session=test-session-token", "Content-Type": "application/json" },
-      body: "{}"
-    }), {
-      DB: fakeDb({ scan: true, notificationTarget: { telegram_user_id: "12345", notify_new_projects: 1 }, insertChanges: 0 }),
-      TELEGRAM_BOT_TOKEN: "TEST_TOKEN"
-    });
-    assert.equal(response.status, 200);
-    assert.equal((await response.json()).newProjects, 0);
-    assert.equal(sendCount, 0);
-  } finally {
-    globalThis.fetch = originalFetch;
-  }
-});
-
-
-test("user-scoped dashboard endpoints bind all reads to the authenticated user", async () => {
-  const statements = [];
-  const db = {
-    prepare(sql) {
-      let values = [];
-      const record = () => statements.push({ sql, values: [...values] });
-      return {
-        bind(...args) { values = args; return this; },
-        async first() {
-          record();
-          if (sql.includes("FROM sessions s JOIN users")) return { id: "user-1", created_at: "2026-10-16 10:00:00" };
-          return null;
-        },
-        async all() { record(); return { results: [] }; },
-        async run() { record(); return { meta: { changes: 1 } }; }
-      };
-    }
-  };
-  const paths = ["/projects", "/sources", "/profile", "/agent/settings", "/applications", "/integrations", "/dashboard/summary"];
-  for (const path of paths) {
-    const response = await worker.fetch(new Request("https://api.example" + path, {
-      headers: { Cookie: "fh_session=test-session-token" }
-    }), { DB: db });
-    assert.equal(response.status, 200, path);
-  }
-
-  const protectedQueries = [
-    "FROM projects WHERE user_id=?",
-    "FROM sources WHERE user_id=?",
-    "FROM profiles WHERE user_id=?",
-    "FROM agent_settings WHERE user_id=?",
-    "FROM applications a LEFT JOIN projects",
-    "FROM integrations WHERE user_id=?",
-    "FROM projects WHERE user_id=? AND match_score"
-  ];
-  for (const fragment of protectedQueries) {
-    const query = statements.find(item => item.sql.includes(fragment));
-    assert.ok(query, "Expected user-scoped query containing " + fragment);
-    assert.ok(query.values.includes("user-1"), "Expected authenticated user ID bound for " + fragment);
-  }
-});
-
-test("protected project data is not returned without a session", async () => {
-  const response = await worker.fetch(new Request("https://api.example/projects"), { DB: fakeDb() });
-  assert.equal(response.status, 401);
-  assert.match((await response.json()).detail, /authentication required/i);
-});
-
-
-test("Freelancehunt token is validated, encrypted, and used to ingest official API projects", async () => {
-  const originalFetch = globalThis.fetch;
-  const token = "test-freelancehunt-token";
-  const encryptionKey = "test-integration-encryption-key-0123456789";
-  const db = fakeDb({ freelancehuntScan: true, skills: ["python", "telegram"] });
-  const requests = [];
-  globalThis.fetch = async (input, init) => {
-    const url = String(input);
-    requests.push({ url, headers: init?.headers, body: init?.body });
-    if (url === "https://api.freelancehunt.com/v2/my/profile") {
-      assert.equal(new Headers(init.headers).get("Authorization"), "Bearer " + token);
-      return Response.json({ data: { attributes: { login: "test_freelancer" } } });
-    }
-    if (url === "https://api.freelancehunt.com/v2/projects") {
-      assert.equal(new Headers(init.headers).get("Authorization"), "Bearer " + token);
-      return Response.json({ data: [{
-        id: 299172,
-        type: "project",
-        attributes: {
-          name: "Python Telegram bot",
-          description_html: "<p>Need a Python developer to build a Telegram bot.</p>",
-          budget: { amount: 5000, currency: "RUB" },
-          safe_type: "employer",
-          published_at: "2026-10-17T09:00:00+00:00",
-          self: { web: "https://freelancehunt.com/project/python-telegram-bot/299172.html" }
-        }
-      }] });
-    }
-    return originalFetch(input, init);
-  };
-  try {
-    const connectResponse = await worker.fetch(new Request("https://api.example/integrations", {
-      method: "POST",
-      headers: { Cookie: "fh_session=test-session-token", "Content-Type": "application/json" },
-      body: JSON.stringify({ provider: "freelancehunt", secret: token })
-    }), { DB: db, INTEGRATION_ENCRYPTION_KEY: encryptionKey });
-    assert.equal(connectResponse.status, 201);
-    const connected = await connectResponse.json();
-    assert.equal(connected.status, "connected");
-    assert.equal(connected.label, "Freelancehunt Â· test_freelancer");
-    assert.equal(JSON.stringify(connected).includes(token), false);
-    assert.ok(db.storedIntegration.credentials_json.includes("ciphertext"));
-    assert.equal(db.storedIntegration.credentials_json.includes(token), false);
-
-    const scanResponse = await worker.fetch(new Request("https://api.example/agent/scan", {
-      method: "POST",
-      headers: { Cookie: "fh_session=test-session-token", "Content-Type": "application/json" },
-      body: "{}"
-    }), { DB: db, INTEGRATION_ENCRYPTION_KEY: encryptionKey });
-    assert.equal(scanResponse.status, 200);
-    const result = await scanResponse.json();
-    assert.equal(result.scannedSources, 1);
-    assert.equal(result.newProjects, 1);
-    assert.deepEqual(result.errors, []);
-    assert.equal(db.insertedProjects.length, 1);
-    assert.equal(db.insertedProjects[0].values[1], "299172");
-    assert.equal(db.insertedProjects[0].values[2], "https://freelancehunt.com/project/python-telegram-bot/299172.html");
-    assert.equal(db.insertedProjects[0].values[6], 5000);
-    assert.ok(requests.some(item => item.url === "https://api.freelancehunt.com/v2/projects"));
-  } finally {
-    globalThis.fetch = originalFetch;
-  }
-});
-
-test("Freelancehunt invalid tokens are rejected without saving credentials", async () => {
-  const originalFetch = globalThis.fetch;
-  let saved = false;
-  const db = fakeDb();
-  const originalPrepare = db.prepare.bind(db);
-  db.prepare = sql => {
-    const prepared = originalPrepare(sql);
-    if (sql.includes("INSERT INTO integrations")) {
-      const originalRun = prepared.run.bind(prepared);
-      prepared.run = async (...args) => { saved = true; return originalRun(...args); };
-    }
-    return prepared;
-  };
-  globalThis.fetch = async input => {
-    if (String(input) === "https://api.freelancehunt.com/v2/my/profile") return Response.json({ error: { title: "Unauthorized" } }, { status: 401 });
-    return originalFetch(input);
-  };
-  try {
-    const response = await worker.fetch(new Request("https://api.example/integrations", {
-      method: "POST",
-      headers: { Cookie: "fh_session=test-session-token", "Content-Type": "application/json" },
-      body: JSON.stringify({ provider: "freelancehunt", secret: "invalid-token" })
-    }), { DB: db, INTEGRATION_ENCRYPTION_KEY: "test-integration-encryption-key-0123456789" });
-    assert.equal(response.status, 401);
-    assert.equal(saved, false);
-  } finally {
-    globalThis.fetch = originalFetch;
-  }
-});
-
-
-test("Freelancehunt bid submission requires confirmation and records only provider-confirmed success", async () => {
-  const originalFetch = globalThis.fetch;
-  const token = "test-freelancehunt-token-for-bid";
-  const encryptionKey = "test-integration-encryption-key-0123456789";
-  const db = fakeDb();
-  let bidRequests = 0;
-  globalThis.fetch = async (input, init) => {
-    const url = String(input);
-    if (url === "https://api.freelancehunt.com/v2/my/profile") {
-      return Response.json({ data: { attributes: { login: "test_freelancer" } } });
-    }
-    if (url === "https://api.freelancehunt.com/v2/projects/299172/bids") {
-      bidRequests += 1;
-      assert.equal(init.method, "POST");
-      assert.equal(new Headers(init.headers).get("Authorization"), "Bearer " + token);
-      assert.deepEqual(JSON.parse(init.body), {
-        days: 5,
-        budget: { amount: 4500, currency: "RUB" },
-        safe_type: "employer",
-        comment: "I can build the requested Telegram bot."
-      });
-      return Response.json({ data: { id: 3119168 } }, { status: 201 });
-    }
-    return originalFetch(input, init);
-  };
-  try {
-    const connect = await worker.fetch(new Request("https://api.example/integrations", {
-      method: "POST",
-      headers: { Cookie: "fh_session=test-session-token", "Content-Type": "application/json" },
-      body: JSON.stringify({ provider: "freelancehunt", secret: token })
-    }), { DB: db, INTEGRATION_ENCRYPTION_KEY: encryptionKey });
-    assert.equal(connect.status, 201);
-    db.applicationRecord = {
-      id: 5, project_id: 299172, status: "awaiting_confirmation",
-      draft_text: "I can build the requested Telegram bot.",
-      source: "freelancehunt", source_project_id: "299172",
-      url: "https://freelancehunt.com/project/python-telegram-bot/299172.html",
-      created_at: "2026-10-17 10:00:00", submitted_at: null, replied_at: null,
-      provider_submission_id: null, submission_error: null
-    };
-
-    const response = await worker.fetch(new Request("https://api.example/applications/5/submit", {
-      method: "POST",
-      headers: { Cookie: "fh_session=test-session-token", "Content-Type": "application/json" },
-      body: JSON.stringify({ days: 5, budget_amount: 4500, currency: "RUB", safe_type: "employer" })
-    }), { DB: db, INTEGRATION_ENCRYPTION_KEY: encryptionKey });
-    assert.equal(response.status, 200);
-    const result = await response.json();
-    assert.equal(result.status, "sent");
-    assert.equal(result.provider_submission_id, "3119168");
-    assert.ok(result.submitted_at);
-    assert.equal(bidRequests, 1);
-
-    const duplicate = await worker.fetch(new Request("https://api.example/applications/5/submit", {
-      method: "POST",
-      headers: { Cookie: "fh_session=test-session-token", "Content-Type": "application/json" },
-      body: JSON.stringify({ days: 5, budget_amount: 4500, currency: "RUB", safe_type: "employer" })
-    }), { DB: db, INTEGRATION_ENCRYPTION_KEY: encryptionKey });
-    assert.equal(duplicate.status, 409);
-    assert.equal(bidRequests, 1);
-  } finally {
-    globalThis.fetch = originalFetch;
-  }
-});
-
-test("Freelancehunt submission rejects drafts that were not prepared for confirmation", async () => {
-  const response = await worker.fetch(new Request("https://api.example/applications/5/submit", {
-    method: "POST",
-    headers: { Cookie: "fh_session=test-session-token", "Content-Type": "application/json" },
-    body: JSON.stringify({ days: 5, budget_amount: 4500, currency: "RUB", safe_type: "employer" })
-  }), {
-    DB: fakeDb({ application: {
-      id: 5, project_id: 299172, status: "draft", draft_text: "Proposal",
-      source: "freelancehunt", source_project_id: "299172", url: "https://freelancehunt.com/"
-    } }),
-    INTEGRATION_ENCRYPTION_KEY: "test-integration-encryption-key-0123456789"
-  });
-  assert.equal(response.status, 409);
-});
-
-
-test("Freelancehunt ambiguous server failures block automatic resubmission", async () => {
-  const originalFetch = globalThis.fetch;
-  const token = "test-freelancehunt-token-timeout";
-  const encryptionKey = "test-integration-encryption-key-0123456789";
-  const db = fakeDb();
-  let bidRequests = 0;
-  globalThis.fetch = async input => {
-    const url = String(input);
-    if (url === "https://api.freelancehunt.com/v2/my/profile") return Response.json({ data: { attributes: { login: "test_freelancer" } } });
-    if (url === "https://api.freelancehunt.com/v2/projects/299172/bids") {
-      bidRequests += 1;
-      return Response.json({ error: { title: "Temporary error" } }, { status: 500 });
-    }
-    return originalFetch(input);
-  };
-  try {
-    await worker.fetch(new Request("https://api.example/integrations", {
-      method: "POST",
-      headers: { Cookie: "fh_session=test-session-token", "Content-Type": "application/json" },
-      body: JSON.stringify({ provider: "freelancehunt", secret: token })
-    }), { DB: db, INTEGRATION_ENCRYPTION_KEY: encryptionKey });
-    db.applicationRecord = {
-      id: 6, project_id: 299172, status: "awaiting_confirmation", draft_text: "I can build this bot.",
-      source: "freelancehunt", source_project_id: "299172", url: "https://freelancehunt.com/project/299172.html",
-      created_at: "2026-10-17 10:00:00", submitted_at: null, replied_at: null,
-      provider_submission_id: null, submission_error: null
-    };
-    const request = () => new Request("https://api.example/applications/6/submit", {
-      method: "POST",
-      headers: { Cookie: "fh_session=test-session-token", "Content-Type": "application/json" },
-      body: JSON.stringify({ days: 3, budget_amount: 1000, currency: "RUB", safe_type: "employer" })
-    });
-    const response = await worker.fetch(request(), { DB: db, INTEGRATION_ENCRYPTION_KEY: encryptionKey });
-    assert.equal(response.status, 502);
-    const result = await response.json();
-    assert.equal(result.application.status, "submission_unknown");
-    const duplicate = await worker.fetch(request(), { DB: db, INTEGRATION_ENCRYPTION_KEY: encryptionKey });
-    assert.equal(duplicate.status, 409);
-    assert.equal(bidRequests, 1);
-  } finally {
-    globalThis.fetch = originalFetch;
-  }
-});
-
-
-test("proposal drafting creates Russian and English drafts from profile-grounded listing facts", async () => {
-  const originalFetch = globalThis.fetch;
-  const scenarios = [
-    {
-      language: "ru",
-      project: { id: 17, source: "telegram", url: "https://t.me/example/17", title: "ÐÑƒÐ¶ÐµÐ½ Telegram-Ð±Ð¾Ñ‚ Ð½Ð° Python", description: "ÐÑƒÐ¶Ð½Ð¾ Ñ€Ð°Ð·Ñ€Ð°Ð±Ð¾Ñ‚Ð°Ñ‚ÑŒ Telegram-Ð±Ð¾Ñ‚Ð° Ð´Ð»Ñ Ð¾Ð±Ñ€Ð°Ð±Ð¾Ñ‚ÐºÐ¸ Ð·Ð°ÑÐ²Ð¾Ðº. Ð‘ÑŽÐ´Ð¶ÐµÑ‚ 15 000 RUB.", language: "ru", budget_min: 15000, budget_max: 15000, currency: "RUB", payment_method: "fixed" },
-      draft: "Ð—Ð´Ñ€Ð°Ð²ÑÑ‚Ð²ÑƒÐ¹Ñ‚Ðµ! ÐœÐ¾Ð³Ñƒ Ð¿Ð¾Ð¼Ð¾Ñ‡ÑŒ Ñ€Ð°Ð·Ñ€Ð°Ð±Ð¾Ñ‚Ð°Ñ‚ÑŒ Telegram-Ð±Ð¾Ñ‚Ð° Ð½Ð° Python Ð´Ð»Ñ Ð¾Ð±Ñ€Ð°Ð±Ð¾Ñ‚ÐºÐ¸ Ð·Ð°ÑÐ²Ð¾Ðº. ÐŸÑ€ÐµÐ´Ð»Ð°Ð³Ð°ÑŽ ÑÐ½Ð°Ñ‡Ð°Ð»Ð° ÑÐ¾Ð³Ð»Ð°ÑÐ¾Ð²Ð°Ñ‚ÑŒ ÑÑ†ÐµÐ½Ð°Ñ€Ð¸Ð¸ Ð¸ ÑÑ‚Ñ€ÑƒÐºÑ‚ÑƒÑ€Ñƒ Ð´Ð°Ð½Ð½Ñ‹Ñ…, Ð·Ð°Ñ‚ÐµÐ¼ Ñ€ÐµÐ°Ð»Ð¸Ð·Ð¾Ð²Ð°Ñ‚ÑŒ Ð¸ Ð¿Ñ€Ð¾Ð²ÐµÑ€Ð¸Ñ‚ÑŒ Ð¾ÑÐ½Ð¾Ð²Ð½Ñ‹Ðµ Ñ„ÑƒÐ½ÐºÑ†Ð¸Ð¸."
-    },
-    {
-      language: "en",
-      project: { id: 18, source: "telegram", url: "https://t.me/example/18", title: "Build a Python Telegram bot", description: "Build a bot to collect project applications. Budget: $300.", language: "en", budget_min: 300, budget_max: 300, currency: "USD", payment_method: "fixed" },
-      draft: "Hi! I can help build a Python Telegram bot to collect project applications. I would start by confirming the user flow and data structure, then implement and test the core features."
-    }
-  ];
-  const requests = [];
-  globalThis.fetch = async (input, init) => {
-    if (String(input) === "https://provider.example/v1/chat/completions") {
-      requests.push(JSON.parse(init.body));
-      return Response.json({ choices: [{ message: { content: scenarios[requests.length - 1].draft } }] });
-    }
-    return originalFetch(input, init);
-  };
-  try {
-    for (const scenario of scenarios) {
-      const response = await worker.fetch(new Request("https://api.example/applications/" + scenario.project.id + "/draft", {
-        method: "POST",
-        headers: { Cookie: "fh_session=test-session-token", "CF-Connecting-IP": scenario.language === "ru" ? "198.51.100.80" : "198.51.100.81" }
-      }), {
-        DB: fakeDb({
-          project: scenario.project,
-          profile: { display_name: "Developer", skills: JSON.stringify(["Python", "Telegram bots"]), languages: JSON.stringify(["ru", "en"]), payment_preferences: "[]", min_budget: 100, currency: scenario.language === "ru" ? "RUB" : "USD" }
-        }),
-        AI_API_KEY: "test-key",
-        AI_API_BASE_URL: "https://provider.example/v1",
-        AI_MODEL: "test-model"
-      });
-      assert.equal(response.status, 201);
-      const data = await response.json();
-      assert.equal(data.status, "draft");
-      assert.equal(data.draft_text, scenario.draft);
-    }
-    assert.equal(requests.length, 2);
-    for (const request of requests) {
-      assert.equal(request.model, "test-model");
-      assert.equal(request.temperature, 0.35);
-      assert.match(request.messages[0].content, /untrusted data/i);
-      assert.match(request.messages[0].content, /Never invent experience/i);
-      assert.match(request.messages[0].content, /Do not claim the proposal has been sent/i);
-      assert.equal(request.messages[1].role, "user");
-      const facts = JSON.parse(request.messages[1].content);
-      assert.deepEqual(facts.user_profile.skills, ["Python", "Telegram bots"]);
-      assert.ok(facts.project.listing_url.startsWith("https://t.me/example/"));
-    }
-  } finally {
-    globalThis.fetch = originalFetch;
-  }
-});
-
-test("proposal drafting reports missing provider configuration and upstream failures without creating sent applications", async () => {
-  const project = { id: 19, source: "telegram", url: "https://t.me/example/19", title: "Python bot", description: "Build a Python Telegram bot", language: "en", budget_min: 200, budget_max: 200, currency: "USD", payment_method: "fixed" };
-  const profile = { display_name: null, skills: JSON.stringify(["Python"]), languages: JSON.stringify(["en"]), payment_preferences: "[]", min_budget: 100, currency: "USD" };
-  const noConfig = await worker.fetch(new Request("https://api.example/applications/19/draft", {
-    method: "POST", headers: { Cookie: "fh_session=test-session-token", "CF-Connecting-IP": "198.51.100.82" }
-  }), { DB: fakeDb({ project, profile }) });
-  assert.equal(noConfig.status, 503);
-  assert.match((await noConfig.json()).detail, /AI drafting is not configured/i);
-
-  const originalFetch = globalThis.fetch;
-  globalThis.fetch = async () => Response.json({ error: { message: "quota exceeded" } }, { status: 429 });
-  try {
-    const failed = await worker.fetch(new Request("https://api.example/applications/19/draft", {
-      method: "POST", headers: { Cookie: "fh_session=test-session-token", "CF-Connecting-IP": "198.51.100.83" }
-    }), { DB: fakeDb({ project, profile }), AI_API_KEY: "test-key", AI_MODEL: "test-model" });
-    assert.equal(failed.status, 502);
-    assert.match((await failed.json()).detail, /AI provider request failed/i);
-  } finally {
-    globalThis.fetch = originalFetch;
-  }
-});
-
-
-test("scheduled scans continue for later users when one user's source query fails", async () => {
-  const visitedUsers = [];
-  const DB = {
-    prepare(sql) {
-      let values = [];
-      return {
-        bind(...args) { values = args; return this; },
-        async all() {
-          if (sql.includes("SELECT DISTINCT s.user_id FROM sources s JOIN agent_settings")) {
-            return { results: [{ user_id: "user-1" }, { user_id: "user-2" }] };
-          }
-          if (sql.includes("SELECT * FROM sources WHERE user_id=? AND is_enabled=1")) {
-            visitedUsers.push(values[0]);
-            if (values[0] === "user-1") throw new Error("synthetic source query failure");
-            return { results: [] };
-          }
-          return { results: [] };
-        },
-        async run() { return { meta: { changes: 1 } }; },
-        async first() { return null; }
-      };
-    }
-  };
-  let scheduledTask;
-  await worker.scheduled({}, { DB }, { waitUntil(task) { scheduledTask = task; } });
-  await scheduledTask;
-  assert.deepEqual(visitedUsers, ["user-1", "user-2"]);
-});
-
-
-test("scheduled scan sends an operational Telegram alert when a user scan fails", async () => {
-  const DB = {
-    prepare(sql) {
-      return {
-        bind() { return this; },
-        async all() {
-          if (sql.includes("SELECT DISTINCT s.user_id FROM sources s JOIN agent_settings")) return { results: [{ user_id: "user-1" }] };
-          if (sql.includes("SELECT * FROM sources WHERE user_id=? AND is_enabled=1 AND source IN")) throw new Error("synthetic source query failure");
-          return { results: [] };
-        },
-        async first() { return null; },
-        async run() { return { meta: { changes: 1 } }; }
-      };
-    }
-  };
-  const originalFetch = globalThis.fetch;
-  let alertRequest = null;
-  globalThis.fetch = async (input, init) => {
-    alertRequest = { url: String(input), body: JSON.parse(init.body) };
-    return Response.json({ ok: true, result: { message_id: 10 } });
-  };
-  let scheduledTask;
-  try {
-    await worker.scheduled({}, { DB, TELEGRAM_BOT_TOKEN: "ops-test-token", WORKER_ALERT_CHAT_ID: "123456" }, {
-      waitUntil(task) { scheduledTask = task; }
-    });
-    await scheduledTask;
-    assert.equal(alertRequest.url, "https://api.telegram.org/botops-test-token/sendMessage");
-    assert.equal(alertRequest.body.chat_id, "123456");
-    assert.match(alertRequest.body.text, /user errors: 1/i);
-  } finally {
-    globalThis.fetch = originalFetch;
-  }
-});
-
-
-test("disconnecting Freelancehunt removes its source subscription but keeps discovered projects", async () => {
-  const statements = [];
-  const DB = {
-    prepare(sql) {
-      let values = [];
-      return {
-        bind(...args) { values = args; return this; },
-        async first() {
-          if (sql.includes("FROM sessions s JOIN users")) return { id: "user-1", created_at: "2026-10-16 10:00:00" };
-          if (sql.includes("SELECT provider FROM integrations WHERE id=? AND user_id=?")) return { provider: "freelancehunt" };
-          return null;
-        },
-        async run() {
-          statements.push({ sql, values: [...values] });
-          return { meta: { changes: 1 } };
-        },
-        async all() { return { results: [] }; }
-      };
-    }
-  };
-  const response = await worker.fetch(new Request("https://api.example/integrations/7", {
-    method: "DELETE",
-    headers: { Cookie: "fh_session=test-session-token", "CF-Connecting-IP": "198.51.100.95" }
-  }), { DB });
-  assert.equal(response.status, 200);
-  assert.deepEqual(await response.json(), { ok: true });
-  assert.ok(statements.some(item => item.sql.includes("DELETE FROM integrations WHERE id=? AND user_id=?")));
-  const sourceDelete = statements.find(item => item.sql.includes("DELETE FROM sources WHERE user_id=? AND source='freelancehunt'"));
-  assert.ok(sourceDelete);
-  assert.deepEqual(sourceDelete.values, ["user-1"]);
-});
-
-
-test("CORS allows the production app and rejects unrelated Workers and Pages origins", async () => {
-  const DB = fakeDb();
-  const allowed = await worker.fetch(new Request("https://api.example/health", {
-    headers: { Origin: "https://freelance-hunter-ai.badahyousr.workers.dev" }
-  }), { DB });
-  assert.equal(allowed.headers.get("Access-Control-Allow-Origin"), "https://freelance-hunter-ai.badahyousr.workers.dev");
-  assert.equal(allowed.headers.get("Access-Control-Allow-Credentials"), "true");
-
-  for (const origin of [
-    "https://attacker.workers.dev",
-    "https://attacker.pages.dev",
-    "https://freelance-hunter-ai.badahyousr.workers.dev.attacker.example",
-    "null"
-  ]) {
-    const response = await worker.fetch(new Request("https://api.example/health", {
-      headers: { Origin: origin }
-    }), { DB });
-    assert.equal(response.headers.get("Access-Control-Allow-Origin"), null, origin);
-  }
-});
-
-test("CORS only permits expected local development ports", async () => {
-  const DB = fakeDb();
-  const allowed = await worker.fetch(new Request("https://api.example/health", {
-    headers: { Origin: "http://localhost:3000" }
-  }), { DB });
-  assert.equal(allowed.headers.get("Access-Control-Allow-Origin"), "http://localhost:3000");
-
-  const rejected = await worker.fetch(new Request("https://api.example/health", {
-    headers: { Origin: "http://localhost:9999" }
-  }), { DB });
-  assert.equal(rejected.headers.get("Access-Control-Allow-Origin"), null);
-});
-
-test("user-scoped mutation endpoints constrain reads and writes to the authenticated owner", async () => {
-  const statements = [];
-  const db = {
-    prepare(sql) {
-      let values = [];
-      const record = () => statements.push({ sql, values: [...values] });
-      return {
-        bind(...args) { values = args; return this; },
-        async first() {
-          record();
-          if (sql.includes("FROM sessions s JOIN users")) return { id: "user-1", created_at: "2026-10-16 10:00:00" };
-          return null;
-        },
-        async all() { record(); return { results: [] }; },
-        async run() { record(); return { meta: { changes: 0 } }; }
-      };
-    }
-  };
-  const cases = [
-    { path: "/sources/999", method: "PATCH", body: { is_enabled: false }, expectedStatus: 404, sql: "UPDATE sources SET is_enabled=?", ownerPosition: 3 },
-    { path: "/applications/999", method: "PATCH", body: { draft_text: "edited" }, expectedStatus: 404, sql: "SELECT id,project_id,status,draft_text FROM applications WHERE id=? AND user_id=?", ownerPosition: 1 },
-    { path: "/applications/999/draft", method: "POST", body: {}, expectedStatus: 404, sql: "SELECT id,source,url,title,description,language,budget_min,budget_max,currency,payment_method FROM projects WHERE id=? AND user_id=?", ownerPosition: 1 },
-    { path: "/integrations/999", method: "DELETE", expectedStatus: 404, sql: "SELECT provider FROM integrations WHERE id=? AND user_id=?", ownerPosition: 1 }
-  ];
-  for (const item of cases) {
-    const response = await worker.fetch(new Request("https://api.example" + item.path, {
-      method: item.method,
-      headers: { Cookie: "fh_session=test-session-token", ...(item.body ? { "Content-Type": "application/json" } : {}) },
-      ...(item.body ? { body: JSON.stringify(item.body) } : {})
-    }), { DB: db, AI_API_KEY: "test-key", AI_MODEL: "test-model" });
-    assert.equal(response.status, item.expectedStatus, item.path);
-    const statement = statements.findLast(entry => entry.sql.includes(item.sql));
-    assert.ok(statement, "Expected scoped SQL for " + item.path);
-    assert.equal(statement.values[item.ownerPosition], "user-1", "Authenticated user ID must be bound for " + item.path);
-  }
-
-  const profileResponse = await worker.fetch(new Request("https://api.example/profile", {
-    method: "PATCH",
-    headers: { Cookie: "fh_session=test-session-token", "Content-Type": "application/json" },
-    body: JSON.stringify({ display_name: "Test" })
-  }), { DB: db });
-  assert.equal(profileResponse.status, 200);
-  const profileWrite = statements.findLast(entry => entry.sql.includes("UPDATE profiles SET display_name=?"));
-  assert.ok(profileWrite);
-  assert.equal(profileWrite.values.at(-1), "user-1");
-
-  const settingsResponse = await worker.fetch(new Request("https://api.example/agent/settings", {
-    method: "PATCH",
-    headers: { Cookie: "fh_session=test-session-token", "Content-Type": "application/json" },
-    body: JSON.stringify({ enabled: false })
-  }), { DB: db });
-  assert.equal(settingsResponse.status, 200);
-  const settingsWrite = statements.findLast(entry => entry.sql.includes("UPDATE agent_settings SET is_enabled=?"));
-  assert.ok(settingsWrite);
-  assert.equal(settingsWrite.values.at(-1), "user-1");
-});
-
-test("Freelancehunt status sync records provider-confirmed client responses only", async () => {
-  const key = "test-integration-encryption-key-0123456789";
-  let integration = null;
-  const statements = [];
-  const DB = {
-    prepare(sql) {
-      let values = [];
-      return {
-        bind(...args) { values = args; return this; },
-        async run() {
-          statements.push({ sql, values: [...values] });
-          if (sql.includes("INSERT INTO integrations")) integration = { id: 3, user_id: "user-1", provider: values[1], label: values[2], status: values[3], credentials_json: values[4], created_at: "2026-10-17 10:00:00" };
-          if (sql.includes("UPDATE applications SET status='replied'")) return { meta: { changes: 1 } };
-          return { meta: { changes: 1 } };
-        },
-        async first() {
-          if (sql.includes("FROM sessions s JOIN users")) return { id: "user-1", created_at: "2026-10-16 10:00:00" };
-          if (sql.includes("SELECT attempts FROM auth_rate_limits")) return { attempts: 1 };
-          if (sql.includes("SELECT id,provider,label,status,created_at FROM integrations WHERE user_id=? AND provider=?")) return integration ? { id: integration.id, provider: integration.provider, label: integration.label, status: integration.status, created_at: integration.created_at } : null;
-          if (sql.includes("SELECT credentials_json FROM integrations WHERE user_id=? AND provider='freelancehunt'")) return integration?.status === "connected" ? { credentials_json: integration.credentials_json } : null;
-          if (sql.includes("SELECT tl.telegram_user_id,COALESCE(a.notify_application_updates,1)")) return { telegram_user_id: "12345", notify_application_updates: 1 };
-          return null;
-        },
-        async all() {
-          if (sql.includes("SELECT a.id,a.provider_submission_id,a.provider_status,p.source_project_id,p.title,p.url FROM applications")) {
-            return { results: [{ id: 12, provider_submission_id: "321", source_project_id: "123", title: "Test project", url: "https://freelancehunt.com/project/123" }] };
-          }
-          return { results: [] };
-        }
-      };
-    }
-  };
-  const originalFetch = globalThis.fetch;
-  const requests = [];
-  let telegramPayload = null;
-  globalThis.fetch = async (input, init) => {
-    const url = String(input);
-    requests.push({ url, init });
-    if (url.endsWith("/my/profile")) return Response.json({ data: { attributes: { login: "test-user" } } });
-    if (url.includes("/my/bids?filter[project_id]=123")) {
-      return Response.json({ data: [{ id: 321, attributes: { status: "rejected", is_winner: false } }] });
-    }
-    if (url === "https://api.telegram.org/botnotification-test-token/sendMessage") {
-      telegramPayload = JSON.parse(init.body);
-      return Response.json({ ok: true, result: { message_id: 88 } });
-    }
-    throw new Error("Unexpected provider request: " + url);
-  };
-  try {
-    const connect = await worker.fetch(new Request("https://api.example/integrations", {
-      method: "POST",
-      headers: { Cookie: "fh_session=test-session-token", "Content-Type": "application/json", "CF-Connecting-IP": "198.51.100.111" },
-      body: JSON.stringify({ provider: "freelancehunt", secret: "provider-test-token" })
-    }), { DB, INTEGRATION_ENCRYPTION_KEY: key });
-    assert.equal(connect.status, 201);
-    const response = await worker.fetch(new Request("https://api.example/integrations/freelancehunt/sync", {
-      method: "POST",
-      headers: { Cookie: "fh_session=test-session-token", "CF-Connecting-IP": "198.51.100.112" }
-    }), { DB, INTEGRATION_ENCRYPTION_KEY: key, TELEGRAM_BOT_TOKEN: "notification-test-token" });
-    assert.equal(response.status, 200);
-    assert.deepEqual(await response.json(), {
-      checked: 1,
-      updated: 1,
-      errors: 0,
-      message: "Status sync completed; provider-confirmed replies were recorded."
-    });
-    assert.ok(requests.some(item => item.url.includes("/my/bids?filter[project_id]=123")));
-    assert.equal(telegramPayload.chat_id, "12345");
-    assert.match(telegramPayload.text, /Test project/);
-    assert.match(telegramPayload.text, /https:\/\/freelancehunt\.com\/project\/123/);
-    const write = statements.find(item => item.sql.includes("UPDATE applications SET status='replied'"));
-    assert.ok(write);
-    assert.deepEqual(write.values, [12, "user-1"]);
-  } finally {
-    globalThis.fetch = originalFetch;
-  }
-});
-
-
-test("source deletion and Telegram link management remain scoped to the authenticated user", async () => {
-  const statements = [];
-  const DB = {
-    prepare(sql) {
-      let values = [];
-      const record = () => statements.push({ sql, values: [...values] });
-      return {
-        bind(...args) { values = args; return this; },
-        async first() {
-          record();
-          if (sql.includes("FROM sessions s JOIN users")) return { id: "user-1", created_at: "2026-10-16 10:00:00" };
-          return null;
-        },
-        async run() { record(); return { meta: { changes: sql.includes("DELETE FROM sources WHERE id=? AND user_id=?") ? 0 : 1 } }; },
-        async all() { record(); return { results: [] }; }
-      };
-    }
-  };
-  const sourceDelete = await worker.fetch(new Request("https://api.example/sources/987", {
-    method: "DELETE",
-    headers: { Cookie: "fh_session=test-session-token" }
-  }), { DB });
-  assert.equal(sourceDelete.status, 404);
-  const sourceWrite = statements.findLast(item => item.sql.includes("DELETE FROM sources WHERE id=? AND user_id=?"));
-  assert.ok(sourceWrite);
-  assert.deepEqual(sourceWrite.values, [987, "user-1"]);
-
-  const linkCode = await worker.fetch(new Request("https://api.example/telegram/link-code", {
-    method: "POST",
-    headers: { Cookie: "fh_session=test-session-token" }
-  }), { DB });
-  assert.equal(linkCode.status, 200);
-  const codeWrite = statements.findLast(item => item.sql.includes("UPDATE telegram_links SET link_code_hash="));
-  assert.ok(codeWrite);
-  assert.equal(codeWrite.values.at(-1), "user-1");
-
-  const unlink = await worker.fetch(new Request("https://api.example/telegram/link", {
-    method: "DELETE",
-    headers: { Cookie: "fh_session=test-session-token" }
-  }), { DB });
-  assert.equal(unlink.status, 200);
-  const unlinkWrite = statements.findLast(item => item.sql.includes("UPDATE telegram_links SET link_code_hash=NULL"));
-  assert.ok(unlinkWrite);
-  assert.deepEqual(unlinkWrite.values, ["user-1"]);
-});
-
-
-test("agent settings can opt out of client response notifications", async () => {
-  const writes = [];
-  const DB = {
-    prepare(sql) {
-      let values = [];
-      return {
-        bind(...args) { values = args; return this; },
-        async first() {
-          if (sql.includes("FROM sessions s JOIN users")) return { id: "user-1", created_at: "2026-10-16 10:00:00" };
-          if (sql.includes("SELECT * FROM agent_settings WHERE user_id=?")) return { is_enabled: 1, auto_draft: 1, min_match_score: 60, notify_new_projects: 1, notify_application_updates: 1 };
-          return null;
-        },
-        async run() { writes.push({ sql, values: [...values] }); return { meta: { changes: 1 } }; },
-        async all() { return { results: [] }; }
-      };
-    }
-  };
-  const response = await worker.fetch(new Request("https://api.example/agent/settings", {
-    method: "PATCH",
-    headers: { Cookie: "fh_session=test-session-token", "Content-Type": "application/json" },
-    body: JSON.stringify({ notify_application_updates: false })
-  }), { DB });
-  assert.equal(response.status, 200);
-  const data = await response.json();
-  assert.equal(data.notify_application_updates, false);
-  const update = writes.find(item => item.sql.includes("UPDATE agent_settings SET is_enabled=?"));
-  assert.ok(update);
-  assert.match(update.sql, /notify_application_updates=\?/);
-  assert.equal(update.values[6], 0);
-  assert.equal(update.values[7], "user-1");
-});
-
-
-test("user-scoped read, draft, and Telegram link endpoints bind the authenticated owner", async () => {
-  const statements = [];
-  const DB = {
-    prepare(sql) {
-      let values = [];
-      const record = () => statements.push({ sql, values: [...values] });
-      return {
-        bind(...args) { values = args; return this; },
-        async first() {
-          record();
-          if (sql.includes("FROM sessions s JOIN users")) return { id: "user-1", created_at: "2026-10-16 10:00:00" };
-          return null;
-        },
-        async all() { record(); return { results: [] }; },
-        async run() { record(); return { meta: { changes: 1 } }; }
-      };
-    }
-  };
-  const cases = [
-    { path: "/sources", method: "GET", status: 200, sql: "FROM sources WHERE user_id=?", ownerPosition: 0 },
-    { path: "/applications", method: "GET", status: 200, sql: "FROM applications a LEFT JOIN projects", ownerPosition: 0 },
-    { path: "/integrations", method: "GET", status: 200, sql: "FROM integrations WHERE user_id=?", ownerPosition: 0 },
-    { path: "/profile", method: "GET", status: 200, sql: "FROM profiles WHERE user_id=?", ownerPosition: 0 },
-    { path: "/agent/settings", method: "GET", status: 200, sql: "SELECT * FROM agent_settings WHERE user_id=?", ownerPosition: 0 },
-    { path: "/applications/999/draft", method: "POST", body: {}, status: 404, sql: "FROM projects WHERE id=? AND user_id=?", ownerPosition: 1 },
-    { path: "/telegram/link-code", method: "POST", body: {}, status: 200, sql: "UPDATE telegram_links SET link_code_hash=?", ownerPosition: 1 },
-    { path: "/telegram/link", method: "DELETE", status: 200, sql: "UPDATE telegram_links SET link_code_hash=NULL", ownerPosition: 0 }
-  ];
-  for (const item of cases) {
-    const response = await worker.fetch(new Request("https://api.example" + item.path, {
-      method: item.method,
-      headers: {
-        Cookie: "fh_session=test-session-token",
-        ...(item.body ? { "Content-Type": "application/json" } : {})
-      },
-      ...(item.body ? { body: JSON.stringify(item.body) } : {})
-    }), { DB, AI_API_KEY: "test-key", AI_MODEL: "test-model" });
-    assert.equal(response.status, item.status, item.path);
-    const statement = statements.findLast(entry => entry.sql.includes(item.sql));
-    assert.ok(statement, "Expected scoped query for " + item.path);
-    assert.equal(statement.values[item.ownerPosition], "user-1", "Authenticated user ID must be bound for " + item.path);
-  }
-});
-
-
-test("expired website sessions are rejected before user data is read", async () => {
-  const statements = [];
-  const DB = {
-    prepare(sql) {
-      let values = [];
-      return {
-        bind(...args) { values = args; return this; },
-        async first() { statements.push({ sql, values: [...values] }); return null; },
-        async all() { statements.push({ sql, values: [...values] }); return { results: [] }; },
-        async run() { statements.push({ sql, values: [...values] }); return { meta: { changes: 0 } }; }
-      };
-    }
-  };
-  const response = await worker.fetch(new Request("https://api.example/profile", {
-    headers: { Cookie: "fh_session=expired-session-token" }
-  }), { DB });
-  assert.equal(response.status, 401);
-  const sessionQuery = statements.find(entry => entry.sql.includes("FROM sessions s JOIN users"));
-  assert.ok(sessionQuery);
-  assert.match(sessionQuery.sql, /s\.expires_at > datetime\('now'\)/);
-  assert.notEqual(sessionQuery.values[0], "expired-session-token");
-});
-
-test("dashboard summary includes user-scoped source counts and a seven-day discovery series", async () => {
-  const statements = [];
-  const today = new Date().toISOString().slice(0, 10);
-  const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
-  const DB = {
-    prepare(sql) {
-      let values = [];
-      return {
-        bind(...args) { values = args; return this; },
-        async first() {
-          statements.push({ sql, values: [...values] });
-          if (sql.includes("FROM sessions s JOIN users")) return { id: "user-1", created_at: "2026-10-16 10:00:00" };
-          if (sql.includes("AS telegram_channels_connected")) return {
-            projects_found: 11, matched_projects: 5, proposals_sent: 2, client_replies: 1,
-            telegram_channels_connected: 3, marketplaces_connected: 1, telegram_bots_connected: 1, agent_enabled: 1
-          };
-          return null;
-        },
-        async all() {
-          statements.push({ sql, values: [...values] });
-          if (sql.includes("date(discovered_at) AS day")) return { results: [
-            { day: yesterday, projects_found: 2 }, { day: today, projects_found: 4 }
-          ] };
-          return { results: [] };
-        }
-      };
-    }
-  };
-  const response = await worker.fetch(new Request("https://api.example/dashboard/summary", {
-    headers: { Cookie: "fh_session=test-session-token" }
-  }), { DB });
-  assert.equal(response.status, 200);
-  const summary = await response.json();
-  assert.equal(summary.telegram_channels_connected, 3);
-  assert.equal(summary.marketplaces_connected, 1);
-  assert.equal(summary.telegram_bots_connected, 1);
-  assert.equal(summary.agent_enabled, 1);
-  assert.equal(summary.daily_activity.length, 7);
-  assert.equal(summary.daily_activity.at(-2).projects_found, 2);
-  assert.equal(summary.daily_activity.at(-1).projects_found, 4);
-  const metricsQuery = statements.find(entry => entry.sql.includes("AS telegram_channels_connected"));
-  assert.deepEqual(metricsQuery.values, Array(8).fill("user-1"));
-  const activityQuery = statements.find(entry => entry.sql.includes("date(discovered_at) AS day"));
-  assert.deepEqual(activityQuery.values, ["user-1"]);
-});
-
-test("Telegram bot summary, project list, and agent control use the linked user's data", async () => {
-  const statements = [];
-  const DB = {
-    prepare(sql) {
-      let values = [];
-      const record = () => statements.push({ sql, values: [...values] });
-      return {
-        bind(...args) { values = args; return this; },
-        async first() {
-          record();
-          if (sql.includes("SELECT u.id FROM telegram_links tl JOIN users u")) return { id: "linked-user-2" };
-          if (sql.includes("SELECT user_id FROM telegram_links WHERE telegram_user_id=?")) return { user_id: "linked-user-2" };
-          if (sql.includes("SELECT (SELECT COUNT(*) FROM projects WHERE user_id=?)")) return { projects_found: 8, matched_projects: 3, proposals_sent: 2, client_replies: 1 };
-          return null;
-        },
-        async all() {
-          record();
-          if (sql.includes("SELECT p.title,p.url,p.source,p.budget_min,p.budget_max,p.currency,p.published_at FROM projects p WHERE p.user_id=?")) {
-            return { results: [{ title: "Linked user's project", url: "https://example.test/project/1", source: "telegram" }] };
-          }
-          return { results: [] };
-        },
-        async run() { record(); return { meta: { changes: 1 } }; }
-      };
-    }
-  };
-  const headers = { "X-Bot-Secret": "test-bot-secret" };
-  const summary = await worker.fetch(new Request("https://api.example/telegram/summary/12345", { headers }), { DB, BOT_API_SECRET: "test-bot-secret" });
-  assert.equal(summary.status, 200);
-  assert.equal((await summary.json()).projects_found, 8);
-  const summaryQuery = statements.find(entry => entry.sql.includes("SELECT (SELECT COUNT(*) FROM projects WHERE user_id=?)"));
-  assert.ok(summaryQuery);
-  assert.deepEqual(summaryQuery.values, ["linked-user-2", "linked-user-2", "linked-user-2", "linked-user-2"]);
-
-  const projects = await worker.fetch(new Request("https://api.example/telegram/projects/12345?limit=3", { headers }), { DB, BOT_API_SECRET: "test-bot-secret" });
-  assert.equal(projects.status, 200);
-  assert.equal((await projects.json()).items[0].title, "Linked user's project");
-  const projectQuery = statements.find(entry => entry.sql.includes("SELECT p.title,p.url,p.source,p.budget_min,p.budget_max,p.currency,p.published_at FROM projects p WHERE p.user_id=?"));
-  assert.ok(projectQuery);
-  assert.deepEqual(projectQuery.values, ["linked-user-2", 3]);
-
-  const control = await worker.fetch(new Request("https://api.example/telegram/agent-control", {
-    method: "POST",
-    headers: { ...headers, "Content-Type": "application/json" },
-    body: JSON.stringify({ telegram_user_id: "12345", enabled: false })
-  }), { DB, BOT_API_SECRET: "test-bot-secret" });
-  assert.equal(control.status, 200);
-  const controlWrite = statements.find(entry => entry.sql.includes("UPDATE agent_settings SET is_enabled=?"));
-  assert.ok(controlWrite);
-  assert.deepEqual(controlWrite.values, [0, "linked-user-2"]);
-});
-
-
-test("source catalog advertises only implemented discovery adapters", async () => {
-  const response = await worker.fetch(new Request("https://api.example/sources/catalog", {
-    headers: { Cookie: "fh_session=test-session-token" }
-  }), { DB: fakeDb() });
-  assert.equal(response.status, 200);
-  const catalog = await response.json();
-  const bySource = Object.fromEntries(catalog.map(item => [item.source, item]));
-  assert.deepEqual(Object.keys(bySource), ["telegram", "fl_ru", "freelance_ru"]);
-  assert.ok(bySource.telegram.capabilities.includes("read_public_posts"));
-  for (const source of ["fl_ru", "freelance_ru"]) {
-    assert.ok(bySource[source].capabilities.includes("read_public_projects"));
-    assert.ok(bySource[source].capabilities.includes("manual_submission_only"));
-  }
-});
-
-test("FL.ru RSS parser keeps recent first-party project listings only", () => {
-  const published = new Date(Date.now() - 60_000).toUTCString();
-  const stale = new Date(Date.now() - 73 * 60 * 60 * 1000).toUTCString();
-  const xml = "<rss><channel>" +
-    "<item><title><![CDATA[Ð¡Ð´ÐµÐ»Ð°Ñ‚ÑŒ Telegram-Ð±Ð¾Ñ‚Ð°]]></title><link>https://www.fl.ru/projects/123456/</link><description><![CDATA[ÐÑƒÐ¶ÐµÐ½ Ð±Ð¾Ñ‚ Ð½Ð° Python, Ð±ÑŽÐ´Ð¶ÐµÑ‚ 10 000 â‚½]]></description><pubDate>" + published + "</pubDate></item>" +
-    "<item><title>Ð£ÑÑ‚Ð°Ñ€ÐµÐ²ÑˆÐ¸Ð¹ Ð·Ð°ÐºÐ°Ð·</title><link>https://www.fl.ru/projects/123457/</link><description>Ð—Ð°ÐºÐ°Ð·</description><pubDate>" + stale + "</pubDate></item>" +
-    "<item><title>Ð§ÑƒÐ¶Ð¾Ð¹ Ð´Ð¾Ð¼ÐµÐ½</title><link>https://example.com/projects/123458/</link><description>Ð—Ð°ÐºÐ°Ð·</description><pubDate>" + published + "</pubDate></item>" +
-    "</channel></rss>";
-  const listings = parseFlRuRss(xml);
-  assert.equal(listings.length, 1);
-  assert.equal(listings[0].id, "/projects/123456");
-  assert.equal(listings[0].title, "Ð¡Ð´ÐµÐ»Ð°Ñ‚ÑŒ Telegram-Ð±Ð¾Ñ‚Ð°");
-  assert.match(listings[0].description, /Ð±ÑŽÐ´Ð¶ÐµÑ‚ 10 000 â‚½/);
-});
-
-test("Freelance.ru parser keeps only recent tasks visible to everyone", () => {
-  const formatMoscow = date => [String(date.getUTCDate()).padStart(2, "0"), String(date.getUTCMonth() + 1).padStart(2, "0"), date.getUTCFullYear()].join(".") + " " + String(date.getUTCHours()).padStart(2, "0") + ":" + String(date.getUTCMinutes()).padStart(2, "0");
-  const recent = formatMoscow(new Date(Date.now() - 60_000 + 3 * 60 * 60 * 1000));
-  const stale = formatMoscow(new Date(Date.now() - 73 * 60 * 60 * 1000 + 3 * 60 * 60 * 1000));
-  const card = (id, date, badge = "task-badge--all") => "<article class=\"task-card\"><span class=\"" + badge + "\">Ð’Ð¸Ð´Ð½Ð¾ Ð²ÑÐµÐ¼</span><a class=\"task-card__title-link\" href=\"/task/view/" + id + "\">Ð Ð°Ð·Ñ€Ð°Ð±Ð¾Ñ‚Ð°Ñ‚ÑŒ Telegram-Ð±Ð¾Ñ‚Ð°</a><p class=\"task-card__desc\">ÐÑƒÐ¶ÐµÐ½ Ð±Ð¾Ñ‚ Ð½Ð° Python</p><span class=\"task-chip--cat\">Ð Ð°Ð·Ñ€Ð°Ð±Ð¾Ñ‚ÐºÐ° Ð±Ð¾Ñ‚Ð¾Ð²</span><div class=\"task-card__budget\">10 000 â‚½</div><span class=\"task-card__foot-item\" title=\"" + date + "\">Ð¡ÐµÐ³Ð¾Ð´Ð½Ñ</span></article>";
-  const listings = parseFreelanceRuTasks(card(12, recent) + card(13, stale) + card(14, recent, "task-badge--premium"));
-  assert.equal(listings.length, 1);
-  assert.equal(listings[0].id, "12");
-  assert.equal(listings[0].url, "https://freelance.ru/task/view/12");
-  assert.match(listings[0].description, /Ð Ð°Ð·Ñ€Ð°Ð±Ð¾Ñ‚ÐºÐ° Ð±Ð¾Ñ‚Ð¾Ð²/);
-  assert.match(listings[0].description, /10 000 â‚½/);
-});
-
-test("manual scan fetches and saves fresh FL.ru RSS projects", async () => {
-  const originalFetch = globalThis.fetch;
-  const published = new Date(Date.now() - 60_000).toUTCString();
-  const xml = "<rss><channel><item><title>Python Telegram bot</title><link>https://www.fl.ru/projects/334455/</link><description>Need a Python Telegram bot. Budget 500 USD.</description><pubDate>" + published + "</pubDate></item></channel></rss>";
-  globalThis.fetch = async input => {
-    assert.equal(String(input), "https://www.fl.ru/rss/all.xml");
-    return new Response(xml, { status: 200, headers: { "Content-Type": "application/rss+xml" } });
-  };
-  const projectInserts = [];
-  try {
-    const response = await worker.fetch(new Request("https://api.example/agent/scan", {
-      method: "POST",
-      headers: { Cookie: "fh_session=test-session-token", "Content-Type": "application/json" },
-      body: "{}"
-    }), { DB: fakeDb({ marketplaceSource: "fl_ru", projectInserts }) });
-    assert.equal(response.status, 200);
-    const result = await response.json();
-    assert.equal(result.scannedSources, 1);
-    assert.equal(result.newProjects, 1);
-    assert.deepEqual(result.errors, []);
-    assert.equal(projectInserts[0].values[1], "fl_ru");
-    assert.equal(projectInserts[0].values[3], "https://www.fl.ru/projects/334455/");
-  } finally {
-    globalThis.fetch = originalFetch;
-  }
-});
-
-test("manual scan fetches only public Freelance.ru tasks", async () => {
-  const originalFetch = globalThis.fetch;
-  const moscow = new Date(Date.now() - 60_000 + 3 * 60 * 60 * 1000);
-  const date = [String(moscow.getUTCDate()).padStart(2, "0"), String(moscow.getUTCMonth() + 1).padStart(2, "0"), moscow.getUTCFullYear()].join(".") + " " + String(moscow.getUTCHours()).padStart(2, "0") + ":" + String(moscow.getUTCMinutes()).padStart(2, "0");
-  const html = "<article class=\"task-card\"><span class=\"task-badge--all\">Ð’Ð¸Ð´Ð½Ð¾ Ð²ÑÐµÐ¼</span><a class=\"task-card__title-link\" href=\"/task/view/556677\">Python Telegram bot</a><p class=\"task-card__desc\">Need a Python Telegram bot. Budget 500 USD.</p><span class=\"task-chip--cat\">Development</span><div class=\"task-card__budget\">500 USD</div><span class=\"task-card__foot-item\" title=\"" + date + "\">Today</span></article>";
-  globalThis.fetch = async input => {
-    assert.equal(String(input), "https://freelance.ru/task");
-    return new Response(html, { status: 200, headers: { "Content-Type": "text/html" } });
-  };
-  const projectInserts = [];
-  try {
-    const response = await worker.fetch(new Request("https://api.example/agent/scan", {
-      method: "POST",
-      headers: { Cookie: "fh_session=test-session-token", "Content-Type": "application/json" },
-      body: "{}"
-    }), { DB: fakeDb({ marketplaceSource: "freelance_ru", projectInserts }) });
-    assert.equal(response.status, 200);
-    const result = await response.json();
-    assert.equal(result.scannedSources, 1);
-    assert.equal(result.newProjects, 1);
-    assert.deepEqual(result.errors, []);
-    assert.equal(projectInserts[0].values[1], "freelance_ru");
-    assert.equal(projectInserts[0].values[3], "https://freelance.ru/task/view/556677");
-  } finally {
-    globalThis.fetch = originalFetch;
-  }
-});
+YªçŠx-®éÜj×¢ëiºÚ+Š§j[h‘éÜ¢éíÛÎ=ñ:-jZ.¶›­–)Þ³V–×÷'BFW7Bg&öÒ&æöFS§FW7B#°Ð¦–×÷'B76W'Bg&öÒ&æöFS¦76W'B÷7G&–7B#°Ð¦–×÷'Bv÷&¶W"Â²FWFV7FVD'VFvWBÂWfÇVFU&ö¦V7DÖF6‚Â'6TfÅ'U'72Â'6Tg&VVÆæ6U'UF6·2Òg&öÒ"ââòçFW7BÖF—7B÷7&2ö–æFW‚æ§2#°Ð Ð¦gVæ7F–öâf¶TF"‡²66âÒfÇ6RÂg&VVÆæ6V‡VçE66âÒfÇ6RÂÖ&¶WGÆ6U6÷W&6RÒçVÆÂÂ6¶–ÆÇ2Ò²'—F†öâ"Â'FVÆVw&Ò%ÒÂFVÆVw&ÔWF‚ÒçVÆÂÂFVÆVw&Ô6öFRÒçVÆÂÂÆ–æ¶VD66÷VçBÒçVÆÂÂÆ–6F–öâÒçVÆÂÂ&ö¦V7BÒçVÆÂÂ&öf–ÆRÒçVÆÂÂ–çFVw&F–öâÒçVÆÂÂæ÷F–f–6F–öåF&vWBÒçVÆÂÂvVçE6WGF–æw2ÒçVÆÂÂVæF–ætG&gE&ö¦V7G2ÒµÒÂ6÷W&6T6÷VçBÒÂ–ç6W'D6†ævW2ÒÂ&ö¦V7D–ç6W'G2ÒµÒÂFVÆVw&Ô–FVçF—G•66†VÖÒG'VRÂæ÷F–f–6F–öç566†VÖÒG'VRÂ7V&Ö—76–öå66†VÖÒG'VRÂ&÷f–FW%7FGW566†VÖÒG'VRÂÆ–6F–öåWFFTæ÷F–f–6F–öç566†VÖÒG'VRÂWFõ7V&Ö—76–öå66†VÖÒG'VRÒÒ·Ò’°Ð¢&WGW&â°Ð¢vWB7F÷&VD–çFVw&F–öâ‚’²&WGW&â–çFVw&F–öã²ÒÀÐ¢6WB7F÷&VD–çFVw&F–öâ‡fÇVR’²–çFVw&F–öâÒfÇVS²ÒÀÐ¢vWBÆ–6F–öå&V6÷&B‚’²&WGW&âÆ–6F–öã²ÒÀÐ¢6WBÆ–6F–öå&V6÷&B‡fÇVR’²Æ–6F–öâÒfÇVS²ÒÀÐ¢vWB–ç6W'FVE&ö¦V7G2‚’²&WGW&â&ö¦V7D–ç6W'G3²ÒÀÐ¢7–æ2&F6‚‡7FFVÖVçG2’²&WGW&â7FFVÖVçG2æÖ‚‚’Óâ‡²ÖWF¢²6†ævW3¢ÒÒ’“²ÒÀÐ¢&W&R‡7Â’°Ð¢ÆWBfÇVW2ÒµÓ°Ð¢&WGW&â°Ð¢&–æB‚ââæ&w2’²fÇVW2Ò&w3²&WGW&âF†—3²ÒÀÐ¢7–æ2'Vâ‚’°Ð¢–b‡7Âæ–æ6ÇVFW2‚%UDDRÆ–6F–öç24UBG&gE÷FW‡CÓòÇ7FGW3Óò"’’°Ð¢Æ–6F–öâÒÆ–6F–öâò²ââæÆ–6F–öâÂG&gE÷FW‡C¢fÇVW5³ÒÂ7FGW3¢fÇVW5³ÒÒ¢Æ–6F–öã°Ð¢ÐÐ¢–b‡7Âæ–æ6ÇVFW2‚$”å4U%B”åDòÆ–6F–öç2‡W6W%ö–BÇ&ö¦V7Eö–BÇ7FGW2ÆG&gE÷FW‡B’"’’°Ð¢Æ–6F–öâÒ²–C¢C"Â&ö¦V7Eö–C¢fÇVW5³ÒÂ7FGW3¢&G&gB"ÂG&gE÷FW‡C¢fÇVW5³%ÒÂ7&VFVEöC¢###bÓÓr££"Â7V&Ö—GFVEöC¢çVÆÂÂ&WÆ–VEöC¢çVÆÂÓ°Ð¢ÐÐ¢–b‡7Âæ–æ6ÇVFW2‚%UDDRÆ–6F–öç24UB7FGW3Òw7V&Ö—GF–ærr"’’°Ð¢Æ–6F–öâÒÆ–6F–öâò²ââæÆ–6F–öâÂ7FGW3¢'7V&Ö—GF–ær"Â7V&Ö—76–öåöW'&÷#¢çVÆÂÒ¢Æ–6F–öã°Ð¢ÐÐ¢–b‡7Âæ–æ6ÇVFW2‚%UDDRÆ–6F–öç24UB7FGW3Òw6VçBr"’’°Ð¢Æ–6F–öâÒÆ–6F–öâò²ââæÆ–6F–öâÂ7FGW3¢'6VçB"Â7V&Ö—GFVEöC¢###bÓÓr£3£"Â&÷f–FW%÷7V&Ö—76–öåö–C¢fÇVW5³ÒÂ7V&Ö—76–öåöW'&÷#¢çVÆÂÒ¢Æ–6F–öã°Ð¢ÐÐ¢–b‡7Âæ–æ6ÇVFW2‚%UDDRÆ–6F–öç24UB7FGW3ÓòÇ7V&Ö—76–öåöW'&÷#Óò"’’°Ð¢Æ–6F–öâÒÆ–6F–öâò²ââæÆ–6F–öâÂ7FGW3¢fÇVW5³ÒÂ7V&Ö—76–öåöW'&÷#¢fÇVW5³ÒÒ¢Æ–6F–öã°Ð¢ÐÐ¢–b‡7Âæ–æ6ÇVFW2‚%UDDRÆ–6F–öç24UB7V&Ö—76–öåöW'&÷#ÔåTÄÂ"’’°Ð¢Æ–6F–öâÒÆ–6F–öâò²ââæÆ–6F–öâÂ7V&Ö—76–öåöW'&÷#¢çVÆÂÒ¢Æ–6F–öã°Ð¢ÐÐ¢–b‡7Âæ–æ6ÇVFW2‚%UDDR–çFVw&F–öç24UB7FGW3Òw&VWF…÷&WV—&VBr"’’°Ð¢–çFVw&F–öâÒ–çFVw&F–öâò²ââæ–çFVw&F–öâÂ7FGW3¢'&VWF…÷&WV—&VB"Ò¢–çFVw&F–öã°Ð¢ÐÐ¢–b‡7Âæ–æ6ÇVFW2‚$”å4U%B”åDò–çFVw&F–öç2"’’°Ð¢–çFVw&F–öâÒ²–C¢ÂW6W%ö–C¢'W6W"Ó"Â&÷f–FW#¢fÇVW5³ÒÂÆ&VÃ¢fÇVW5³%ÒÂ7FGW3¢fÇVW5³5ÒÂ7&VFVçF–Ç5ö§6öã¢fÇVW5³EÒóò'·Ò"Â7&VFVEöC¢###bÓÓr££"Ó°Ð¢ÐÐ¢–b‡7Âæ–æ6ÇVFW2‚$”å4U%B”åDò&ö¦V7G2"’’&ö¦V7D–ç6W'G2çW6‚‡²7ÂÂfÇVW3¢²ââçfÇVW5ÒÒ“°Ð¢&WGW&â²ÖWF¢²6†ævW3¢7Âæ–æ6ÇVFW2‚$”å4U%B”åDò&ö¦V7G2"’ò–ç6W'D6†ævW2¢ÒÓ°Ð¢ÒÀÐ¢7–æ2f—'7B‚’°Ð¢–b‡7Âæ–æ6ÇVFW2‚%4TÄT5BFÂçFVÆVw&Õ÷W6W%ö–BÆææ÷F–g•öæWu÷&ö¦V7G2"’’&WGW&âæ÷F–f–6F–öåF&vWC°Ð¢–b‡7Âæ–æ6ÇVFW2‚%4TÄT5B7&VFVçF–Ç5ö§6öâe$ôÒ–çFVw&F–öç2t„U$RW6W%ö–CÓòäB&÷f–FW#Òvg&VVÆæ6V‡VçBr"’’&WGW&â–çFVw&F–öãòç7FGW2ÓÓÒ&6öææV7FVB"ò–çFVw&F–öâ¢çVÆÃ°Ð¢–b‡7Âæ–æ6ÇVFW2‚%4TÄT5B–BÇ&÷f–FW"ÆÆ&VÂÇ7FGW2Æ7&VFVEöBe$ôÒ–çFVw&F–öç2t„U$RW6W%ö–CÓòäB&÷f–FW#Óò"’’&WGW&â–çFVw&F–öâò²–C¢–çFVw&F–öâæ–BÂ&÷f–FW#¢–çFVw&F–öâç&÷f–FW"ÂÆ&VÃ¢–çFVw&F–öâæÆ&VÂÂ7FGW3¢–çFVw&F–öâç7FGW2Â7&VFVEöC¢–çFVw&F–öâæ7&VFVEöBÒ¢çVÆÃ°Ð¢–b‡7Âæ–æ6ÇVFW2‚%4TÄT5Bæ–BÆç&ö¦V7Eö–BÆç7FGW2ÆæG&gE÷FW‡BÇç6÷W&6RÇç6÷W&6U÷&ö¦V7Eö–BÇçW&Âe$ôÒÆ–6F–öç2¤ô”â&ö¦V7G2"’’&WGW&âÆ–6F–öã°Ð¢–b‡7Âæ–æ6ÇVFW2‚%4TÄT5B–BÇ&ö¦V7Eö–BÇ7FGW2ÆG&gE÷FW‡BÆ7&VFVEöBÇ7V&Ö—GFVEöBÇ&WÆ–VEöBÇ&÷f–FW%÷7V&Ö—76–öåö–BÇ7V&Ö—76–öåöW'&÷"e$ôÒÆ–6F–öç2t„U$R–CÓòäBW6W%ö–CÓò"’’&WGW&âÆ–6F–öã°Ð¢–b‡7Âæ–æ6ÇVFW2‚%4TÄT5B–BÇ&ö¦V7Eö–BÇ7FGW2ÆG&gE÷FW‡Be$ôÒÆ–6F–öç2t„U$R–CÓòäBW6W%ö–CÓò"’’&WGW&âÆ–6F–öã°Ð¢–b‡7Âæ–æ6ÇVFW2‚%4TÄT5B–BÇ&ö¦V7Eö–BÇ7FGW2ÆG&gE÷FW‡BÆ7&VFVEöBÇ7V&Ö—GFVEöBÇ&WÆ–VEöBe$ôÒÆ–6F–öç2t„U$R–CÓòäBW6W%ö–CÓò"’’&WGW&âÆ–6F–öã°Ð¢–b‡7Âæ–æ6ÇVFW2‚%4TÄT5B–BÇ&ö¦V7Eö–BÇ7FGW2ÆG&gE÷FW‡BÆ7&VFVEöBÇ7V&Ö—GFVEöBÇ&WÆ–VEöBe$ôÒÆ–6F–öç2t„U$RW6W%ö–CÓòäB&ö¦V7Eö–CÓò"’’&WGW&âÆ–6F–öã°Ð¢–b‡7Âæ–æ6ÇVFW2‚%4TÄT5B–BÇ6÷W&6RÇW&ÂÇF—FÆRÆFW67&—F–öâÆÆæwVvRÆ'VFvWEöÖ–âÆ'VFvWEöÖ‚Æ7W'&Væ7’Ç–ÖVçEöÖWF†öBe$ôÒ&ö¦V7G2t„U$R–CÓòäBW6W%ö–CÓò"’’&WGW&â&ö¦V7C°Ð¢–b‡7Âæ–æ6ÇVFW2‚%4TÄT5BF—7Æ•öæÖRÇ6¶–ÆÇ2ÆÆæwVvW2Ç–ÖVçE÷&VfW&Væ6W2ÆÖ–åö'VFvWBÆ7W'&Væ7’e$ôÒ&öf–ÆW2t„U$RW6W%ö–CÓò"’’&WGW&â&öf–ÆS°Ð¢–b‡7Âæ–æ6ÇVFW2‚%4TÄT5BGFV×G2e$ôÒWF…÷&FUöÆ–Ö—G2"’’&WGW&â²GFV×G3¢Ó°Ð¢–b‡7Âæ–æ6ÇVFW2‚%4TÄT5BW6W%ö–BÆWF†VçF–6FVEöBÇ6W76–öåö—77VVEöBÆW'&÷%öÖW76vRe$ôÒFVÆVw&ÕöWF…ö6öFW2"’’&WGW&âFVÆVw&ÔWFƒ°Ð¢–b‡7Âæ–æ6ÇVFW2‚%4TÄT5B6öFUö†6‚ÆWF…öÖöFRe$ôÒFVÆVw&ÕöWF…ö6öFW2"’’&WGW&âFVÆVw&Ô6öFS°Ð¢–b‡7Âæ–æ6ÇVFW2‚%4TÄT5BW6W%ö–Be$ôÒFVÆVw&ÕöÆ–æ·2t„U$RFVÆVw&Õ÷W6W%ö–CÓò"’’&WGW&âÆ–æ¶VD66÷VçC°Ð¢–b‡7Âæ–æ6ÇVFW2‚$e$ôÒ6W76–öç22¤ô”âW6W'2"’’&WGW&â²–C¢'W6W"Ó"Â7&VFVEöC¢###bÓÓb££"Ó°Ð¢–b‡7Âæ–æ6ÇVFW2‚%4TÄT5B4õTåB‚¢’2F÷FÂe$ôÒ6÷W&6W2"’’&WGW&â²F÷FÃ¢6÷W&6T6÷VçBÓ°Ð¢–b‡7Âæ–æ6ÇVFW2‚%4TÄT5B—5öVæ&ÆVBÆWFõöG&gBÆWFõ÷7V&Ö—BÆF–Ç•÷7V&Ö—76–öåöÆ–Ö—BÆÖ–åöÖF6…÷66÷&Re$ôÒvVçE÷6WGF–æw2t„U$RW6W%ö–CÓò"’’&WGW&âvVçE6WGF–æw3°Ð¢–b‡7Âæ–æ6ÇVFW2‚%4TÄT5B6¶–ÆÇ2ÆÆæwVvW2Ç–ÖVçE÷&VfW&Væ6W2ÆÖ–åö'VFvWBÆ7W'&Væ7’ÆW†6ÇVFVEö¶W—v÷&G2"’’&WGW&â²6¶–ÆÇ3¢¥4ôâç7G&–æv–g’‡6¶–ÆÇ2’ÂÆæwVvW3¢u²''R"Â&Vâ%ÒrÂ–ÖVçE÷&VfW&Væ6W3¢%µÒ"ÂÖ–åö'VFvWC¢çVÆÂÂ7W'&Væ7“¢%%T""ÂW†6ÇVFVEö¶W—v÷&G3¢%µÒ"Ó°Ð¢–b‡7Âæ–æ6ÇVFW2‚%4TÄT5B6¶–ÆÇ2ÂÖ–åö'VFvWBÂ7W'&Væ7’ÂW†6ÇVFVEö¶W—v÷&G2"’’&WGW&â²6¶–ÆÇ3¢¥4ôâç7G&–æv–g’‡6¶–ÆÇ2’ÂÖ–åö'VFvWC¢çVÆÂÂ7W'&Væ7“¢%U4B"ÂW†6ÇVFVEö¶W—v÷&G3¢%µÒ"Ó°Ð¢–b‡7Âæ–æ6ÇVFW2‚%4TÄT5BÖ–åöÖF6…÷66÷&Re$ôÒvVçE÷6WGF–æw2"’’&WGW&â²Ö–åöÖF6…÷66÷&S¢cÓ°Ð¢–b‡7Âæ–æ6ÇVFW2‚%4TÄT5B2ö²"’’&WGW&â²ö³¢Ó°Ð¢&WGW&âçVÆÃ°Ð¢ÒÀÐ¢7–æ2ÆÂ‚’°Ð¢–b‡7Âæ–æ6ÇVFW2‚%4TÄT5BFVÆVw&Õö–FVçF—G’Æ–FVçF—G•÷&÷f–FW"ÇFVÆVw&Õ÷fW&–f–VBe$ôÒW6W'2Ä”Ô•B"’bbFVÆVw&Ô–FVçF—G•66†VÖ’F‡&÷ræWrW'&÷"‚&æò7V6‚6öÇVÖã¢FVÆVw&Õö–FVçF—G’"“°Ð¢–b‡7Âæ–æ6ÇVFW2‚%4TÄT5Bæ÷F–g•öæWu÷&ö¦V7G2e$ôÒvVçE÷6WGF–æw2Ä”Ô•B"’bbæ÷F–f–6F–öç566†VÖ’F‡&÷ræWrW'&÷"‚&æò7V6‚6öÇVÖã¢æ÷F–g•öæWu÷&ö¦V7G2"“°Ð¢–b‡7Âæ–æ6ÇVFW2‚%4TÄT5B&÷f–FW%÷7V&Ö—76–öåö–BÇ7V&Ö—76–öåöW'&÷"e$ôÒÆ–6F–öç2Ä”Ô•B"’bb7V&Ö—76–öå66†VÖ’F‡&÷ræWrW'&÷"‚&æò7V6‚6öÇVÖã¢&÷f–FW%÷7V&Ö—76–öåö–B"“°Ð¢–b‡7Âæ–æ6ÇVFW2‚%4TÄT5B&÷f–FW%÷7FGW2e$ôÒÆ–6F–öç2Ä”Ô•B"’bb&÷f–FW%7FGW566†VÖ’F‡&÷ræWrW'&÷"‚&æò7V6‚6öÇVÖã¢&÷f–FW%÷7FGW2"“°Ð¢–b‡7Âæ–æ6ÇVFW2‚%4TÄT5Bæ÷F–g•öÆ–6F–öå÷WFFW2e$ôÒvVçE÷6WGF–æw2Ä”Ô•B"’bbÆ–6F–öåWFFTæ÷F–f–6F–öç566†VÖ’F‡&÷ræWrW'&÷"‚&æò7V6‚6öÇVÖã¢æ÷F–g•öÆ–6F–öå÷WFFW2"“°Ð¢–b‡7Âæ–æ6ÇVFW2‚%4TÄT5BWFõ÷7V&Ö—BÆF–Ç•÷7V&Ö—76–öåöÆ–Ö—Be$ôÒvVçE÷6WGF–æw2Ä”Ô•B"’bbWFõ7V&Ö—76–öå66†VÖ’F‡&÷ræWrW'&÷"‚&æò7V6‚6öÇVÖã¢WFõ÷7V&Ö—B"“°Ð¢–b‡7Âæ–æ6ÇVFW2‚'7Æ—FUöÖ7FW""’bb7Âæ–æ6ÇVFW2‚&WF…÷&FUöÆ–Ö—G2"’’°Ð¢&WGW&â²&W7VÇG3¢²'W6W'2"Â'6W76–öç2"Â'FVÆVw&ÕöWF…ö6öFW2"Â&WF…÷&FUöÆ–Ö—G2"Â'&öf–ÆW2"Â&vVçE÷6WGF–æw2"Â'6÷W&6W2"Â'&ö¦V7G2"Â&Æ–6F–öç2"Â&–çFVw&F–öç2"Â'FVÆVw&ÕöÆ–æ·2%ÒæÖ†æÖRÓâ‡²æÖRÒ’’Ó°Ð¢ÐÐ¢–b‡7Âæ–æ6ÇVFW2‚$ÄTeB¤ô”âÆ–6F–öç2ôâçW6W%ö–C×çW6W%ö–BäBç&ö¦V7Eö–C×æ–B"’’&WGW&â²&W7VÇG3¢VæF–ætG&gE&ö¦V7G2Ó°Ð¢–b‡7Âæ–æ6ÇVFW2‚%4TÄT5B¢e$ôÒ6÷W&6W2t„U$RW6W%ö–CÓòäB—5öVæ&ÆVCÓ"’’°Ð¢–b†Ö&¶WGÆ6U6÷W&6R’&WGW&â²&W7VÇG3¢·²–C¢’ÂW6W%ö–C¢'W6W"Ó"Â–FVçF–f–W#¢Ö&¶WGÆ6U6÷W&6RÓÓÒ&fÅ÷'R"ò&ÆÂ"¢'V&Æ–2"Â—5öVæ&ÆVC¢Â6÷W&6S¢Ö&¶WGÆ6U6÷W&6RÕÒÓ°Ð¢–b†g&VVÆæ6V‡VçE66â’&WGW&â²&W7VÇG3¢·²–C¢‚ÂW6W%ö–C¢'W6W"Ó"Â6÷W&6S¢&g&VVÆæ6V‡VçB"Â–FVçF–f–W#¢""Â—5öVæ&ÆVC¢ÕÒÓ°Ð¢–b‡66â’&WGW&â²&W7VÇG3¢·²–C¢rÂW6W%ö–C¢'W6W"Ó"Â6÷W&6S¢'FVÆVw&Ò"Â–FVçF–f–W#¢$—F†öåö¦ö'2"Â—5öVæ&ÆVC¢ÕÒÓ°Ð¢ÐÐ¢&WGW&â²&W7VÇG3¢µÒÓ°Ð¢ÐÐ¢Ó°Ð¢ÐÐ¢Ó°Ð§ÐÐ Ð§FW7B‚&†VÇF‚VæGö–çB6öæf—&×2&V6†&ÆRC&–æF–æræB&WV—&VB66†VÖ"Â7–æ2‚’Óâ°Ð¢6öç7B&W7öç6RÒv—Bv÷&¶W"æfWF6‚†æWr&WVW7B‚&‡GG3¢òö’æW†×ÆRö†VÇF‚"’Â²D#¢f¶TF"‚’Ò“°Ð¢76W'BæWVÂ‡&W7öç6Rç7FGW2Â#“°Ð¢76W'BæFVWWVÂ†v—B&W7öç6Ræ§6öâ‚’Â²7FGW3¢&ö²"ÂFF&6S¢&6öææV7FVB"Â66†VÖ¢'&VG’"Â6W'f–6S¢&g&VVÆæ6RÖ‡VçFW"Ö’"Ò“°Ð§Ò“°Ð Ð§FW7B‚&†VÇF‚VæGö–çB&W÷'G2Ö—76–ærFVÆVw&Ò–FVçF—G’æBæ÷F–f–6F–öâÖ–w&F–öç2"Â7–æ2‚’Óâ°Ð¢6öç7B&W7öç6RÒv—Bv÷&¶W"æfWF6‚†æWr&WVW7B‚&‡GG3¢òö’æW†×ÆRö†VÇF‚"’Â²D#¢f¶TF"‡²FVÆVw&Ô–FVçF—G•66†VÖ¢fÇ6RÂæ÷F–f–6F–öç566†VÖ¢fÇ6RÂ7V&Ö—76–öå66†VÖ¢fÇ6RÂ&÷f–FW%7FGW566†VÖ¢fÇ6RÂÆ–6F–öåWFFTæ÷F–f–6F–öç566†VÖ¢fÇ6RÂWFõ7V&Ö—76–öå66†VÖ¢fÇ6RÒ’Ò“°Ð¢76W'BæWVÂ‡&W7öç6Rç7FGW2Â#“°Ð¢6öç7BFFÒv—B&W7öç6Ræ§6öâ‚“°Ð¢76W'BæWVÂ†FFç7FGW2Â&FVw&FVB"“°Ð¢76W'BæWVÂ†FFç66†VÖÂ&–æ6ö×ÆWFR"“°Ð¢76W'BæFVWWVÂ†FFæÖ—76–æuöÖ–w&F–öç2Â²#u÷FVÆVw&ÕööæÇ•ö–FVçF—G’ç7Â"Â#…öæWu÷&ö¦V7Eöæ÷F–f–6F–öç2ç7Â"Â#•÷&÷f–FW%÷7V&Ö—76–öå÷G&6¶–ærç7Â"Â#ög&VVÆæ6V‡VçE÷7FGW5÷7–æ2ç7Â"Â#öÆ–6F–öå÷WFFUöæ÷F–f–6F–öç2ç7Â"Â#%öWFõ÷7V&Ö—76–öâç7Â%Ò“°Ð§Ò“°Ð Ð§FW7B‚%FVÆVw&ÒvV&†öö²&V¦V7G2&WVW7G2v†VâvV&†öö²6V7&WG2&Ræ÷B6öæf–wW&VB"Â7–æ2‚’Óâ°Ð¢6öç7B&W7öç6RÒv—Bv÷&¶W"æfWF6‚†æWr&WVW7B‚&‡GG3¢òö’æW†×ÆR÷FVÆVw&Ò÷vV&†öö²"Â²ÖWF†öC¢%õ5B"Â&öG“¢'·Ò"Ò’Â²D#¢f¶TF"‚’Ò“°Ð¢76W'BæWVÂ‡&W7öç6Rç7FGW2ÂS2“°Ð¢76W'BæÖF6‚‚†v—B&W7öç6Ræ§6öâ‚’’æFWF–ÂÂ÷6V7&WG2&Ræ÷B6öæf–wW&VBö’“°Ð§Ò“°Ð Ð§FW7B‚%FVÆVw&ÒvV&†öö²&V¦V7G2â–çfÆ–BFVÆVw&Ò6V7&WBFö¶Vâ"Â7–æ2‚’Óâ°Ð¢6öç7B&W7öç6RÒv—Bv÷&¶W"æfWF6‚†æWr&WVW7B‚&‡GG3¢òö’æW†×ÆR÷FVÆVw&Ò÷vV&†öö²"Â°Ð¢ÖWF†öC¢%õ5B"ÀÐ¢†VFW'3¢²%‚ÕFVÆVw&ÒÔ&÷BÔ’Õ6V7&WBÕFö¶Vâ#¢'w&öær"Â$6öçFVçBÕG—R#¢&Æ–6F–öâö§6öâ"ÒÀÐ¢&öG“¢'·Ò Ð¢Ò’Â²D#¢f¶TF"‚’ÂDTÄTu$Õô$õEõDô´Tã¢'FW7B×Fö¶Vâ"ÂDTÄTu$ÕõtT$„ôôµõ4T5$UC¢&6÷'&V7B×6V7&WB"Ò“°Ð¢76W'BæWVÂ‡&W7öç6Rç7FGW2ÂC“°Ð§Ò“°Ð Ð§FW7B‚&vVçB&VF–æW72&VfÆV7G2&÷f–FW"æB&÷B6öæf–wW&F–öâ"Â7–æ2‚’Óâ°Ð¢6öç7B&W7öç6RÒv—Bv÷&¶W"æfWF6‚†æWr&WVW7B‚&‡GG3¢òö’æW†×ÆRövVçB÷&VF–æW72"Â°Ð¢†VFW'3¢²6öö¶–S¢&f…÷6W76–öã×FW7B×6W76–öâ×Fö¶Vâ"ÐÐ¢Ò’Â°Ð¢D#¢f¶TF"‚’ÀÐ¢•ô•ô´U“¢&6öæf–wW&VBÖ’Ö¶W’"ÀÐ¢•ôÔôDTÃ¢&6öæf–wW&VBÖÖöFVÂ"ÀÐ¢•ô•ô$4UõU$Ã¢&‡GG3¢ò÷&÷f–FW"æW†×ÆR÷c"ÀÐ¢DTÄTu$Õô$õEõDô´Tã¢&6öæf–wW&VBÖ&÷B×Fö¶Vâ"ÀÐ¢DTÄTu$ÕõtT$„ôôµõ4T5$UC¢&6öæf–wW&VB×vV&†öö²×6V7&WB"ÀÐ¢$õEô•õ4T5$UC¢&6öæf–wW&VBÖ&÷BÖ’×6V7&WB Ð¢Ò“°Ð¢76W'BæWVÂ‡&W7öç6Rç7FGW2Â#“°Ð¢76W'BæFVWWVÂ†v—B&W7öç6Ræ§6öâ‚’Â°Ð¢v÷&¶W%÷'VçF–ÖS¢G'VRÀÐ¢7&öåö6öæf–wW&VC¢G'VRÀÐ¢FVÆVw&Õö&÷Eö6öæf–wW&VC¢G'VRÀÐ¢•÷&÷f–FW%ö6öæf–wW&VC¢G'VRÀÐ¢Ö&¶WGÆ6UöFFW'3¢²&g&VVÆæ6V‡VçB%ÒÀÐ¢g&VVÆæ6V‡VçEö6öææV7FVC¢fÇ6RÀÐ¢v÷&¶W%öÆW'F–æuö6öæf–wW&VC¢fÇ6PÐ¢Ò“°Ð§Ò“°Ð Ð§FW7B‚&VÖ–Â&Vv—7G&F–öâ—2F—6&ÆVB–âff÷"öbFVÆVw&ÒWF†VçF–6F–öâ"Â7–æ2‚’Óâ°Ð¢6öç7B&W7öç6RÒv—Bv÷&¶W"æfWF6‚†æWr&WVW7B‚&‡GG3¢òö’æW†×ÆRöWF‚÷&Vv—7FW""Â°Ð¢ÖWF†öC¢%õ5B"ÀÐ¢†VFW'3¢²$6öçFVçBÕG—R#¢&Æ–6F–öâö§6öâ"Â$4bÔ6öææV7F–ærÔ•#¢#“‚ãSãã#"ÒÀÐ¢&öG“¢¥4ôâç7G&–æv–g’‡²VÖ–Ã¢'FW7DW†×ÆRæ6öÒ"Â77v÷&C¢&ÆöærÖVæ÷Vv‚×77v÷&B"ÒÐ¢Ò’Â²D#¢f¶TF"‚’ÂôTåc¢'&öGV7F–öâ"Ò“°Ð¢76W'BæWVÂ‡&W7öç6Rç7FGW2ÂC“°Ð¢76W'BæÖF6‚‚†v—B&W7öç6Ræ§6öâ‚’’æFWF–ÂÂ÷F‡&÷Vv‚FVÆVw&×ÅFVÆVw&Òö’“°Ð§Ò“°Ð Ð§FW7B‚&VÖ–ÂÆöv–âÂfW&–f–6F–öâÂæB77v÷&B&V6÷fW'’VæGö–çG2&RF—6&ÆVB"Â7–æ2‚’Óâ°Ð¢6öç7BF‡2Ò°Ð¢"öWF‚öÆöv–â"ÀÐ¢"öWF‚÷fW&–g’ÖVÖ–Â"ÀÐ¢"öWF‚÷77v÷&B×&W6WB÷&WVW7B"ÀÐ¢"öWF‚÷77v÷&B×&W6WBö6öæf—&Ò Ð¢Ó°Ð¢f÷"†6öç7BF‚öbF‡2’°Ð¢6öç7B&W7öç6RÒv—Bv÷&¶W"æfWF6‚†æWr&WVW7B‚&‡GG3¢òö’æW†×ÆR"²F‚Â°Ð¢ÖWF†öC¢%õ5B"ÀÐ¢†VFW'3¢²$6öçFVçBÕG—R#¢&Æ–6F–öâö§6öâ"Â$4bÔ6öææV7F–ærÔ•#¢#“‚ãSãã#R"ÒÀÐ¢&öG“¢¥4ôâç7G&–æv–g’‡²VÖ–Ã¢'FW7DW†×ÆRæ6öÒ"Â77v÷&C¢&ÆöærÖVæ÷Vv‚×77v÷&B"ÂFö¶Vã¢&öÆB×Fö¶Vâ"ÒÐ¢Ò’Â²D#¢f¶TF"‚’ÂôTåc¢'&öGV7F–öâ"Ò“°Ð¢76W'BæWVÂ‡&W7öç6Rç7FGW2ÂCÂF‚²"6†÷VÆB&RF—6&ÆVB"“°Ð¢ÐÐ§Ò“°Ð Ð§FW7B‚%FVÆVw&ÒWF‚7F'B&WGW&ç2æ–æRÖF–v—B6öFRfÆ–Bf÷"FVâÖ–çWFW2"Â7–æ2‚’Óâ°Ð¢6öç7B÷&–v–æÄfWF6‚ÒvÆö&ÅF†—2æfWF6ƒ°Ð¢vÆö&ÅF†—2æfWF6‚Ò7–æ2†–çWB’Óâ°Ð¢–b…7G&–ær†–çWB’æ–æ6ÇVFW2‚&’çFVÆVw&Òæ÷&rö&÷EDU5EõDô´TâövWDÖR"’’°Ð¢&WGW&â&W7öç6Ræ§6öâ‡²ö³¢G'VRÂ&W7VÇC¢²W6W&æÖS¢&g&VVÆæ6Uö‡VçFW%÷FW7Eö&÷B"ÒÒ“°Ð¢ÐÐ¢&WGW&â÷&–v–æÄfWF6‚†–çWB“°Ð¢Ó°Ð¢G'’°Ð¢6öç7B&W7öç6RÒv—Bv÷&¶W"æfWF6‚†æWr&WVW7B‚&‡GG3¢òö’æW†×ÆRöWF‚÷FVÆVw&Ò÷7F'B"Â°Ð¢ÖWF†öC¢%õ5B"ÀÐ¢†VFW'3¢²$6öçFVçBÕG—R#¢&Æ–6F–öâö§6öâ"Â$4bÔ6öææV7F–ærÔ•#¢#“‚ãSãã#"ÒÀÐ¢&öG“¢'·Ò Ð¢Ò’Â²D#¢f¶TF"‚’ÂDTÄTu$Õô$õEõDô´Tã¢%DU5EõDô´Tâ"ÂDTÄTu$ÕõtT$„ôôµõ4T5$UC¢'vV&†öö²×6V7&WB"Ò“°Ð¢76W'BæWVÂ‡&W7öç6Rç7FGW2Â#“°Ð¢6öç7BFFÒv—B&W7öç6Ræ§6öâ‚“°Ð¢76W'BæÖF6‚†FFæ6öFRÂõåÆG³—ÒBò“°Ð¢76W'BæWVÂ†FFæW‡—&W5ö–å÷6V6öæG2Âc“°Ð¢76W'BæWVÂ†FFæ&÷E÷W&ÂÂ&‡GG3¢ò÷BæÖRög&VVÆæ6Uö‡VçFW%÷FW7Eö&÷B"“°Ð¢Òf–æÆÇ’°Ð¢vÆö&ÅF†—2æfWF6‚Ò÷&–v–æÄfWF6ƒ°Ð¢ÐÐ§Ò“°Ð Ð§FW7B‚%FVÆVw&ÒWF‚7FGW27&VFW26W76–öâgFW"F†R&÷B6öæf—&×2F†R6öFR"Â7–æ2‚’Óâ°Ð¢6öç7B&W7öç6RÒv—Bv÷&¶W"æfWF6‚†æWr&WVW7B‚&‡GG3¢òö’æW†×ÆRöWF‚÷FVÆVw&Ò÷7FGW2"Â°Ð¢ÖWF†öC¢%õ5B"ÀÐ¢†VFW'3¢²$6öçFVçBÕG—R#¢&Æ–6F–öâö§6öâ"Â$4bÔ6öææV7F–ærÔ•#¢#“‚ãSãã#""ÒÀÐ¢&öG“¢¥4ôâç7G&–æv–g’‡²6öFS¢##3CScsƒ’"ÒÐ¢Ò’Â²D#¢f¶TF"‡²FVÆVw&ÔWFƒ¢²W6W%ö–C¢'W6W"Ó"ÂWF†VçF–6FVEöC¢###bÓÓR££"Â6W76–öåö—77VVEöC¢çVÆÂÒÒ’Ò“°Ð¢76W'BæWVÂ‡&W7öç6Rç7FGW2Â#“°Ð¢76W'BæFVWWVÂ†v—B&W7öç6Ræ§6öâ‚’Â²WF†VçF–6FVC¢G'VRÂ–FVçF—G•÷&÷f–FW#¢'FVÆVw&Ò"Ò“°Ð¢76W'BæÖF6‚‡&W7öç6Ræ†VFW'2ævWB‚'6WBÖ6öö¶–R"’óò""Âöf…÷6W76–öãÒâ¤‡GGöæÇ’ò“°Ð§Ò“°Ð Ð Ð§FW7B‚%FVÆVw&ÒWF‚7FGW2W‡÷6W2GWÆ–6FR×&Vv—7G&F–öâW'&÷'2FòF†RvV'6—FR"Â7–æ2‚’Óâ°Ð¢6öç7B&W7öç6RÒv—Bv÷&¶W"æfWF6‚†æWr&WVW7B‚&‡GG3¢òö’æW†×ÆRöWF‚÷FVÆVw&Ò÷7FGW2"Â°Ð¢ÖWF†öC¢%õ5B"ÀÐ¢†VFW'3¢²$6öçFVçBÕG—R#¢&Æ–6F–öâö§6öâ"Â$4bÔ6öææV7F–ærÔ•#¢#“‚ãSãã#2"ÒÀÐ¢&öG“¢¥4ôâç7G&–æv–g’‡²6öFS¢##3CScsƒ’"ÒÐ¢Ò’Â°Ð¢D#¢f¶TF"‡²FVÆVw&ÔWFƒ¢°Ð¢W6W%ö–C¢çVÆÂÀÐ¢WF†VçF–6FVEöC¢çVÆÂÀÐ¢6W76–öåö—77VVEöC¢çVÆÂÀÐ¢W'&÷%öÖW76vS¢-
+Ý-í"FVÆVw&Ò=mR}]=-í-Òâ	ý]]M‚Ý-Ým2-]íM‚-íM‚"=]--=í’­­=Ý"â Ð¢ÒÒÐ¢Ò“°Ð¢76W'BæWVÂ‡&W7öç6Rç7FGW2ÂC’“°Ð¢76W'BæÖF6‚‚†v—B&W7öç6Ræ§6öâ‚’’æFWF–ÂÂý=mR}]=-í-Òö’“°Ð§Ò“°Ð Ð§FW7B‚'Væ¶æ÷vâ’&÷WFR&WGW&ç27G'V7GW&VBCB"Â7–æ2‚’Óâ°Ð¢6öç7B&W7öç6RÒv—Bv÷&¶W"æfWF6‚†æWr&WVW7B‚&‡GG3¢òö’æW†×ÆRöæ÷BÖ×&÷WFR"Â²†VFW'3¢²6öö¶–S¢&f…÷6W76–öã×FW7B×6W76–öâ×Fö¶Vâ"ÒÒ’Â²D#¢f¶TF"‚’Ò“°Ð¢76W'BæWVÂ‡&W7öç6Rç7FGW2ÂCB“°Ð¢76W'BæWVÂ‡G—Vöb†v—B&W7öç6Ræ§6öâ‚’’æFWF–ÂÂ'7G&–ær"“°Ð§Ò“°Ð Ð Ð Ð§FW7B‚'66â–væ÷&W2FVÆVw&ÒÆ—7F–æw2öÆFW"F†âs"†÷W'2æBÆ—7F–æw2v—F†÷WBV&Æ–6F–öâFFR"Â7–æ2‚’Óâ°Ð¢6öç7B÷&–v–æÄfWF6‚ÒvÆö&ÅF†—2æfWF6ƒ°Ð¢6öç7BöÆDFFRÒæWrFFR„FFRææ÷r‚’Òs2¢c¢c¢’çFô•4õ7G&–ær‚“°Ð¢6öç7Bg&W6„FFRÒæWrFFR„FFRææ÷r‚’Òs¢c¢c¢’çFô•4õ7G&–ær‚“°Ð¢6öç7B‡FÖÂÒ°Ð¢ÆF—b6Æ73Ò'FvÖU÷v–FvWEöÖW76vU÷w&"FF×÷7CÒ'—F†öåö¦ö'2ó##ãÆF—b6Æ73Ò'FvÖU÷v–FvWEöÖW76vU÷FW‡B§2ÖÖW76vU÷FW‡B"F—#Ò&WFò#åvRæVVB—F†öâFWfVÆ÷W"f÷"g&VVÆæ6R&ö¦V7Bâ'VFvWBSU4BãÂöF—cãÇF–ÖRFFWF–ÖSÒ"G¶öÆDFFWÒ#ãÂ÷F–ÖSãÂöF—cæÀÐ¢sÆF—b6Æ73Ò'FvÖU÷v–FvWEöÖW76vU÷w&"FF×÷7CÒ'—F†öåö¦ö'2ó#"#ãÆF—b6Æ73Ò'FvÖU÷v–FvWEöÖW76vU÷FW‡B§2ÖÖW76vU÷FW‡B"F—#Ò&WFò#åvRæVVB—F†öâFWfVÆ÷W"f÷"g&VVÆæ6R&ö¦V7Bâ'VFvWBSU4BãÂöF—cãÂöF—cârÀÐ¢ÆF—b6Æ73Ò'FvÖU÷v–FvWEöÖW76vU÷w&"FF×÷7CÒ'—F†öåö¦ö'2ó#2#ãÆF—b6Æ73Ò'FvÖU÷v–FvWEöÖW76vU÷FW‡B§2ÖÖW76vU÷FW‡B"F—#Ò&WFò#åvRæVVB—F†öâFWfVÆ÷W"f÷"g&VVÆæ6R&ö¦V7Bâ'VFvWBSU4BãÂöF—cãÇF–ÖRFFWF–ÖSÒ"G¶g&W6„FFWÒ#ãÂ÷F–ÖSãÂöF—cæ Ð¢Òæ¦ö–â‚""“°Ð¢vÆö&ÅF†—2æfWF6‚Ò7–æ2–çWBÓâ7G&–ær†–çWB’ç7F'G5v—F‚‚&‡GG3¢ò÷BæÖR÷2÷—F†öåö¦ö'2"Ð¢òæWr&W7öç6R†‡FÖÂÂ²7FGW3¢#Â†VFW'3¢²$6öçFVçBÕG—R#¢'FW‡Bö‡FÖÂ"ÒÒÐ¢¢÷&–v–æÄfWF6‚†–çWB“°Ð¢G'’°Ð¢6öç7B&W7öç6RÒv—Bv÷&¶W"æfWF6‚†æWr&WVW7B‚&‡GG3¢òö’æW†×ÆRövVçB÷66â"Â°Ð¢ÖWF†öC¢%õ5B"ÀÐ¢†VFW'3¢²6öö¶–S¢&f…÷6W76–öã×FW7B×6W76–öâ×Fö¶Vâ"Â$6öçFVçBÕG—R#¢&Æ–6F–öâö§6öâ"ÒÀÐ¢&öG“¢'·Ò Ð¢Ò’Â²D#¢f¶TF"‡²66ã¢G'VRÒ’Ò“°Ð¢76W'BæWVÂ‡&W7öç6Rç7FGW2Â#“°Ð¢76W'BæWVÂ‚†v—B&W7öç6Ræ§6öâ‚’’ææWu&ö¦V7G2Â“°Ð¢Òf–æÆÇ’°Ð¢vÆö&ÅF†—2æfWF6‚Ò÷&–v–æÄfWF6ƒ°Ð¢ÐÐ§Ò“°Ð Ð Ð§FW7B‚'6÷W&6R7&VF–öâ†2æò&&—G&'’W"Ö66÷VçBÆ–Ö—B"Â7–æ2‚’Óâ°Ð¢6öç7B&W7öç6RÒv—Bv÷&¶W"æfWF6‚†æWr&WVW7B‚&‡GG3¢òö’æW†×ÆR÷6÷W&6W2"Â°Ð¢ÖWF†öC¢%õ5B"ÀÐ¢†VFW'3¢²6öö¶–S¢&f…÷6W76–öã×FW7B×6W76–öâ×Fö¶Vâ"Â$6öçFVçBÕG—R#¢&Æ–6F–öâö§6öâ"ÒÀÐ¢&öG“¢¥4ôâç7G&–æv–g’‡²6÷W&6S¢'FVÆVw&Ò"Â–FVçF–f–W#¢$g&W6…ö¦ö'2"Â—5öVæ&ÆVC¢G'VRÒÐ¢Ò’Â²D#¢f¶TF"‡²6÷W&6T6÷VçC¢SÒ’Ò“°Ð¢76W'Bææ÷DWVÂ‡&W7öç6Rç7FGW2ÂC#’“°Ð§Ò“°Ð Ð§FW7B‚'66†VGVÆVB66âWFöÖF–6ÆÇ’6fW2’&÷÷6ÂG&gG2f÷"ÖF6†–ær&ö¦V7G2V&Æ—6†VBv—F†–âs"†÷W'2"Â7–æ2‚’Óâ°Ð¢6öç7B÷&–v–æÄfWF6‚ÒvÆö&ÅF†—2æfWF6ƒ°Ð¢6öç7B‡FÖÂÒsÆF—b6Æ73Ò'FvÖU÷v–FvWEöÖW76vU÷w&"FF×÷7CÒ'—F†öåö¦ö'2ó#2#ãÆF—b6Æ73Ò'FvÖU÷v–FvWEöÖW76vU÷FW‡B§2ÖÖW76vU÷FW‡B"F—#Ò&WFò#åvRæVVB—F†öâFWfVÆ÷W"f÷"g&VVÆæ6R&ö¦V7Bâ'VFvWBSU4BãÂöF—cãÇF–ÖRFFWF–ÖSÒ###bÓÓeC££³£#ãÂ÷F–ÖSãÂöF—câs°Ð¢vÆö&ÅF†—2æfWF6‚Ò7–æ2–çWBÓâ°Ð¢6öç7BW&ÂÒ7G&–ær†–çWB“°Ð¢–b‡W&Âç7F'G5v—F‚‚&‡GG3¢ò÷BæÖR÷2÷—F†öåö¦ö'2"’’&WGW&âæWr&W7öç6R†‡FÖÂÂ²7FGW3¢#Â†VFW'3¢²$6öçFVçBÕG—R#¢'FW‡Bö‡FÖÂ"ÒÒ“°Ð¢–b‡W&Âæ–æ6ÇVFW2‚"ö6†Bö6ö×ÆWF–öç2"’’&WGW&â&W7öç6Ræ§6öâ‡²6†ö–6W3¢·²ÖW76vS¢²6öçFVçC¢-	}M---=-R	Íí=2ýíÍí}Â}í-­í’FVÆVw&ÒÝí-Ý—F†öââ	ý]M½=âÝ}½í=½í--Â-]í-Ýò‚í­Âí"â"ÒÕÒÒ“°Ð¢&WGW&â÷&–v–æÄfWF6‚†–çWB“°Ð¢Ó°Ð¢G'’°Ð¢6öç7B&W7öç6RÒv—Bv÷&¶W"æfWF6‚†æWr&WVW7B‚&‡GG3¢òö’æW†×ÆRövVçB÷66â"Â°Ð¢ÖWF†öC¢%õ5B"ÀÐ¢†VFW'3¢²6öö¶–S¢&f…÷6W76–öã×FW7B×6W76–öâ×Fö¶Vâ"Â$6öçFVçBÕG—R#¢&Æ–6F–öâö§6öâ"ÒÀÐ¢&öG“¢'·Ò Ð¢Ò’Â°Ð¢D#¢f¶TF"‡°Ð¢66ã¢G'VRÀÐ¢vVçE6WGF–æw3¢²—5öVæ&ÆVC¢ÂWFõöG&gC¢ÂÖ–åöÖF6…÷66÷&S¢cÒÀÐ¢VæF–ætG&gE&ö¦V7G3¢·²–C¢3Â6÷W&6S¢'FVÆVw&Ò"ÂW&Ã¢&‡GG3¢ò÷BæÖR÷—F†öåö¦ö'2ó#2"ÂF—FÆS¢%—F†öâFWfVÆ÷W""ÂFW67&—F–öã¢%FVÆVw&Ò&÷B&ö¦V7B"ÂÆæwVvS¢&Vâ"Â'VFvWEöÖ–ã¢SÂ'VFvWEöÖƒ¢SÂ7W'&Væ7“¢%U4B"Â–ÖVçEöÖWF†öC¢çVÆÂÕÐÐ¢Ò’ÀÐ¢•ô•ô´U“¢'FW7BÖ¶W’"ÀÐ¢•ôÔôDTÃ¢'FW7BÖÖöFVÂ Ð¢Ò“°Ð¢76W'BæWVÂ‡&W7öç6Rç7FGW2Â#“°Ð¢6öç7B&W7VÇBÒv—B&W7öç6Ræ§6öâ‚“°Ð¢76W'BæWVÂ‡&W7VÇBæG&gFVDÆ–6F–öç2Â“°Ð¢Òf–æÆÇ’°Ð¢vÆö&ÅF†—2æfWF6‚Ò÷&–v–æÄfWF6ƒ°Ð¢ÐÐ§Ò“°Ð Ð§FW7B‚&ÖçVÂ66â–ævW7G2æBæ÷&ÖÆ—¦W2V&Æ–2FVÆVw&ÒÆ—7F–ær"Â7–æ2‚’Óâ°Ð¢6öç7B÷&–v–æÄfWF6‚ÒvÆö&ÅF†—2æfWF6ƒ°Ð¢6öç7B‡FÖÂÒsÆF—b6Æ73Ò'FvÖU÷v–FvWEöÖW76vU÷w&"FF×÷7CÒ'—F†öåö¦ö'2ó#2#ãÆF—b6Æ73Ò'FvÖU÷v–FvWEöÖW76vU÷FW‡B§2ÖÖW76vU÷FW‡B"F—#Ò&WFò#åvRæVVB—F†öâFWfVÆ÷W"Fò'V–ÆBFVÆVw&Ò&÷Bf÷"g&VVÆæ6R&ö¦V7Bâ'VFvWBSU4BãÂöF—cãÇF–ÖRFFWF–ÖSÒ###bÓÓuC££³£#ãÂ÷F–ÖSãÂöF—câs°Ð¢vÆö&ÅF†—2æfWF6‚Ò7–æ2†–çWBÂ–æ—B’Óâ°Ð¢–b…7G&–ær†–çWB’ç7F'G5v—F‚‚&‡GG3¢ò÷BæÖR÷2÷—F†öåö¦ö'2"’’&WGW&âæWr&W7öç6R†‡FÖÂÂ²7FGW3¢#Â†VFW'3¢²$6öçFVçBÕG—R#¢'FW‡Bö‡FÖÂ"ÒÒ“°Ð¢&WGW&â÷&–v–æÄfWF6‚†–çWBÂ–æ—B“°Ð¢Ó°Ð¢G'’°Ð¢6öç7B&W7öç6RÒv—Bv÷&¶W"æfWF6‚†æWr&WVW7B‚&‡GG3¢òö’æW†×ÆRövVçB÷66â"Â°Ð¢ÖWF†öC¢%õ5B"ÀÐ¢†VFW'3¢²6öö¶–S¢&f…÷6W76–öã×FW7B×6W76–öâ×Fö¶Vâ"Â$6öçFVçBÕG—R#¢&Æ–6F–öâö§6öâ"ÒÀÐ¢&öG“¢'·Ò Ð¢Ò’Â²D#¢f¶TF"‡²66ã¢G'VRÒ’Ò“°Ð¢76W'BæWVÂ‡&W7öç6Rç7FGW2Â#“°Ð¢6öç7B&W7VÇBÒv—B&W7öç6Ræ§6öâ‚“°Ð¢76W'BæWVÂ‡&W7VÇBç66ææVE6÷W&6W2Â“°Ð¢76W'BæWVÂ‡&W7VÇBææWu&ö¦V7G2Â“°Ð¢76W'BæFVWWVÂ‡&W7VÇBæW'&÷'2ÂµÒ“°Ð¢Òf–æÆÇ’°Ð¢vÆö&ÅF†—2æfWF6‚Ò÷&–v–æÄfWF6ƒ°Ð¢ÐÐ§Ò“°Ð Ð Ð§FW7B‚&ÖçVÂ66âW'6—7G2Æ÷r×&VÆWfæ6RÆ—7F–æw2f÷"F†RÖF6†–ær7FvR"Â7–æ2‚’Óâ°Ð¢6öç7B÷&–v–æÄfWF6‚ÒvÆö&ÅF†—2æfWF6ƒ°Ð¢6öç7BV&Æ—6†VDBÒæWrFFR„FFRææ÷r‚’Òc¢c¢’çFô•4õ7G&–ær‚“°Ð¢6öç7B‡FÖÂÒÆF—b6Æ73Ò'FvÖU÷v–FvWEöÖW76vU÷w&"FF×÷7CÒ'—F†öåö¦ö'2ó#B#ãÆF—b6Æ73Ò'FvÖU÷v–FvWEöÖW76vU÷FW‡B§2ÖÖW76vU÷FW‡B"F—#Ò&WFò#åvRæVVB—F†öâFWfVÆ÷W"Fò'V–ÆBFVÆVw&Ò&÷Bf÷"g&VVÆæ6R&ö¦V7Bâ'VFvWBSU4BãÂöF—cãÇF–ÖRFFWF–ÖSÒ"G·V&Æ—6†VDGÒ#ãÂ÷F–ÖSãÂöF—cæ°Ð¢vÆö&ÅF†—2æfWF6‚Ò7–æ2†–çWBÂ–æ—B’Óâ°Ð¢–b…7G&–ær†–çWB’ç7F'G5v—F‚‚&‡GG3¢ò÷BæÖR÷2÷—F†öåö¦ö'2"’’&WGW&âæWr&W7öç6R†‡FÖÂÂ²7FGW3¢#Â†VFW'3¢²$6öçFVçBÕG—R#¢'FW‡Bö‡FÖÂ"ÒÒ“°Ð¢&WGW&â÷&–v–æÄfWF6‚†–çWBÂ–æ—B“°Ð¢Ó°Ð¢G'’°Ð¢6öç7B&W7öç6RÒv—Bv÷&¶W"æfWF6‚†æWr&WVW7B‚&‡GG3¢òö’æW†×ÆRövVçB÷66â"Â°Ð¢ÖWF†öC¢%õ5B"ÀÐ¢†VFW'3¢²6öö¶–S¢&f…÷6W76–öã×FW7B×6W76–öâ×Fö¶Vâ"Â$6öçFVçBÕG—R#¢&Æ–6F–öâö§6öâ"ÒÀÐ¢&öG“¢'·Ò Ð¢Ò’Â²D#¢f¶TF"‡²66ã¢G'VRÂ6¶–ÆÇ3¢²'—F†öâ%ÒÒ’Ò“°Ð¢76W'BæWVÂ‡&W7öç6Rç7FGW2Â#“°Ð¢6öç7B&W7VÇBÒv—B&W7öç6Ræ§6öâ‚“°Ð¢76W'BæWVÂ‡&W7VÇBç66ææVE6÷W&6W2Â“°Ð¢76W'BæWVÂ‡&W7VÇBææWu&ö¦V7G2Â“°Ð¢76W'BæFVWWVÂ‡&W7VÇBæW'&÷'2ÂµÒ“°Ð¢Òf–æÆÇ’°Ð¢vÆö&ÅF†—2æfWF6‚Ò÷&–v–æÄfWF6ƒ°Ð¢ÐÐ§Ò“°Ð Ð Ð Ð§FW7B‚%FVÆVw&Ò÷7F'B6·2F†RW6W"Fò6VæBÆ–â6öFRv—F†÷WB6öÖÖæB"Â7–æ2‚’Óâ°Ð¢6öç7B÷&–v–æÄfWF6‚ÒvÆö&ÅF†—2æfWF6ƒ°Ð¢ÆWB6VçE–ÆöC°Ð¢vÆö&ÅF†—2æfWF6‚Ò7–æ2†–çWBÂ–æ—B’Óâ°Ð¢–b…7G&–ær†–çWB’æ–æ6ÇVFW2‚&’çFVÆVw&Òæ÷&rö&÷EDU5EõDô´Tâ÷6VæDÖW76vR"’’°Ð¢6VçE–ÆöBÒ¥4ôâç'6R†–æ—Bæ&öG’“°Ð¢&WGW&â&W7öç6Ræ§6öâ‡²ö³¢G'VRÂ&W7VÇC¢²ÖW76vUö–C¢ÒÒ“°Ð¢ÐÐ¢&WGW&â÷&–v–æÄfWF6‚†–çWBÂ–æ—B“°Ð¢Ó°Ð¢G'’°Ð¢6öç7B&W7öç6RÒv—Bv÷&¶W"æfWF6‚†æWr&WVW7B‚&‡GG3¢òö’æW†×ÆR÷FVÆVw&Ò÷vV&†öö²"Â°Ð¢ÖWF†öC¢%õ5B"ÀÐ¢†VFW'3¢²%‚ÕFVÆVw&ÒÔ&÷BÔ’Õ6V7&WBÕFö¶Vâ#¢'vV&†öö²×6V7&WB"Â$6öçFVçBÕG—R#¢&Æ–6F–öâö§6öâ"ÒÀÐ¢&öG“¢¥4ôâç7G&–æv–g’‡²ÖW76vS¢²6†C¢²–C¢#2ÂG—S¢'&—fFR"ÒÂg&öÓ¢²–C¢#2ÒÂFW‡C¢"÷7F'B"ÒÒÐ¢Ò’Â²D#¢f¶TF"‚’ÂDTÄTu$Õô$õEõDô´Tã¢%DU5EõDô´Tâ"ÂDTÄTu$ÕõtT$„ôôµõ4T5$UC¢'vV&†öö²×6V7&WB"Ò“°Ð¢76W'BæWVÂ‡&W7öç6Rç7FGW2Â#“°Ð¢76W'BæÖF6‚‡6VçE–ÆöBçFW‡BÂýí-ý-ÂíM’Ý}Ý}Ý½’­íBö’“°Ð¢76W'BæÖF6‚‡6VçE–ÆöBçFW‡BÂýÝ­­R­íÍÝBö’“°Ð¢76W'BæFöW4æ÷DÖF6‚‡6VçE–ÆöBçFW‡BÂõÂöÆ–æ²ò“°Ð¢Òf–æÆÇ’°Ð¢vÆö&ÅF†—2æfWF6‚Ò÷&–v–æÄfWF6ƒ°Ð¢ÐÐ§Ò“°Ð Ð Ð§FW7B‚%FVÆVw&ÒÆ–â6öFR7&VFW2æWr66÷VçBv†Vâ&Vv—7G&F–öâ—2fÆ–B"Â7–æ2‚’Óâ°Ð¢6öç7B÷&–v–æÄfWF6‚ÒvÆö&ÅF†—2æfWF6ƒ°Ð¢ÆWB6VçE–ÆöC°Ð¢vÆö&ÅF†—2æfWF6‚Ò7–æ2†–çWBÂ–æ—B’Óâ°Ð¢–b…7G&–ær†–çWB’æ–æ6ÇVFW2‚&’çFVÆVw&Òæ÷&rö&÷EDU5EõDô´Tâ÷6VæDÖW76vR"’’°Ð¢6VçE–ÆöBÒ¥4ôâç'6R†–æ—Bæ&öG’“°Ð¢&WGW&â&W7öç6Ræ§6öâ‡²ö³¢G'VRÂ&W7VÇC¢²ÖW76vUö–C¢ÒÒ“°Ð¢ÐÐ¢&WGW&â÷&–v–æÄfWF6‚†–çWBÂ–æ—B“°Ð¢Ó°Ð¢G'’°Ð¢6öç7B&W7öç6RÒv—Bv÷&¶W"æfWF6‚†æWr&WVW7B‚&‡GG3¢òö’æW†×ÆR÷FVÆVw&Ò÷vV&†öö²"Â°Ð¢ÖWF†öC¢%õ5B"ÀÐ¢†VFW'3¢²%‚ÕFVÆVw&ÒÔ&÷BÔ’Õ6V7&WBÕFö¶Vâ#¢'vV&†öö²×6V7&WB"Â$6öçFVçBÕG—R#¢&Æ–6F–öâö§6öâ"ÒÀÐ¢&öG“¢¥4ôâç7G&–æv–g’‡²ÖW76vS¢²6†C¢²–C¢#2ÂG—S¢'&—fFR"ÒÂg&öÓ¢²–C¢#2ÒÂFW‡C¢##3CScsƒ’"ÒÒÐ¢Ò’Â°Ð¢D#¢f¶TF"‡²FVÆVw&Ô6öFS¢²6öFUö†6ƒ¢&6öFRÖ†6‚"ÂWF…öÖöFS¢'&Vv—7FW""ÒÒ’ÀÐ¢DTÄTu$Õô$õEõDô´Tã¢%DU5EõDô´Tâ"ÀÐ¢DTÄTu$ÕõtT$„ôôµõ4T5$UC¢'vV&†öö²×6V7&WB Ð¢Ò“°Ð¢76W'BæWVÂ‡&W7öç6Rç7FGW2Â#“°Ð¢76W'BæÖF6‚‡6VçE–ÆöBçFW‡BÂý­­=Ý"í}MÒö’“°Ð¢Òf–æÆÇ’°Ð¢vÆö&ÅF†—2æfWF6‚Ò÷&–v–æÄfWF6ƒ°Ð¢ÐÐ§Ò“°Ð Ð§FW7B‚%FVÆVw&ÒÆ–â6öFRFWFV7G2âÇ&VG’&Vv—7FW&VB66÷VçBGW&–ær&Vv—7G&F–öâ"Â7–æ2‚’Óâ°Ð¢6öç7B÷&–v–æÄfWF6‚ÒvÆö&ÅF†—2æfWF6ƒ°Ð¢ÆWB6VçE–ÆöC°Ð¢vÆö&ÅF†—2æfWF6‚Ò7–æ2†–çWBÂ–æ—B’Óâ°Ð¢–b…7G&–ær†–çWB’æ–æ6ÇVFW2‚&’çFVÆVw&Òæ÷&rö&÷EDU5EõDô´Tâ÷6VæDÖW76vR"’’°Ð¢6VçE–ÆöBÒ¥4ôâç'6R†–æ—Bæ&öG’“°Ð¢&WGW&â&W7öç6Ræ§6öâ‡²ö³¢G'VRÂ&W7VÇC¢²ÖW76vUö–C¢ÒÒ“°Ð¢ÐÐ¢&WGW&â÷&–v–æÄfWF6‚†–çWBÂ–æ—B“°Ð¢Ó°Ð¢G'’°Ð¢6öç7B&W7öç6RÒv—Bv÷&¶W"æfWF6‚†æWr&WVW7B‚&‡GG3¢òö’æW†×ÆR÷FVÆVw&Ò÷vV&†öö²"Â°Ð¢ÖWF†öC¢%õ5B"ÀÐ¢†VFW'3¢²%‚ÕFVÆVw&ÒÔ&÷BÔ’Õ6V7&WBÕFö¶Vâ#¢'vV&†öö²×6V7&WB"Â$6öçFVçBÕG—R#¢&Æ–6F–öâö§6öâ"ÒÀÐ¢&öG“¢¥4ôâç7G&–æv–g’‡²ÖW76vS¢²6†C¢²–C¢#2ÂG—S¢'&—fFR"ÒÂg&öÓ¢²–C¢#2ÒÂFW‡C¢##3CScsƒ’"ÒÒÐ¢Ò’Â°Ð¢D#¢f¶TF"‡°Ð¢FVÆVw&Ô6öFS¢²6öFUö†6ƒ¢&6öFRÖ†6‚"ÂWF…öÖöFS¢'&Vv—7FW""ÒÀÐ¢Æ–æ¶VD66÷VçC¢²W6W%ö–C¢&Ç&VG’×&Vv—7FW&VB×W6W""ÐÐ¢Ò’ÀÐ¢DTÄTu$Õô$õEõDô´Tã¢%DU5EõDô´Tâ"ÀÐ¢DTÄTu$ÕõtT$„ôôµõ4T5$UC¢'vV&†öö²×6V7&WB Ð¢Ò“°Ð¢76W'BæWVÂ‡&W7öç6Rç7FGW2Â#“°Ð¢76W'BæÖF6‚‡6VçE–ÆöBçFW‡BÂý=mR}]=-í-Òö’“°Ð¢76W'BæÖF6‚‡6VçE–ÆöBçFW‡BÂý-Ým2-]íMö’“°Ð¢Òf–æÆÇ’°Ð¢vÆö&ÅF†—2æfWF6‚Ò÷&–v–æÄfWF6ƒ°Ð¢ÐÐ§Ò“°Ð Ð§FW7B‚%FVÆVw&Ò†VÇ6öÖÖæB6VæG2&VF&ÆR×VÇF–Æ–æRFW‡BæB¶W–&ö&B"Â7–æ2‚’Óâ°Ð¢6öç7B÷&–v–æÄfWF6‚ÒvÆö&ÅF†—2æfWF6ƒ°Ð¢ÆWB6VçE–ÆöC°Ð¢vÆö&ÅF†—2æfWF6‚Ò7–æ2†–çWBÂ–æ—B’Óâ°Ð¢–b…7G&–ær†–çWB’æ–æ6ÇVFW2‚&’çFVÆVw&Òæ÷&rö&÷EDU5EõDô´Tâ÷6VæDÖW76vR"’’°Ð¢6VçE–ÆöBÒ¥4ôâç'6R†–æ—Bæ&öG’“°Ð¢&WGW&â&W7öç6Ræ§6öâ‡²ö³¢G'VRÂ&W7VÇC¢²ÖW76vUö–C¢ÒÒ“°Ð¢ÐÐ¢&WGW&â÷&–v–æÄfWF6‚†–çWBÂ–æ—B“°Ð¢Ó°Ð¢G'’°Ð¢6öç7B&W7öç6RÒv—Bv÷&¶W"æfWF6‚†æWr&WVW7B‚&‡GG3¢òö’æW†×ÆR÷FVÆVw&Ò÷vV&†öö²"Â°Ð¢ÖWF†öC¢%õ5B"ÀÐ¢†VFW'3¢²%‚ÕFVÆVw&ÒÔ&÷BÔ’Õ6V7&WBÕFö¶Vâ#¢'vV&†öö²×6V7&WB"Â$6öçFVçBÕG—R#¢&Æ–6F–öâö§6öâ"ÒÀÐ¢&öG“¢¥4ôâç7G&–æv–g’‡²ÖW76vS¢²6†C¢²–C¢#2ÒÂg&öÓ¢²–C¢#2ÒÂFW‡C¢"ö†VÇ"ÒÒÐ¢Ò’Â²D#¢f¶TF"‚’ÂDTÄTu$Õô$õEõDô´Tã¢%DU5EõDô´Tâ"ÂDTÄTu$ÕõtT$„ôôµõ4T5$UC¢'vV&†öö²×6V7&WB"Ò“°Ð¢76W'BæWVÂ‡&W7öç6Rç7FGW2Â#“°Ð¢76W'BæÖF6‚‡6VçE–ÆöBçFW‡BÂý	­¢-í-‚ò“°Ð¢76W'BæÖF6‚‡6VçE–ÆöBçFW‡BÂýí½}Ý½Âíí]Ý]Âò“°Ð¢76W'BæFöW4æ÷DÖF6‚‡6VçE–ÆöBçFW‡BÂý	­íÍÝM³¥ÅÆâò“°Ð¢76W'BæWVÂ‡6VçE–ÆöBç&WÇ•öÖ&·Wæ¶W–&ö&BæÆVæwF‚Â2“°Ð¢Òf–æÆÇ’°Ð¢vÆö&ÅF†—2æfWF6‚Ò÷&–v–æÄfWF6ƒ°Ð¢ÐÐ§Ò“°Ð Ð§FW7B‚&'VFvWB'6W"†æFÆW2'W76–âæB–çFW&æF–öæÂ7W'&Væ7’f÷&ÖG2"Â‚’Óâ°Ð¢6öç7B66W2Ò°Ð¢²-	íMm]#¢R(+Ò"Â²Ö÷VçC¢SÂ7W'&Væ7“¢%%T""ÕÒÀÐ¢²-íý½-"ÃR-½â=â"Â²Ö÷VçC¢#SÂ7W'&Væ7“¢%%T""ÕÒÀÐ¢²-MâãSU4B"Â²Ö÷VçC¢SÂ7W'&Væ7“¢%U4B"ÕÒÀÐ¢²"C"ÃS"Â²Ö÷VçC¢#SÂ7W'&Væ7“¢%U4B"ÕÒÀÐ¢².(*Ã#ÃS"Â²Ö÷VçC¢#ãRÂ7W'&Væ7“¢$UU""ÕÒÀÐ¢²$'VFvWB"ãV²U4B"Â²Ö÷VçC¢#SÂ7W'&Væ7“¢%U4B"ÕÒÀÐ¢²-	íý½-¢S%T""Â²Ö÷VçC¢SÂ7W'&Væ7“¢%%T""ÕÐÐ¢Ó°Ð¢f÷"†6öç7B¶–çWBÂW‡V7FVEÒöb66W2’°Ð¢76W'BæFVWWVÂ†FWFV7FVD'VFvWB†–çWB’ÂW‡V7FVBÂ–çWB“°Ð¢ÐÐ§Ò“°Ð Ð§FW7B‚&'VFvWB'6W"–væ÷&W2Ö—76–ær7W'&Væ7’Â¦W&òÂæBVç&V6öæ&ÆRfÇVW2"Â‚’Óâ°Ð¢76W'BæWVÂ†FWFV7FVD'VFvWB‚-	íý½"í"##=íM"’ÂçVÆÂ“°Ð¢76W'BæWVÂ†FWFV7FVD'VFvWB‚-	íMm]#¢(+Ò"’ÂçVÆÂ“°Ð¢76W'BæWVÂ†FWFV7FVD'VFvWB‚-	íý½-“““““““““’%T""’ÂçVÆÂ“°Ð§Ò“°Ð Ð Ð§FW7B‚&Æ–6F–öâ&Wf–Wr6âVF—BG&gBæBÖ÷fR—BFòv—F–ær6öæf—&ÖF–öâ"Â7–æ2‚’Óâ°Ð¢6öç7BF"Òf¶TF"‡²Æ–6F–öã¢²–C¢BÂ&ö¦V7Eö–C¢’Â7FGW3¢&G&gB"ÂG&gE÷FW‡C¢$–æ—F–ÂG&gB"Â7&VFVEöC¢###bÓÓr“££"Â7V&Ö—GFVEöC¢çVÆÂÂ&WÆ–VEöC¢çVÆÂÒÒ“°Ð¢6öç7B&W7öç6RÒv—Bv÷&¶W"æfWF6‚†æWr&WVW7B‚&‡GG3¢òö’æW†×ÆRöÆ–6F–öç2óB"Â°Ð¢ÖWF†öC¢%D4‚"ÀÐ¢†VFW'3¢²6öö¶–S¢&f…÷6W76–öã×FW7B×6W76–öâ×Fö¶Vâ"Â$6öçFVçBÕG—R#¢&Æ–6F–öâö§6öâ"ÒÀÐ¢&öG“¢¥4ôâç7G&–æv–g’‡²G&gE÷FW‡C¢$VF—FVB&÷÷6Â"Â7FGW3¢&v—F–æuö6öæf—&ÖF–öâ"ÒÐ¢Ò’Â²D#¢F"Ò“°Ð¢76W'BæWVÂ‡&W7öç6Rç7FGW2Â#“°Ð¢6öç7B&W7VÇBÒv—B&W7öç6Ræ§6öâ‚“°Ð¢76W'BæWVÂ‡&W7VÇBç7FGW2Â&v—F–æuö6öæf—&ÖF–öâ"“°Ð¢76W'BæWVÂ‡&W7VÇBæG&gE÷FW‡BÂ$VF—FVB&÷÷6Â"“°Ð§Ò“°Ð Ð§FW7B‚&Æ–6F–öâ&Wf–Wr6ææ÷Bf¶R&÷f–FW"Ö6öæf—&ÖVB6VçB7FGW2"Â7–æ2‚’Óâ°Ð¢6öç7BF"Òf¶TF"‡²Æ–6F–öã¢²–C¢BÂ&ö¦V7Eö–C¢’Â7FGW3¢&G&gB"ÂG&gE÷FW‡C¢%&÷÷6Â"ÒÒ“°Ð¢6öç7B&W7öç6RÒv—Bv÷&¶W"æfWF6‚†æWr&WVW7B‚&‡GG3¢òö’æW†×ÆRöÆ–6F–öç2óB"Â°Ð¢ÖWF†öC¢%D4‚"ÀÐ¢†VFW'3¢²6öö¶–S¢&f…÷6W76–öã×FW7B×6W76–öâ×Fö¶Vâ"Â$6öçFVçBÕG—R#¢&Æ–6F–öâö§6öâ"ÒÀÐ¢&öG“¢¥4ôâç7G&–æv–g’‡²7FGW3¢'6VçB"ÒÐ¢Ò’Â²D#¢F"Ò“°Ð¢76W'BæWVÂ‡&W7öç6_8÷Ëh‘éì¶»§q«^t€…ÍÍ•ÉÐ¹µ…Ñ ¡…±•ÉÑI•ÅÕ•ÍÐ¹‰½‘ä¹Ñ•áÐ°€½ÕÍ•È•ÉÉ½ÉÌè€Ä½¤¤ì4(€ô™¥¹…±±äì4(€€€±½‰…±Q¡¥Ì¹™•Ñ €ô½É¥¥¹…±•Ñ ì4(€ô4)ô¤ì4(4(4)Ñ•ÍÐ ‰‘¥Í½¹¹•Ñ¥¹œÉ••±…¹•¡Õ¹ÐÉ•µ½Ù•Ì¥ÑÌÍ½ÕÉ”ÍÕ‰ÍÉ¥ÁÑ¥½¸‰ÕÐ­••ÁÌ‘¥Í½Ù•É•ÁÉ½©•ÑÌˆ°…Íå¹Œ€ ¤€ôøì4(€½¹ÍÐÍÑ…Ñ•µ•¹ÑÌ€ômtì4(€½¹ÍÐ€ôì4(€€€ÁÉ•Á…É”¡ÍÅ°¤ì4(€€€€€±•ÐÙ…±Õ•Ì€ômtì4(€€€€€É•ÑÕÉ¸ì4(€€€€€€€‰¥¹ ¸¸¹…ÉÌ¤ìÙ…±Õ•Ì€ô…ÉÌìÉ•ÑÕÉ¸Ñ¡¥Ììô°4(€€€€€€€…Íå¹Œ™¥ÉÍÐ ¤ì4(€€€€€€€€€¥˜€¡ÍÅ°¹¥¹±Õ‘•Ì ‰I=4Í•ÍÍ¥½¹ÌÌ)=%8ÕÍ•ÉÌˆ¤¤É•ÑÕÉ¸ì¥è€‰ÕÍ•È´Äˆ°É•…Ñ•‘}…Ðè€ˆÈÀÈØ´ÄÀ´ÄØ€ÄÀèÀÀèÀÀˆôì4(€€€€€€€€€¥˜€¡ÍÅ°¹¥¹±Õ‘•Ì ‰M1PÁÉ½Ù¥‘•ÈI=4¥¹Ñ•É…Ñ¥½¹Ì]!I¥ôü9ÕÍ•É}¥ôüˆ¤¤É•ÑÕÉ¸ìÁÉ½Ù¥‘•Èè€‰™É••±…¹•¡Õ¹Ðˆôì4(€€€€€€€€€É•ÑÕÉ¸¹Õ±°ì4(€€€€€€€ô°4(€€€€€€€…Íå¹ŒÉÕ¸ ¤ì4(€€€€€€€€€ÍÑ…Ñ•µ•¹ÑÌ¹ÁÕÍ ¡ìÍÅ°°Ù…±Õ•Ìèl¸¸¹Ù…±Õ•Ítô¤ì4(€€€€€€€€€É•ÑÕÉ¸ìµ•Ñ„èì¡…¹•Ìè€Äôôì4(€€€€€€€ô°4(€€€€€€€…Íå¹Œ…±° ¤ìÉ•ÑÕÉ¸ìÉ•ÍÕ±ÑÌèmtôìô4(€€€€€ôì4(€€€ô4(€ôì4(€½¹ÍÐÉ•ÍÁ½¹Í”€ô…Ý…¥ÐÝ½É­•È¹™•Ñ ¡¹•ÜI•ÅÕ•ÍÐ ‰¡ÑÑÁÌè¼½…Á¤¹•á…µÁ±”½¥¹Ñ•É…Ñ¥½¹Ì¼Üˆ°ì4(€€€µ•Ñ¡½è€‰1Qˆ°4(€€€¡•…‘•ÉÌèì½½­¥”è€‰™¡}Í•ÍÍ¥½¸õÑ•ÍÐµÍ•ÍÍ¥½¸µÑ½­•¸ˆ°€‰µ½¹¹•Ñ¥¹œµ%@ˆè€ˆÄäà¸ÔÄ¸ÄÀÀ¸äÔˆô4(€ô¤°ìô¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡É•ÍÁ½¹Í”¹ÍÑ…ÑÕÌ°€ÈÀÀ¤ì4(€…ÍÍ•ÉÐ¹‘••ÁÅÕ…°¡…Ý…¥ÐÉ•ÍÁ½¹Í”¹©Í½¸ ¤°ì½¬èÑÉÕ”ô¤ì4(€…ÍÍ•ÉÐ¹½¬¡ÍÑ…Ñ•µ•¹ÑÌ¹Í½µ”¡¥Ñ•´€ôø¥Ñ•´¹ÍÅ°¹¥¹±Õ‘•Ì ‰1QI=4¥¹Ñ•É…Ñ¥½¹Ì]!I¥ôü9ÕÍ•É}¥ôüˆ¤¤¤ì4(€½¹ÍÐÍ½ÕÉ••±•Ñ”€ôÍÑ…Ñ•µ•¹ÑÌ¹™¥¹¡¥Ñ•´€ôø¥Ñ•´¹ÍÅ°¹¥¹±Õ‘•Ì ‰1QI=4Í½ÕÉ•Ì]!IÕÍ•É}¥ôü9Í½ÕÉ”ô™É••±…¹•¡Õ¹Ðœˆ¤¤ì4(€…ÍÍ•ÉÐ¹½¬¡Í½ÕÉ••±•Ñ”¤ì4(€…ÍÍ•ÉÐ¹‘••ÁÅÕ…°¡Í½ÕÉ••±•Ñ”¹Ù…±Õ•Ì°l‰ÕÍ•È´Ä‰t¤ì4)ô¤ì4(4(4)Ñ•ÍÐ ‰=IL…±±½ÝÌÑ¡”ÁÉ½‘ÕÑ¥½¸…ÁÀ…¹É•©•ÑÌÕ¹É•±…Ñ•]½É­•ÉÌ…¹A…•Ì½É¥¥¹Ìˆ°…Íå¹Œ€ ¤€ôøì4(€½¹ÍÐ€ô™…­•ˆ ¤ì4(€½¹ÍÐ…±±½Ý•€ô…Ý…¥ÐÝ½É­•È¹™•Ñ ¡¹•ÜI•ÅÕ•ÍÐ ‰¡ÑÑÁÌè¼½…Á¤¹•á…µÁ±”½¡•…±Ñ ˆ°ì4(€€€¡•…‘•ÉÌèì=É¥¥¸è€‰¡ÑÑÁÌè¼½™É••±…¹”µ¡Õ¹Ñ•Èµ…¤¹‰…‘…¡å½ÕÍÈ¹Ý½É­•ÉÌ¹‘•Øˆô4(€ô¤°ìô¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡…±±½Ý•¹¡•…‘•ÉÌ¹•Ð ‰•ÍÌµ½¹ÑÉ½°µ±±½Üµ=É¥¥¸ˆ¤°€‰¡ÑÑÁÌè¼½™É••±…¹”µ¡Õ¹Ñ•Èµ…¤¹‰…‘…¡å½ÕÍÈ¹Ý½É­•ÉÌ¹‘•Øˆ¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡…±±½Ý•¹¡•…‘•ÉÌ¹•Ð ‰•ÍÌµ½¹ÑÉ½°µ±±½ÜµÉ•‘•¹Ñ¥…±Ìˆ¤°€‰ÑÉÕ”ˆ¤ì4(4(€™½È€¡½¹ÍÐ½É¥¥¸½˜l4(€€€€‰¡ÑÑÁÌè¼½…ÑÑ…­•È¹Ý½É­•ÉÌ¹‘•Øˆ°4(€€€€‰¡ÑÑÁÌè¼½…ÑÑ…­•È¹Á…•Ì¹‘•Øˆ°4(€€€€‰¡ÑÑÁÌè¼½™É••±…¹”µ¡Õ¹Ñ•Èµ…¤¹‰…‘…¡å½ÕÍÈ¹Ý½É­•ÉÌ¹‘•Ø¹…ÑÑ…­•È¹•á…µÁ±”ˆ°4(€€€€‰¹Õ±°ˆ4(€t¤ì4(€€€½¹ÍÐÉ•ÍÁ½¹Í”€ô…Ý…¥ÐÝ½É­•È¹™•Ñ ¡¹•ÜI•ÅÕ•ÍÐ ‰¡ÑÑÁÌè¼½…Á¤¹•á…µÁ±”½¡•…±Ñ ˆ°ì4(€€€€€¡•…‘•ÉÌèì=É¥¥¸è½É¥¥¸ô4(€€€ô¤°ìô¤ì4(€€€…ÍÍ•ÉÐ¹•ÅÕ…°¡É•ÍÁ½¹Í”¹¡•…‘•ÉÌ¹•Ð ‰•ÍÌµ½¹ÑÉ½°µ±±½Üµ=É¥¥¸ˆ¤°¹Õ±°°½É¥¥¸¤ì4(€ô4)ô¤ì4(4)Ñ•ÍÐ ‰=IL½¹±äÁ•Éµ¥ÑÌ•áÁ•Ñ•±½…°‘•Ù•±½Áµ•¹ÐÁ½ÉÑÌˆ°…Íå¹Œ€ ¤€ôøì4(€½¹ÍÐ€ô™…­•ˆ ¤ì4(€½¹ÍÐ…±±½Ý•€ô…Ý…¥ÐÝ½É­•È¹™•Ñ ¡¹•ÜI•ÅÕ•ÍÐ ‰¡ÑÑÁÌè¼½…Á¤¹•á…µÁ±”½¡•…±Ñ ˆ°ì4(€€€¡•…‘•ÉÌèì=É¥¥¸è€‰¡ÑÑÀè¼½±½…±¡½ÍÐèÌÀÀÀˆô4(€ô¤°ìô¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡…±±½Ý•¹¡•…‘•ÉÌ¹•Ð ‰•ÍÌµ½¹ÑÉ½°µ±±½Üµ=É¥¥¸ˆ¤°€‰¡ÑÑÀè¼½±½…±¡½ÍÐèÌÀÀÀˆ¤ì4(4(€½¹ÍÐÉ•©•Ñ•€ô…Ý…¥ÐÝ½É­•È¹™•Ñ ¡¹•ÜI•ÅÕ•ÍÐ ‰¡ÑÑÁÌè¼½…Á¤¹•á…µÁ±”½¡•…±Ñ ˆ°ì4(€€€¡•…‘•ÉÌèì=É¥¥¸è€‰¡ÑÑÀè¼½±½…±¡½ÍÐèääääˆô4(€ô¤°ìô¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡É•©•Ñ•¹¡•…‘•ÉÌ¹•Ð ‰•ÍÌµ½¹ÑÉ½°µ±±½Üµ=É¥¥¸ˆ¤°¹Õ±°¤ì4)ô¤ì4(4)Ñ•ÍÐ ‰ÕÍ•ÈµÍ½Á•µÕÑ…Ñ¥½¸•¹‘Á½¥¹ÑÌ½¹ÍÑÉ…¥¸É•…‘Ì…¹ÝÉ¥Ñ•ÌÑ¼Ñ¡”…ÕÑ¡•¹Ñ¥…Ñ•½Ý¹•Èˆ°…Íå¹Œ€ ¤€ôøì4(€½¹ÍÐÍÑ…Ñ•µ•¹ÑÌ€ômtì4(€½¹ÍÐ‘ˆ€ôì4(€€€ÁÉ•Á…É”¡ÍÅ°¤ì4(€€€€€±•ÐÙ…±Õ•Ì€ômtì4(€€€€€½¹ÍÐÉ•½É€ô€ ¤€ôøÍÑ…Ñ•µ•¹ÑÌ¹ÁÕÍ ¡ìÍÅ°°Ù…±Õ•Ìèl¸¸¹Ù…±Õ•Ítô¤ì4(€€€€€É•ÑÕÉ¸ì4(€€€€€€€‰¥¹ ¸¸¹…ÉÌ¤ìÙ…±Õ•Ì€ô…ÉÌìÉ•ÑÕÉ¸Ñ¡¥Ììô°4(€€€€€€€…Íå¹Œ™¥ÉÍÐ ¤ì4(€€€€€€€€€É•½É ¤ì4(€€€€€€€€€¥˜€¡ÍÅ°¹¥¹±Õ‘•Ì ‰I=4Í•ÍÍ¥½¹ÌÌ)=%8ÕÍ•ÉÌˆ¤¤É•ÑÕÉ¸ì¥è€‰ÕÍ•È´Äˆ°É•…Ñ•‘}…Ðè€ˆÈÀÈØ´ÄÀ´ÄØ€ÄÀèÀÀèÀÀˆôì4(€€€€€€€€€É•ÑÕÉ¸¹Õ±°ì4(€€€€€€€ô°4(€€€€€€€…Íå¹Œ…±° ¤ìÉ•½É ¤ìÉ•ÑÕÉ¸ìÉ•ÍÕ±ÑÌèmtôìô°4(€€€€€€€…Íå¹ŒÉÕ¸ ¤ìÉ•½É ¤ìÉ•ÑÕÉ¸ìµ•Ñ„èì¡…¹•Ìè€Àôôìô4(€€€€€ôì4(€€€ô4(€ôì4(€½¹ÍÐ…Í•Ì€ôl4(€€€ìÁ…Ñ è€ˆ½Í½ÕÉ•Ì¼äääˆ°µ•Ñ¡½è€‰AQ ˆ°‰½‘äèì¥Í}•¹…‰±•è™…±Í”ô°•áÁ•Ñ•‘MÑ…ÑÕÌè€ÐÀÐ°ÍÅ°è€‰UAQÍ½ÕÉ•ÌMP¥Í}•¹…‰±•ôüˆ°½Ý¹•ÉA½Í¥Ñ¥½¸è€Ìô°4(€€€ìÁ…Ñ è€ˆ½…ÁÁ±¥…Ñ¥½¹Ì¼äääˆ°µ•Ñ¡½è€‰AQ ˆ°‰½‘äèì‘É…™Ñ}Ñ•áÐè€‰•‘¥Ñ•ˆô°•áÁ•Ñ•‘MÑ…ÑÕÌè€ÐÀÐ°ÍÅ°è€‰M1P¥±ÁÉ½©•Ñ}¥±ÍÑ…ÑÕÌ±‘É…™Ñ}Ñ•áÐI=4…ÁÁ±¥…Ñ¥½¹Ì]!I¥ôü9ÕÍ•É}¥ôüˆ°½Ý¹•ÉA½Í¥Ñ¥½¸è€Äô°4(€€€ìÁ…Ñ è€ˆ½…ÁÁ±¥…Ñ¥½¹Ì¼äää½‘É…™Ðˆ°µ•Ñ¡½è€‰A=MPˆ°‰½‘äèíô°•áÁ•Ñ•‘MÑ…ÑÕÌè€ÐÀÐ°ÍÅ°è€‰M1P¥±Í½ÕÉ”±ÕÉ°±Ñ¥Ñ±”±‘•ÍÉ¥ÁÑ¥½¸±±…¹Õ…”±‰Õ‘•Ñ}µ¥¸±‰Õ‘•Ñ}µ…à±ÕÉÉ•¹ä±Á…åµ•¹Ñ}µ•Ñ¡½I=4ÁÉ½©•ÑÌ]!I¥ôü9ÕÍ•É}¥ôüˆ°½Ý¹•ÉA½Í¥Ñ¥½¸è€Äô°4(€€€ìÁ…Ñ è€ˆ½¥¹Ñ•É…Ñ¥½¹Ì¼äääˆ°µ•Ñ¡½è€‰1Qˆ°•áÁ•Ñ•‘MÑ…ÑÕÌè€ÐÀÐ°ÍÅ°è€‰M1PÁÉ½Ù¥‘•ÈI=4¥¹Ñ•É…Ñ¥½¹Ì]!I¥ôü9ÕÍ•É}¥ôüˆ°½Ý¹•ÉA½Í¥Ñ¥½¸è€Äô4(€tì4(€™½È€¡½¹ÍÐ¥Ñ•´½˜…Í•Ì¤ì4(€€€½¹ÍÐÉ•ÍÁ½¹Í”€ô…Ý…¥ÐÝ½É­•È¹™•Ñ ¡¹•ÜI•ÅÕ•ÍÐ ‰¡ÑÑÁÌè¼½…Á¤¹•á…µÁ±”ˆ€¬¥Ñ•´¹Á…Ñ °ì4(€€€€€µ•Ñ¡½è¥Ñ•´¹µ•Ñ¡½°4(€€€€€¡•…‘•ÉÌèì½½­¥”è€‰™¡}Í•ÍÍ¥½¸õÑ•ÍÐµÍ•ÍÍ¥½¸µÑ½­•¸ˆ°€¸¸¸¡¥Ñ•´¹‰½‘ä€üì€‰½¹Ñ•¹ÐµQåÁ”ˆè€‰…ÁÁ±¥…Ñ¥½¸½©Í½¸ˆô€èíô¤ô°4(€€€€€€¸¸¸¡¥Ñ•´¹‰½‘ä€üì‰½‘äè)M=8¹ÍÑÉ¥¹¥™ä¡¥Ñ•´¹‰½‘ä¤ô€èíô¤4(€€€ô¤°ìè‘ˆ°%}A%}-dè€‰Ñ•ÍÐµ­•äˆ°%}5=0è€‰Ñ•ÍÐµµ½‘•°ˆô¤ì4(€€€…ÍÍ•ÉÐ¹•ÅÕ…°¡É•ÍÁ½¹Í”¹ÍÑ…ÑÕÌ°¥Ñ•´¹•áÁ•Ñ•‘MÑ…ÑÕÌ°¥Ñ•´¹Á…Ñ ¤ì4(€€€½¹ÍÐÍÑ…Ñ•µ•¹Ð€ôÍÑ…Ñ•µ•¹ÑÌ¹™¥¹‘1…ÍÐ¡•¹ÑÉä€ôø•¹ÑÉä¹ÍÅ°¹¥¹±Õ‘•Ì¡¥Ñ•´¹ÍÅ°¤¤ì4(€€€…ÍÍ•ÉÐ¹½¬¡ÍÑ…Ñ•µ•¹Ð°€‰áÁ•Ñ•Í½Á•ME0™½È€ˆ€¬¥Ñ•´¹Á…Ñ ¤ì4(€€€…ÍÍ•ÉÐ¹•ÅÕ…°¡ÍÑ…Ñ•µ•¹Ð¹Ù…±Õ•Ím¥Ñ•´¹½Ý¹•ÉA½Í¥Ñ¥½¹t°€‰ÕÍ•È´Äˆ°€‰ÕÑ¡•¹Ñ¥…Ñ•ÕÍ•È%µÕÍÐ‰”‰½Õ¹™½È€ˆ€¬¥Ñ•´¹Á…Ñ ¤ì4(€ô4(4(€½¹ÍÐÁÉ½™¥±•I•ÍÁ½¹Í”€ô…Ý…¥ÐÝ½É­•È¹™•Ñ ¡¹•ÜI•ÅÕ•ÍÐ ‰¡ÑÑÁÌè¼½…Á¤¹•á…µÁ±”½ÁÉ½™¥±”ˆ°ì4(€€€µ•Ñ¡½è€‰AQ ˆ°4(€€€¡•…‘•ÉÌèì½½­¥”è€‰™¡}Í•ÍÍ¥½¸õÑ•ÍÐµÍ•ÍÍ¥½¸µÑ½­•¸ˆ°€‰½¹Ñ•¹ÐµQåÁ”ˆè€‰…ÁÁ±¥…Ñ¥½¸½©Í½¸ˆô°4(€€€‰½‘äè)M=8¹ÍÑÉ¥¹¥™ä¡ì‘¥ÍÁ±…å}¹…µ”è€‰Q•ÍÐˆô¤4(€ô¤°ìè‘ˆô¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡ÁÉ½™¥±•I•ÍÁ½¹Í”¹ÍÑ…ÑÕÌ°€ÈÀÀ¤ì4(€½¹ÍÐÁÉ½™¥±•]É¥Ñ”€ôÍÑ…Ñ•µ•¹ÑÌ¹™¥¹‘1…ÍÐ¡•¹ÑÉä€ôø•¹ÑÉä¹ÍÅ°¹¥¹±Õ‘•Ì ‰UAQÁÉ½™¥±•ÌMP‘¥ÍÁ±…å}¹…µ”ôüˆ¤¤ì4(€…ÍÍ•ÉÐ¹½¬¡ÁÉ½™¥±•]É¥Ñ”¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡ÁÉ½™¥±•]É¥Ñ”¹Ù…±Õ•Ì¹…Ð ´Ä¤°€‰ÕÍ•È´Äˆ¤ì4(4(€½¹ÍÐÍ•ÑÑ¥¹ÍI•ÍÁ½¹Í”€ô…Ý…¥ÐÝ½É­•È¹™•Ñ ¡¹•ÜI•ÅÕ•ÍÐ ‰¡ÑÑÁÌè¼½…Á¤¹•á…µÁ±”½…•¹Ð½Í•ÑÑ¥¹Ìˆ°ì4(€€€µ•Ñ¡½è€‰AQ ˆ°4(€€€¡•…‘•ÉÌèì½½­¥”è€‰™¡}Í•ÍÍ¥½¸õÑ•ÍÐµÍ•ÍÍ¥½¸µÑ½­•¸ˆ°€‰½¹Ñ•¹ÐµQåÁ”ˆè€‰…ÁÁ±¥…Ñ¥½¸½©Í½¸ˆô°4(€€€‰½‘äè)M=8¹ÍÑÉ¥¹¥™ä¡ì•¹…‰±•è™…±Í”ô¤4(€ô¤°ìè‘ˆô¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡Í•ÑÑ¥¹ÍI•ÍÁ½¹Í”¹ÍÑ…ÑÕÌ°€ÈÀÀ¤ì4(€½¹ÍÐÍ•ÑÑ¥¹Í]É¥Ñ”€ôÍÑ…Ñ•µ•¹ÑÌ¹™¥¹‘1…ÍÐ¡•¹ÑÉä€ôø•¹ÑÉä¹ÍÅ°¹¥¹±Õ‘•Ì ‰UAQ…•¹Ñ}Í•ÑÑ¥¹ÌMP¥Í}•¹…‰±•ôüˆ¤¤ì4(€…ÍÍ•ÉÐ¹½¬¡Í•ÑÑ¥¹Í]É¥Ñ”¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡Í•ÑÑ¥¹Í]É¥Ñ”¹Ù…±Õ•Ì¹…Ð ´Ä¤°€‰ÕÍ•È´Äˆ¤ì4)ô¤ì4(4)Ñ•ÍÐ ‰É••±…¹•¡Õ¹ÐÍÑ…ÑÕÌÍå¹ŒÉ•½É‘ÌÁÉ½Ù¥‘•Èµ½¹™¥Éµ•±¥•¹ÐÉ•ÍÁ½¹Í•Ì½¹±äˆ°…Íå¹Œ€ ¤€ôøì4(€½¹ÍÐ­•ä€ô€‰Ñ•ÍÐµ¥¹Ñ•É…Ñ¥½¸µ•¹ÉåÁÑ¥½¸µ­•ä´ÀÄÈÌÐÔØÜàäˆì4(€±•Ð¥¹Ñ•É…Ñ¥½¸€ô¹Õ±°ì4(€½¹ÍÐÍÑ…Ñ•µ•¹ÑÌ€ômtì4(€½¹ÍÐ€ôì4(€€€ÁÉ•Á…É”¡ÍÅ°¤ì4(€€€€€±•ÐÙ…±Õ•Ì€ômtì4(€€€€€É•ÑÕÉ¸ì4(€€€€€€€‰¥¹ ¸¸¹…ÉÌ¤ìÙ…±Õ•Ì€ô…ÉÌìÉ•ÑÕÉ¸Ñ¡¥Ììô°4(€€€€€€€…Íå¹ŒÉÕ¸ ¤ì4(€€€€€€€€€ÍÑ…Ñ•µ•¹ÑÌ¹ÁÕÍ ¡ìÍÅ°°Ù…±Õ•Ìèl¸¸¹Ù…±Õ•Ítô¤ì4(€€€€€€€€€¥˜€¡ÍÅ°¹¥¹±Õ‘•Ì ‰%9MIP%9Q<¥¹Ñ•É…Ñ¥½¹Ìˆ¤¤¥¹Ñ•É…Ñ¥½¸€ôì¥è€Ì°ÕÍ•É}¥è€‰ÕÍ•È´Äˆ°ÁÉ½Ù¥‘•ÈèÙ…±Õ•ÍlÅt°±…‰•°èÙ…±Õ•ÍlÉt°ÍÑ…ÑÕÌèÙ…±Õ•ÍlÍt°É•‘•¹Ñ¥…±Í}©Í½¸èÙ…±Õ•ÍlÑt°É•…Ñ•‘}…Ðè€ˆÈÀÈØ´ÄÀ´ÄÜ€ÄÀèÀÀèÀÀˆôì4(€€€€€€€€€¥˜€¡ÍÅ°¹¥¹±Õ‘•Ì ‰UAQ…ÁÁ±¥…Ñ¥½¹ÌMPÍÑ…ÑÕÌôÉ•Á±¥•œˆ¤¤É•ÑÕÉ¸ìµ•Ñ„èì¡…¹•Ìè€Äôôì4(€€€€€€€€€É•ÑÕÉ¸ìµ•Ñ„èì¡…¹•Ìè€Äôôì4(€€€€€€€ô°4(€€€€€€€…Íå¹Œ™¥ÉÍÐ ¤ì4(€€€€€€€€€¥˜€¡ÍÅ°¹¥¹±Õ‘•Ì ‰I=4Í•ÍÍ¥½¹ÌÌ)=%8ÕÍ•ÉÌˆ¤¤É•ÑÕÉ¸ì¥è€‰ÕÍ•È´Äˆ°É•…Ñ•‘}…Ðè€ˆÈÀÈØ´ÄÀ´ÄØ€ÄÀèÀÀèÀÀˆôì4(€€€€€€€€€¥˜€¡ÍÅ°¹¥¹±Õ‘•Ì ‰M1P…ÑÑ•µÁÑÌI=4…ÕÑ¡}É…Ñ•}±¥µ¥ÑÌˆ¤¤É•ÑÕÉ¸ì…ÑÑ•µÁÑÌè€Äôì4(€€€€€€€€€¥˜€¡ÍÅ°¹¥¹±Õ‘•Ì ‰M1P¥±ÁÉ½Ù¥‘•È±±…‰•°±ÍÑ…ÑÕÌ±É•…Ñ•‘}…ÐI=4¥¹Ñ•É…Ñ¥½¹Ì]!IÕÍ•É}¥ôü9ÁÉ½Ù¥‘•Èôüˆ¤¤É•ÑÕÉ¸¥¹Ñ•É…Ñ¥½¸€üì¥è¥¹Ñ•É…Ñ¥½¸¹¥°ÁÉ½Ù¥‘•Èè¥¹Ñ•É…Ñ¥½¸¹ÁÉ½Ù¥‘•È°±…‰•°è¥¹Ñ•É…Ñ¥½¸¹±…‰•°°ÍÑ…ÑÕÌè¥¹Ñ•É…Ñ¥½¸¹ÍÑ…ÑÕÌ°É•…Ñ•‘}…Ðè¥¹Ñ•É…Ñ¥½¸¹É•…Ñ•‘}…Ðô€è¹Õ±°ì4(€€€€€€€€€¥˜€¡ÍÅ°¹¥¹±Õ‘•Ì ‰M1PÉ•‘•¹Ñ¥…±Í}©Í½¸I=4¥¹Ñ•É…Ñ¥½¹Ì]!IÕÍ•É}¥ôü9ÁÉ½Ù¥‘•Èô™É••±…¹•¡Õ¹Ðœˆ¤¤É•ÑÕÉ¸¥¹Ñ•É…Ñ¥½¸ü¹ÍÑ…ÑÕÌ€ôôô€‰½¹¹•Ñ•ˆ€üìÉ•‘•¹Ñ¥…±Í}©Í½¸è¥¹Ñ•É…Ñ¥½¸¹É•‘•¹Ñ¥…±Í}©Í½¸ô€è¹Õ±°ì4(€€€€€€€€€¥˜€¡ÍÅ°¹¥¹±Õ‘•Ì ‰M1PÑ°¹Ñ•±•É…µ}ÕÍ•É}¥±=1M¡„¹¹½Ñ¥™å}…ÁÁ±¥…Ñ¥½¹}ÕÁ‘…Ñ•Ì°Ä¤ˆ¤¤É•ÑÕÉ¸ìÑ•±•É…µ}ÕÍ•É}¥è€ˆÄÈÌÐÔˆ°¹½Ñ¥™å}…ÁÁ±¥…Ñ¥½¹}ÕÁ‘…Ñ•Ìè€Äôì4(€€€€€€€€€É•ÑÕÉ¸¹Õ±°ì4(€€€€€€€ô°4(€€€€€€€…Íå¹Œ…±° ¤ì4(€€€€€€€€€¥˜€¡ÍÅ°¹¥¹±Õ‘•Ì ‰M1P„¹¥±„¹ÁÉ½Ù¥‘•É}ÍÕ‰µ¥ÍÍ¥½¹}¥±„¹ÁÉ½Ù¥‘•É}ÍÑ…ÑÕÌ±À¹Í½ÕÉ•}ÁÉ½©•Ñ}¥±À¹Ñ¥Ñ±”±À¹ÕÉ°I=4…ÁÁ±¥…Ñ¥½¹Ìˆ¤¤ì4(€€€€€€€€€€€É•ÑÕÉ¸ìÉ•ÍÕ±ÑÌèmì¥è€ÄÈ°ÁÉ½Ù¥‘•É}ÍÕ‰µ¥ÍÍ¥½¹}¥è€ˆÌÈÄˆ°Í½ÕÉ•}ÁÉ½©•Ñ}¥è€ˆÄÈÌˆ°Ñ¥Ñ±”è€‰Q•ÍÐÁÉ½©•Ðˆ°ÕÉ°è€‰¡ÑÑÁÌè¼½™É••±…¹•¡Õ¹Ð¹½´½ÁÉ½©•Ð¼ÄÈÌˆõtôì4(€€€€€€€€€ô4(€€€€€€€€€É•ÑÕÉ¸ìÉ•ÍÕ±ÑÌèmtôì4(€€€€€€€ô4(€€€€€ôì4(€€€ô4(€ôì4(€½¹ÍÐ½É¥¥¹…±•Ñ €ô±½‰…±Q¡¥Ì¹™•Ñ ì4(€½¹ÍÐÉ•ÅÕ•ÍÑÌ€ômtì4(€±•ÐÑ•±•É…µA…å±½…€ô¹Õ±°ì4(€±½‰…±Q¡¥Ì¹™•Ñ €ô…Íå¹Œ€¡¥¹ÁÕÐ°¥¹¥Ð¤€ôøì4(€€€½¹ÍÐÕÉ°€ôMÑÉ¥¹œ¡¥¹ÁÕÐ¤ì4(€€€É•ÅÕ•ÍÑÌ¹ÁÕÍ ¡ìÕÉ°°¥¹¥Ðô¤ì4(€€€¥˜€¡ÕÉ°¹•¹‘Í]¥Ñ  ˆ½µä½ÁÉ½™¥±”ˆ¤¤É•ÑÕÉ¸I•ÍÁ½¹Í”¹©Í½¸¡ì‘…Ñ„èì…ÑÑÉ¥‰ÕÑ•Ìèì±½¥¸è€‰Ñ•ÍÐµÕÍ•Èˆôôô¤ì4(€€€¥˜€¡ÕÉ°¹¥¹±Õ‘•Ì ˆ½µä½‰¥‘Ìý™¥±Ñ•ÉmÁÉ½©•Ñ}¥‘tôÄÈÌˆ¤¤ì4(€€€€€É•ÑÕÉ¸I•ÍÁ½¹Í”¹©Í½¸¡ì‘…Ñ„èmì¥è€ÌÈÄ°…ÑÑÉ¥‰ÕÑ•ÌèìÍÑ…ÑÕÌè€‰É•©•Ñ•ˆ°¥Í}Ý¥¹¹•Èè™…±Í”ôõtô¤ì4(€€€ô4(€€€¥˜€¡ÕÉ°€ôôô€‰¡ÑÑÁÌè¼½…Á¤¹Ñ•±•É…´¹½Éœ½‰½Ñ¹½Ñ¥™¥…Ñ¥½¸µÑ•ÍÐµÑ½­•¸½Í•¹‘5•ÍÍ…”ˆ¤ì4(€€€€€Ñ•±•É…µA…å±½…€ô)M=8¹Á…ÉÍ”¡¥¹¥Ð¹‰½‘ä¤ì4(€€€€€É•ÑÕÉ¸I•ÍÁ½¹Í”¹©Í½¸¡ì½¬èÑÉÕ”°É•ÍÕ±Ðèìµ•ÍÍ…•}¥è€ààôô¤ì4(€€€ô4(€€€Ñ¡É½Ü¹•ÜÉÉ½È ‰U¹•áÁ•Ñ•ÁÉ½Ù¥‘•ÈÉ•ÅÕ•ÍÐè€ˆ€¬ÕÉ°¤ì4(€ôì4(€ÑÉäì4(€€€½¹ÍÐ½¹¹•Ð€ô…Ý…¥ÐÝ½É­•È¹™•Ñ ¡¹•ÜI•ÅÕ•ÍÐ ‰¡ÑÑÁÌè¼½…Á¤¹•á…µÁ±”½¥¹Ñ•É…Ñ¥½¹Ìˆ°ì4(€€€€€µ•Ñ¡½è€‰A=MPˆ°4(€€€€€¡•…‘•ÉÌèì½½­¥”è€‰™¡}Í•ÍÍ¥½¸õÑ•ÍÐµÍ•ÍÍ¥½¸µÑ½­•¸ˆ°€‰½¹Ñ•¹ÐµQåÁ”ˆè€‰…ÁÁ±¥…Ñ¥½¸½©Í½¸ˆ°€‰µ½¹¹•Ñ¥¹œµ%@ˆè€ˆÄäà¸ÔÄ¸ÄÀÀ¸ÄÄÄˆô°4(€€€€€‰½‘äè)M=8¹ÍÑÉ¥¹¥™ä¡ìÁÉ½Ù¥‘•Èè€‰™É••±…¹•¡Õ¹Ðˆ°Í•É•Ðè€‰ÁÉ½Ù¥‘•ÈµÑ•ÍÐµÑ½­•¸ˆô¤4(€€€ô¤°ì°%9QIQ%=9}9IeAQ%=9}-dè­•äô¤ì4(€€€…ÍÍ•ÉÐ¹•ÅÕ…°¡½¹¹•Ð¹ÍÑ…ÑÕÌ°€ÈÀÄ¤ì4(€€€½¹ÍÐÉ•ÍÁ½¹Í”€ô…Ý…¥ÐÝ½É­•È¹™•Ñ ¡¹•ÜI•ÅÕ•ÍÐ ‰¡ÑÑÁÌè¼½…Á¤¹•á…µÁ±”½¥¹Ñ•É…Ñ¥½¹Ì½™É••±…¹•¡Õ¹Ð½Íå¹Œˆ°ì4(€€€€€µ•Ñ¡½è€‰A=MPˆ°4(€€€€€¡•…‘•ÉÌèì½½­¥”è€‰™¡}Í•ÍÍ¥½¸õÑ•ÍÐµÍ•ÍÍ¥½¸µÑ½­•¸ˆ°€‰µ½¹¹•Ñ¥¹œµ%@ˆè€ˆÄäà¸ÔÄ¸ÄÀÀ¸ÄÄÈˆô4(€€€ô¤°ì°%9QIQ%=9}9IeAQ%=9}-dè­•ä°Q1I5}	=Q}Q=-8è€‰¹½Ñ¥™¥…Ñ¥½¸µÑ•ÍÐµÑ½­•¸ˆô¤ì4(€€€…ÍÍ•ÉÐ¹•ÅÕ…°¡É•ÍÁ½¹Í”¹ÍÑ…ÑÕÌ°€ÈÀÀ¤ì4(€€€…ÍÍ•ÉÐ¹‘••ÁÅÕ…°¡…Ý…¥ÐÉ•ÍÁ½¹Í”¹©Í½¸ ¤°ì4(€€€€€¡•­•è€Ä°4(€€€€€ÕÁ‘…Ñ•è€Ä°4(€€€€€•ÉÉ½ÉÌè€À°4(€€€€€µ•ÍÍ…”è€‰MÑ…ÑÕÌÍå¹Œ½µÁ±•Ñ•ìÁÉ½Ù¥‘•Èµ½¹™¥Éµ•É•Á±¥•ÌÝ•É”É•½É‘•¸ˆ4(€€€ô¤ì4(€€€…ÍÍ•ÉÐ¹½¬¡É•ÅÕ•ÍÑÌ¹Í½µ”¡¥Ñ•´€ôø¥Ñ•´¹ÕÉ°¹¥¹±Õ‘•Ì ˆ½µä½‰¥‘Ìý™¥±Ñ•ÉmÁÉ½©•Ñ}¥‘tôÄÈÌˆ¤¤¤ì4(€€€…ÍÍ•ÉÐ¹•ÅÕ…°¡Ñ•±•É…µA…å±½…¹¡…Ñ}¥°€ˆÄÈÌÐÔˆ¤ì4(€€€…ÍÍ•ÉÐ¹µ…Ñ ¡Ñ•±•É…µA…å±½…¹Ñ•áÐ°€½Q•ÍÐÁÉ½©•Ð¼¤ì4(€€€…ÍÍ•ÉÐ¹µ…Ñ ¡Ñ•±•É…µA…å±½…¹Ñ•áÐ°€½¡ÑÑÁÌép½p½™É••±…¹•¡Õ¹Ñp¹½µp½ÁÉ½©•Ñp¼ÄÈÌ¼¤ì4(€€€½¹ÍÐÝÉ¥Ñ”€ôÍÑ…Ñ•µ•¹ÑÌ¹™¥¹¡¥Ñ•´€ôø¥Ñ•´¹ÍÅ°¹¥¹±Õ‘•Ì ‰UAQ…ÁÁ±¥…Ñ¥½¹ÌMPÍÑ…ÑÕÌôÉ•Á±¥•œˆ¤¤ì4(€€€…ÍÍ•ÉÐ¹½¬¡ÝÉ¥Ñ”¤ì4(€€€…ÍÍ•ÉÐ¹‘••ÁÅÕ…°¡ÝÉ¥Ñ”¹Ù…±Õ•Ì°lÄÈ°€‰ÕÍ•È´Ä‰t¤ì4(€ô™¥¹…±±äì4(€€€±½‰…±Q¡¥Ì¹™•Ñ €ô½É¥¥¹…±•Ñ ì4(€ô4)ô¤ì4(4(4)Ñ•ÍÐ ‰Í½ÕÉ”‘•±•Ñ¥½¸…¹Q•±•É…´±¥¹¬µ…¹…•µ•¹ÐÉ•µ…¥¸Í½Á•Ñ¼Ñ¡”…ÕÑ¡•¹Ñ¥…Ñ•ÕÍ•Èˆ°…Íå¹Œ€ ¤€ôøì4(€½¹ÍÐÍÑ…Ñ•µ•¹ÑÌ€ômtì4(€½¹ÍÐ€ôì4(€€€ÁÉ•Á…É”¡ÍÅ°¤ì4(€€€€€±•ÐÙ…±Õ•Ì€ômtì4(€€€€€½¹ÍÐÉ•½É€ô€ ¤€ôøÍÑ…Ñ•µ•¹ÑÌ¹ÁÕÍ ¡ìÍÅ°°Ù…±Õ•Ìèl¸¸¹Ù…±Õ•Ítô¤ì4(€€€€€É•ÑÕÉ¸ì4(€€€€€€€‰¥¹ ¸¸¹…ÉÌ¤ìÙ…±Õ•Ì€ô…ÉÌìÉ•ÑÕÉ¸Ñ¡¥Ììô°4(€€€€€€€…Íå¹Œ™¥ÉÍÐ ¤ì4(€€€€€€€€€É•½É ¤ì4(€€€€€€€€€¥˜€¡ÍÅ°¹¥¹±Õ‘•Ì ‰I=4Í•ÍÍ¥½¹ÌÌ)=%8ÕÍ•ÉÌˆ¤¤É•ÑÕÉ¸ì¥è€‰ÕÍ•È´Äˆ°É•…Ñ•‘}…Ðè€ˆÈÀÈØ´ÄÀ´ÄØ€ÄÀèÀÀèÀÀˆôì4(€€€€€€€€€É•ÑÕÉ¸¹Õ±°ì4(€€€€€€€ô°4(€€€€€€€…Íå¹ŒÉÕ¸ ¤ìÉ•½É ¤ìÉ•ÑÕÉ¸ìµ•Ñ„èì¡…¹•ÌèÍÅ°¹¥¹±Õ‘•Ì ‰1QI=4Í½ÕÉ•Ì]!I¥ôü9ÕÍ•É}¥ôüˆ¤€ü€À€è€Äôôìô°4(€€€€€€€…Íå¹Œ…±° ¤ìÉ•½É ¤ìÉ•ÑÕÉ¸ìÉ•ÍÕ±ÑÌèmtôìô4(€€€€€ôì4(€€€ô4(€ôì4(€½¹ÍÐÍ½ÕÉ••±•Ñ”€ô…Ý…¥ÐÝ½É­•È¹™•Ñ ¡¹•ÜI•ÅÕ•ÍÐ ‰¡ÑÑÁÌè¼½…Á¤¹•á…µÁ±”½Í½ÕÉ•Ì¼äàÜˆ°ì4(€€€µ•Ñ¡½è€‰1Qˆ°4(€€€¡•…‘•ÉÌèì½½­¥”è€‰™¡}Í•ÍÍ¥½¸õÑ•ÍÐµÍ•ÍÍ¥½¸µÑ½­•¸ˆô4(€ô¤°ìô¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡Í½ÕÉ••±•Ñ”¹ÍÑ…ÑÕÌ°€ÐÀÐ¤ì4(€½¹ÍÐÍ½ÕÉ•]É¥Ñ”€ôÍÑ…Ñ•µ•¹ÑÌ¹™¥¹‘1…ÍÐ¡¥Ñ•´€ôø¥Ñ•´¹ÍÅ°¹¥¹±Õ‘•Ì ‰1QI=4Í½ÕÉ•Ì]!I¥ôü9ÕÍ•É}¥ôüˆ¤¤ì4(€…ÍÍ•ÉÐ¹½¬¡Í½ÕÉ•]É¥Ñ”¤ì4(€…ÍÍ•ÉÐ¹‘••ÁÅÕ…°¡Í½ÕÉ•]É¥Ñ”¹Ù…±Õ•Ì°läàÜ°€‰ÕÍ•È´Ä‰t¤ì4(4(€½¹ÍÐ±¥¹­½‘”€ô…Ý…¥ÐÝ½É­•È¹™•Ñ ¡¹•ÜI•ÅÕ•ÍÐ ‰¡ÑÑÁÌè¼½…Á¤¹•á…µÁ±”½Ñ•±•É…´½±¥¹¬µ½‘”ˆ°ì4(€€€µ•Ñ¡½è€‰A=MPˆ°4(€€€¡•…‘•ÉÌèì½½­¥”è€‰™¡}Í•ÍÍ¥½¸õÑ•ÍÐµÍ•ÍÍ¥½¸µÑ½­•¸ˆô4(€ô¤°ìô¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡±¥¹­½‘”¹ÍÑ…ÑÕÌ°€ÈÀÀ¤ì4(€½¹ÍÐ½‘•]É¥Ñ”€ôÍÑ…Ñ•µ•¹ÑÌ¹™¥¹‘1…ÍÐ¡¥Ñ•´€ôø¥Ñ•´¹ÍÅ°¹¥¹±Õ‘•Ì ‰UAQÑ•±•É…µ}±¥¹­ÌMP±¥¹­}½‘•}¡…Í ôˆ¤¤ì4(€…ÍÍ•ÉÐ¹½¬¡½‘•]É¥Ñ”¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡½‘•]É¥Ñ”¹Ù…±Õ•Ì¹…Ð ´Ä¤°€‰ÕÍ•È´Äˆ¤ì4(4(€½¹ÍÐÕ¹±¥¹¬€ô…Ý…¥ÐÝ½É­•È¹™•Ñ ¡¹•ÜI•ÅÕ•ÍÐ ‰¡ÑÑÁÌè¼½…Á¤¹•á…µÁ±”½Ñ•±•É…´½±¥¹¬ˆ°ì4(€€€µ•Ñ¡½è€‰1Qˆ°4(€€€¡•…‘•ÉÌèì½½­¥”è€‰™¡}Í•ÍÍ¥½¸õÑ•ÍÐµÍ•ÍÍ¥½¸µÑ½­•¸ˆô4(€ô¤°ìô¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡Õ¹±¥¹¬¹ÍÑ…ÑÕÌ°€ÈÀÀ¤ì4(€½¹ÍÐÕ¹±¥¹­]É¥Ñ”€ôÍÑ…Ñ•µ•¹ÑÌ¹™¥¹‘1…ÍÐ¡¥Ñ•´€ôø¥Ñ•´¹ÍÅ°¹¥¹±Õ‘•Ì ‰UAQÑ•±•É…µ}±¥¹­ÌMP±¥¹­}½‘•}¡…Í õ9U10ˆ¤¤ì4(€…ÍÍ•ÉÐ¹½¬¡Õ¹±¥¹­]É¥Ñ”¤ì4(€…ÍÍ•ÉÐ¹‘••ÁÅÕ…°¡Õ¹±¥¹­]É¥Ñ”¹Ù…±Õ•Ì°l‰ÕÍ•È´Ä‰t¤ì4)ô¤ì4(4(4)Ñ•ÍÐ ‰…•¹ÐÍ•ÑÑ¥¹Ì…¸½ÁÐ½ÕÐ½˜±¥•¹ÐÉ•ÍÁ½¹Í”¹½Ñ¥™¥…Ñ¥½¹Ìˆ°…Íå¹Œ€ ¤€ôøì4(€½¹ÍÐÝÉ¥Ñ•Ì€ômtì4(€½¹ÍÐ€ôì4(€€€ÁÉ•Á…É”¡ÍÅ°¤ì4(€€€€€±•ÐÙ…±Õ•Ì€ômtì4(€€€€€É•ÑÕÉ¸ì4(€€€€€€€‰¥¹ ¸¸¹…ÉÌ¤ìÙ…±Õ•Ì€ô…ÉÌìÉ•ÑÕÉ¸Ñ¡¥Ììô°4(€€€€€€€…Íå¹Œ™¥ÉÍÐ ¤ì4(€€€€€€€€€¥˜€¡ÍÅ°¹¥¹±Õ‘•Ì ‰I=4Í•ÍÍ¥½¹ÌÌ)=%8ÕÍ•ÉÌˆ¤¤É•ÑÕÉ¸ì¥è€‰ÕÍ•È´Äˆ°É•…Ñ•‘}…Ðè€ˆÈÀÈØ´ÄÀ´ÄØ€ÄÀèÀÀèÀÀˆôì4(€€€€€€€€€¥˜€¡ÍÅ°¹¥¹±Õ‘•Ì ‰M1P€¨I=4…•¹Ñ}Í•ÑÑ¥¹Ì]!IÕÍ•É}¥ôüˆ¤¤É•ÑÕÉ¸ì¥Í}•¹…‰±•è€Ä°…ÕÑ½}‘É…™Ðè€Ä°µ¥¹}µ…Ñ¡}Í½É”è€ØÀ°¹½Ñ¥™å}¹•Ý}ÁÉ½©•ÑÌè€Ä°¹½Ñ¥™å}…ÁÁ±¥…Ñ¥½¹}ÕÁ‘…Ñ•Ìè€Äôì4(€€€€€€€€€É•ÑÕÉ¸¹Õ±°ì4(€€€€€€€ô°4(€€€€€€€…Íå¹ŒÉÕ¸ ¤ìÝÉ¥Ñ•Ì¹ÁÕÍ ¡ìÍÅ°°Ù…±Õ•Ìèl¸¸¹Ù…±Õ•Ítô¤ìÉ•ÑÕÉ¸ìµ•Ñ„èì¡…¹•Ìè€Äôôìô°4(€€€€€€€…Íå¹Œ…±° ¤ìÉ•ÑÕÉ¸ìÉ•ÍÕ±ÑÌèmtôìô4(€€€€€ôì4(€€€ô4(€ôì4(€½¹ÍÐÉ•ÍÁ½¹Í”€ô…Ý…¥ÐÝ½É­•È¹™•Ñ ¡¹•ÜI•ÅÕ•ÍÐ ‰¡ÑÑÁÌè¼½…Á¤¹•á…µÁ±”½…•¹Ð½Í•ÑÑ¥¹Ìˆ°ì4(€€€µ•Ñ¡½è€‰AQ ˆ°4(€€€¡•…‘•ÉÌèì½½­¥”è€‰™¡}Í•ÍÍ¥½¸õÑ•ÍÐµÍ•ÍÍ¥½¸µÑ½­•¸ˆ°€‰½¹Ñ•¹ÐµQåÁ”ˆè€‰…ÁÁ±¥…Ñ¥½¸½©Í½¸ˆô°4(€€€‰½‘äè)M=8¹ÍÑÉ¥¹¥™ä¡ì¹½Ñ¥™å}…ÁÁ±¥…Ñ¥½¹}ÕÁ‘…Ñ•Ìè™…±Í”ô¤4(€ô¤°ìô¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡É•ÍÁ½¹Í”¹ÍÑ…ÑÕÌ°€ÈÀÀ¤ì4(€½¹ÍÐ‘…Ñ„€ô…Ý…¥ÐÉ•ÍÁ½¹Í”¹©Í½¸ ¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡‘…Ñ„¹¹½Ñ¥™å}…ÁÁ±¥…Ñ¥½¹}ÕÁ‘…Ñ•Ì°™…±Í”¤ì4(€½¹ÍÐÕÁ‘…Ñ”€ôÝÉ¥Ñ•Ì¹™¥¹¡¥Ñ•´€ôø¥Ñ•´¹ÍÅ°¹¥¹±Õ‘•Ì ‰UAQ…•¹Ñ}Í•ÑÑ¥¹ÌMP¥Í}•¹…‰±•ôüˆ¤¤ì4(€…ÍÍ•ÉÐ¹½¬¡ÕÁ‘…Ñ”¤ì4(€…ÍÍ•ÉÐ¹µ…Ñ ¡ÕÁ‘…Ñ”¹ÍÅ°°€½¹½Ñ¥™å}…ÁÁ±¥…Ñ¥½¹}ÕÁ‘…Ñ•Ìõpü¼¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡ÕÁ‘…Ñ”¹Ù…±Õ•ÍlÙt°€À¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡ÕÁ‘…Ñ”¹Ù…±Õ•ÍlÝt°€‰ÕÍ•È´Äˆ¤ì4)ô¤ì4(4(4)Ñ•ÍÐ ‰ÕÍ•ÈµÍ½Á•É•…°‘É…™Ð°…¹Q•±•É…´±¥¹¬•¹‘Á½¥¹ÑÌ‰¥¹Ñ¡”…ÕÑ¡•¹Ñ¥…Ñ•½Ý¹•Èˆ°…Íå¹Œ€ ¤€ôøì4(€½¹ÍÐÍÑ…Ñ•µ•¹ÑÌ€ômtì4(€½¹ÍÐ€ôì4(€€€ÁÉ•Á…É”¡ÍÅ°¤ì4(€€€€€±•ÐÙ…±Õ•Ì€ômtì4(€€€€€½¹ÍÐÉ•½É€ô€ ¤€ôøÍÑ…Ñ•µ•¹ÑÌ¹ÁÕÍ ¡ìÍÅ°°Ù…±Õ•Ìèl¸¸¹Ù…±Õ•Ítô¤ì4(€€€€€É•ÑÕÉ¸ì4(€€€€€€€‰¥¹ ¸¸¹…ÉÌ¤ìÙ…±Õ•Ì€ô…ÉÌìÉ•ÑÕÉ¸Ñ¡¥Ììô°4(€€€€€€€…Íå¹Œ™¥ÉÍÐ ¤ì4(€€€€€€€€€É•½É ¤ì4(€€€€€€€€€¥˜€¡ÍÅ°¹¥¹±Õ‘•Ì ‰I=4Í•ÍÍ¥½¹ÌÌ)=%8ÕÍ•ÉÌˆ¤¤É•ÑÕÉ¸ì¥è€‰ÕÍ•È´Äˆ°É•…Ñ•‘}…Ðè€ˆÈÀÈØ´ÄÀ´ÄØ€ÄÀèÀÀèÀÀˆôì4(€€€€€€€€€É•ÑÕÉ¸¹Õ±°ì4(€€€€€€€ô°4(€€€€€€€…Íå¹Œ…±° ¤ìÉ•½É ¤ìÉ•ÑÕÉ¸ìÉ•ÍÕ±ÑÌèmtôìô°4(€€€€€€€…Íå¹ŒÉÕ¸ ¤ìÉ•½É ¤ìÉ•ÑÕÉ¸ìµ•Ñ„èì¡…¹•Ìè€Äôôìô4(€€€€€ôì4(€€€ô4(€ôì4(€½¹ÍÐ…Í•Ì€ôl4(€€€ìÁ…Ñ è€ˆ½Í½ÕÉ•Ìˆ°µ•Ñ¡½è€‰Pˆ°ÍÑ…ÑÕÌè€ÈÀÀ°ÍÅ°è€‰I=4Í½ÕÉ•Ì]!IÕÍ•É}¥ôüˆ°½Ý¹•ÉA½Í¥Ñ¥½¸è€Àô°4(€€€ìÁ…Ñ è€ˆ½…ÁÁ±¥…Ñ¥½¹Ìˆ°µ•Ñ¡½è€‰Pˆ°ÍÑ…ÑÕÌè€ÈÀÀ°ÍÅ°è€‰I=4…ÁÁ±¥…Ñ¥½¹Ì„1P)=%8ÁÉ½©•ÑÌˆ°½Ý¹•ÉA½Í¥Ñ¥½¸è€Àô°4(€€€ìÁ…Ñ è€ˆ½¥¹Ñ•É…Ñ¥½¹Ìˆ°µ•Ñ¡½è€‰Pˆ°ÍÑ…ÑÕÌè€ÈÀÀ°ÍÅ°è€‰I=4¥¹Ñ•É…Ñ¥½¹Ì]!IÕÍ•É}¥ôüˆ°½Ý¹•ÉA½Í¥Ñ¥½¸è€Àô°4(€€€ìÁ…Ñ è€ˆ½ÁÉ½™¥±”ˆ°µ•Ñ¡½è€‰Pˆ°ÍÑ…ÑÕÌè€ÈÀÀ°ÍÅ°è€‰I=4ÁÉ½™¥±•Ì]!IÕÍ•É}¥ôüˆ°½Ý¹•ÉA½Í¥Ñ¥½¸è€Àô°4(€€€ìÁ…Ñ è€ˆ½…•¹Ð½Í•ÑÑ¥¹Ìˆ°µ•Ñ¡½è€‰Pˆ°ÍÑ…ÑÕÌè€ÈÀÀ°ÍÅ°è€‰M1P€¨I=4…•¹Ñ}Í•ÑÑ¥¹Ì]!IÕÍ•É}¥ôüˆ°½Ý¹•ÉA½Í¥Ñ¥½¸è€Àô°4(€€€ìÁ…Ñ è€ˆ½…ÁÁ±¥…Ñ¥½¹Ì¼äää½‘É…™Ðˆ°µ•Ñ¡½è€‰A=MPˆ°‰½‘äèíô°ÍÑ…ÑÕÌè€ÐÀÐ°ÍÅ°è€‰I=4ÁÉ½©•ÑÌ]!I¥ôü9ÕÍ•É}¥ôüˆ°½Ý¹•ÉA½Í¥Ñ¥½¸è€Äô°4(€€€ìÁ…Ñ è€ˆ½Ñ•±•É…´½±¥¹¬µ½‘”ˆ°µ•Ñ¡½è€‰A=MPˆ°‰½‘äèíô°ÍÑ…ÑÕÌè€ÈÀÀ°ÍÅ°è€‰UAQÑ•±•É…µ}±¥¹­ÌMP±¥¹­}½‘•}¡…Í ôüˆ°½Ý¹•ÉA½Í¥Ñ¥½¸è€Äô°4(€€€ìÁ…Ñ è€ˆ½Ñ•±•É…´½±¥¹¬ˆ°µ•Ñ¡½è€‰1Qˆ°ÍÑ…ÑÕÌè€ÈÀÀ°ÍÅ°è€‰UAQÑ•±•É…µ}±¥¹­ÌMP±¥¹­}½‘•}¡…Í õ9U10ˆ°½Ý¹•ÉA½Í¥Ñ¥½¸è€Àô4(€tì4(€™½È€¡½¹ÍÐ¥Ñ•´½˜…Í•Ì¤ì4(€€€½¹ÍÐÉ•ÍÁ½¹Í”€ô…Ý…¥ÐÝ½É­•È¹™•Ñ ¡¹•ÜI•ÅÕ•ÍÐ ‰¡ÑÑÁÌè¼½…Á¤¹•á…µÁ±”ˆ€¬¥Ñ•´¹Á…Ñ °ì4(€€€€€µ•Ñ¡½è¥Ñ•´¹µ•Ñ¡½°4(€€€€€¡•…‘•ÉÌèì4(€€€€€€€½½­¥”è€‰™¡}Í•ÍÍ¥½¸õÑ•ÍÐµÍ•ÍÍ¥½¸µÑ½­•¸ˆ°4(€€€€€€€€¸¸¸¡¥Ñ•´¹‰½‘ä€üì€‰½¹Ñ•¹ÐµQåÁ”ˆè€‰…ÁÁ±¥…Ñ¥½¸½©Í½¸ˆô€èíô¤4(€€€€€ô°4(€€€€€€¸¸¸¡¥Ñ•´¹‰½‘ä€üì‰½‘äè)M=8¹ÍÑÉ¥¹¥™ä¡¥Ñ•´¹‰½‘ä¤ô€èíô¤4(€€€ô¤°ì°%}A%}-dè€‰Ñ•ÍÐµ­•äˆ°%}5=0è€‰Ñ•ÍÐµµ½‘•°ˆô¤ì4(€€€…ÍÍ•ÉÐ¹•ÅÕ…°¡É•ÍÁ½¹Í”¹ÍÑ…ÑÕÌ°¥Ñ•´¹ÍÑ…ÑÕÌ°¥Ñ•´¹Á…Ñ ¤ì4(€€€½¹ÍÐÍÑ…Ñ•µ•¹Ð€ôÍÑ…Ñ•µ•¹ÑÌ¹™¥¹‘1…ÍÐ¡•¹ÑÉä€ôø•¹ÑÉä¹ÍÅ°¹¥¹±Õ‘•Ì¡¥Ñ•´¹ÍÅ°¤¤ì4(€€€…ÍÍ•ÉÐ¹½¬¡ÍÑ…Ñ•µ•¹Ð°€‰áÁ•Ñ•Í½Á•ÅÕ•Éä™½È€ˆ€¬¥Ñ•´¹Á…Ñ ¤ì4(€€€…ÍÍ•ÉÐ¹•ÅÕ…°¡ÍÑ…Ñ•µ•¹Ð¹Ù…±Õ•Ím¥Ñ•´¹½Ý¹•ÉA½Í¥Ñ¥½¹t°€‰ÕÍ•È´Äˆ°€‰ÕÑ¡•¹Ñ¥…Ñ•ÕÍ•È%µÕÍÐ‰”‰½Õ¹™½È€ˆ€¬¥Ñ•´¹Á…Ñ ¤ì4(€ô4)ô¤ì4(4(4)Ñ•ÍÐ ‰•áÁ¥É•Ý•‰Í¥Ñ”Í•ÍÍ¥½¹Ì…É”É•©•Ñ•‰•™½É”ÕÍ•È‘…Ñ„¥ÌÉ•…ˆ°…Íå¹Œ€ ¤€ôøì4(€½¹ÍÐÍÑ…Ñ•µ•¹ÑÌ€ômtì4(€½¹ÍÐ€ôì4(€€€ÁÉ•Á…É”¡ÍÅ°¤ì4(€€€€€±•ÐÙ…±Õ•Ì€ômtì4(€€€€€É•ÑÕÉ¸ì4(€€€€€€€‰¥¹ ¸¸¹…ÉÌ¤ìÙ…±Õ•Ì€ô…ÉÌìÉ•ÑÕÉ¸Ñ¡¥Ììô°4(€€€€€€€…Íå¹Œ™¥ÉÍÐ ¤ìÍÑ…Ñ•µ•¹ÑÌ¹ÁÕÍ ¡ìÍÅ°°Ù…±Õ•Ìèl¸¸¹Ù…±Õ•Ítô¤ìÉ•ÑÕÉ¸¹Õ±°ìô°4(€€€€€€€…Íå¹Œ…±° ¤ìÍÑ…Ñ•µ•¹ÑÌ¹ÁÕÍ ¡ìÍÅ°°Ù…±Õ•Ìèl¸¸¹Ù…±Õ•Ítô¤ìÉ•ÑÕÉ¸ìÉ•ÍÕ±ÑÌèmtôìô°4(€€€€€€€…Íå¹ŒÉÕ¸ ¤ìÍÑ…Ñ•µ•¹ÑÌ¹ÁÕÍ ¡ìÍÅ°°Ù…±Õ•Ìèl¸¸¹Ù…±Õ•Ítô¤ìÉ•ÑÕÉ¸ìµ•Ñ„èì¡…¹•Ìè€Àôôìô4(€€€€€ôì4(€€€ô4(€ôì4(€½¹ÍÐÉ•ÍÁ½¹Í”€ô…Ý…¥ÐÝ½É­•È¹™•Ñ ¡¹•ÜI•ÅÕ•ÍÐ ‰¡ÑÑÁÌè¼½…Á¤¹•á…µÁ±”½ÁÉ½™¥±”ˆ°ì4(€€€¡•…‘•ÉÌèì½½­¥”è€‰™¡}Í•ÍÍ¥½¸õ•áÁ¥É•µÍ•ÍÍ¥½¸µÑ½­•¸ˆô4(€ô¤°ìô¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡É•ÍÁ½¹Í”¹ÍÑ…ÑÕÌ°€ÐÀÄ¤ì4(€½¹ÍÐÍ•ÍÍ¥½¹EÕ•Éä€ôÍÑ…Ñ•µ•¹ÑÌ¹™¥¹¡•¹ÑÉä€ôø•¹ÑÉä¹ÍÅ°¹¥¹±Õ‘•Ì ‰I=4Í•ÍÍ¥½¹ÌÌ)=%8ÕÍ•ÉÌˆ¤¤ì4(€…ÍÍ•ÉÐ¹½¬¡Í•ÍÍ¥½¹EÕ•Éä¤ì4(€…ÍÍ•ÉÐ¹µ…Ñ ¡Í•ÍÍ¥½¹EÕ•Éä¹ÍÅ°°€½Íp¹•áÁ¥É•Í}…Ð€ø‘…Ñ•Ñ¥µ•p ¹½Üp¤¼¤ì4(€…ÍÍ•ÉÐ¹¹½ÑÅÕ…°¡Í•ÍÍ¥½¹EÕ•Éä¹Ù…±Õ•ÍlÁt°€‰•áÁ¥É•µÍ•ÍÍ¥½¸µÑ½­•¸ˆ¤ì4)ô¤ì4(4)Ñ•ÍÐ ‰‘…Í¡‰½…ÉÍÕµµ…Éä¥¹±Õ‘•ÌÕÍ•ÈµÍ½Á•Í½ÕÉ”½Õ¹ÑÌ…¹„Í•Ù•¸µ‘…ä‘¥Í½Ù•ÉäÍ•É¥•Ìˆ°…Íå¹Œ€ ¤€ôøì4(€½¹ÍÐÍÑ…Ñ•µ•¹ÑÌ€ômtì4(€½¹ÍÐÑ½‘…ä€ô¹•Ü…Ñ” ¤¹Ñ½%M=MÑÉ¥¹œ ¤¹Í±¥” À°€ÄÀ¤ì4(€½¹ÍÐå•ÍÑ•É‘…ä€ô¹•Ü…Ñ”¡…Ñ”¹¹½Ü ¤€´€ÈÐ€¨€ØÀ€¨€ØÀ€¨€ÄÀÀÀ¤¹Ñ½%M=MÑÉ¥¹œ ¤¹Í±¥” À°€ÄÀ¤ì4(€½¹ÍÐ€ôì4(€€€ÁÉ•Á…É”¡ÍÅ°¤ì4(€€€€€±•ÐÙ…±Õ•Ì€ômtì4(€€€€€É•ÑÕÉ¸ì4(€€€€€€€‰¥¹ ¸¸¹…ÉÌ¤ìÙ…±Õ•Ì€ô…ÉÌìÉ•ÑÕÉ¸Ñ¡¥Ììô°4(€€€€€€€…Íå¹Œ™¥ÉÍÐ ¤ì4(€€€€€€€€€ÍÑ…Ñ•µ•¹ÑÌ¹ÁÕÍ ¡ìÍÅ°°Ù…±Õ•Ìèl¸¸¹Ù…±Õ•Ítô¤ì4(€€€€€€€€€¥˜€¡ÍÅ°¹¥¹±Õ‘•Ì ‰I=4Í•ÍÍ¥½¹ÌÌ)=%8ÕÍ•ÉÌˆ¤¤É•ÑÕÉ¸ì¥è€‰ÕÍ•È´Äˆ°É•…Ñ•‘}…Ðè€ˆÈÀÈØ´ÄÀ´ÄØ€ÄÀèÀÀèÀÀˆôì4(€€€€€€€€€¥˜€¡ÍÅ°¹¥¹±Õ‘•Ì ‰LÑ•±•É…µ}¡…¹¹•±Í}½¹¹•Ñ•ˆ¤¤É•ÑÕÉ¸ì4(€€€€€€€€€€€ÁÉ½©•ÑÍ}™½Õ¹è€ÄÄ°µ…Ñ¡•‘}ÁÉ½©•ÑÌè€Ô°ÁÉ½Á½Í…±Í}Í•¹Ðè€È°±¥•¹Ñ}É•Á±¥•Ìè€Ä°4(€€€€€€€€€€€Ñ•±•É…µ}¡…¹¹•±Í}½¹¹•Ñ•è€Ì°µ…É­•ÑÁ±…•Í}½¹¹•Ñ•è€Ä°Ñ•±•É…µ}‰½ÑÍ}½¹¹•Ñ•è€Ä°…•¹Ñ}•¹…‰±•è€Ä4(€€€€€€€€€ôì4(€€€€€€€€€É•ÑÕÉ¸¹Õ±°ì4(€€€€€€€ô°4(€€€€€€€…Íå¹Œ…±° ¤ì4(€€€€€€€€€ÍÑ…Ñ•µ•¹ÑÌ¹ÁÕÍ ¡ìÍÅ°°Ù…±Õ•Ìèl¸¸¹Ù…±Õ•Ítô¤ì4(€€€€€€€€€¥˜€¡ÍÅ°¹¥¹±Õ‘•Ì ‰‘…Ñ”¡‘¥Í½Ù•É•‘}…Ð¤L‘…äˆ¤¤É•ÑÕÉ¸ìÉ•ÍÕ±ÑÌèl4(€€€€€€€€€€€ì‘…äèå•ÍÑ•É‘…ä°ÁÉ½©•ÑÍ}™½Õ¹è€Èô°ì‘…äèÑ½‘…ä°ÁÉ½©•ÑÍ}™½Õ¹è€Ðô4(€€€€€€€€€tôì4(€€€€€€€€€É•ÑÕÉ¸ìÉ•ÍÕ±ÑÌèmtôì4(€€€€€€€ô4(€€€€€ôì4(€€€ô4(€ôì4(€½¹ÍÐÉ•ÍÁ½¹Í”€ô…Ý…¥ÐÝ½É­•È¹™•Ñ ¡¹•ÜI•ÅÕ•ÍÐ ‰¡ÑÑÁÌè¼½…Á¤¹•á…µÁ±”½‘…Í¡‰½…É½ÍÕµµ…Éäˆ°ì4(€€€¡•…‘•ÉÌèì½½­¥”è€‰™¡}Í•ÍÍ¥½¸õÑ•ÍÐµÍ•ÍÍ¥½¸µÑ½­•¸ˆô4(€ô¤°ìô¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡É•ÍÁ½¹Í”¹ÍÑ…ÑÕÌ°€ÈÀÀ¤ì4(€½¹ÍÐÍÕµµ…Éä€ô…Ý…¥ÐÉ•ÍÁ½¹Í”¹©Í½¸ ¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡ÍÕµµ…Éä¹Ñ•±•É…µ}¡…¹¹•±Í}½¹¹•Ñ•°€Ì¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡ÍÕµµ…Éä¹µ…É­•ÑÁ±…•Í}½¹¹•Ñ•°€Ä¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡ÍÕµµ…Éä¹Ñ•±•É…µ}‰½ÑÍ}½¹¹•Ñ•°€Ä¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡ÍÕµµ…Éä¹…•¹Ñ}•¹…‰±•°€Ä¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡ÍÕµµ…Éä¹‘…¥±å}…Ñ¥Ù¥Ñä¹±•¹Ñ °€Ü¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡ÍÕµµ…Éä¹‘…¥±å}…Ñ¥Ù¥Ñä¹…Ð ´È¤¹ÁÉ½©•ÑÍ}™½Õ¹°€È¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡ÍÕµµ…Éä¹‘…¥±å}…Ñ¥Ù¥Ñä¹…Ð ´Ä¤¹ÁÉ½©•ÑÍ}™½Õ¹°€Ð¤ì4(€½¹ÍÐµ•ÑÉ¥ÍEÕ•Éä€ôÍÑ…Ñ•µ•¹ÑÌ¹™¥¹¡•¹ÑÉä€ôø•¹ÑÉä¹ÍÅ°¹¥¹±Õ‘•Ì ‰LÑ•±•É…µ}¡…¹¹•±Í}½¹¹•Ñ•ˆ¤¤ì4(€…ÍÍ•ÉÐ¹‘••ÁÅÕ…°¡µ•ÑÉ¥ÍEÕ•Éä¹Ù…±Õ•Ì°ÉÉ…ä à¤¹™¥±° ‰ÕÍ•È´Äˆ¤¤ì4(€½¹ÍÐ…Ñ¥Ù¥ÑåEÕ•Éä€ôÍÑ…Ñ•µ•¹ÑÌ¹™¥¹¡•¹ÑÉä€ôø•¹ÑÉä¹ÍÅ°¹¥¹±Õ‘•Ì ‰‘…Ñ”¡‘¥Í½Ù•É•‘}…Ð¤L‘…äˆ¤¤ì4(€…ÍÍ•ÉÐ¹‘••ÁÅÕ…°¡…Ñ¥Ù¥ÑåEÕ•Éä¹Ù…±Õ•Ì°l‰ÕÍ•È´Ä‰t¤ì4)ô¤ì4(4)Ñ•ÍÐ ‰Q•±•É…´‰½ÐÍÕµµ…Éä°ÁÉ½©•Ð±¥ÍÐ°…¹…•¹Ð½¹ÑÉ½°ÕÍ”Ñ¡”±¥¹­•ÕÍ•ÈÌ‘…Ñ„ˆ°…Íå¹Œ€ ¤€ôøì4(€½¹ÍÐÍÑ…Ñ•µ•¹ÑÌ€ômtì4(€½¹ÍÐ€ôì4(€€€ÁÉ•Á…É”¡ÍÅ°¤ì4(€€€€€±•ÐÙ…±Õ•Ì€ômtì4(€€€€€½¹ÍÐÉ•½É€ô€ ¤€ôøÍÑ…Ñ•µ•¹ÑÌ¹ÁÕÍ ¡ìÍÅ°°Ù…±Õ•Ìèl¸¸¹Ù…±Õ•Ítô¤ì4(€€€€€É•ÑÕÉ¸ì4(€€€€€€€‰¥¹ ¸¸¹…ÉÌ¤ìÙ…±Õ•Ì€ô…ÉÌìÉ•ÑÕÉ¸Ñ¡¥Ììô°4(€€€€€€€…Íå¹Œ™¥ÉÍÐ ¤ì4(€€€€€€€€€É•½É ¤ì4(€€€€€€€€€¥˜€¡ÍÅ°¹¥¹±Õ‘•Ì ‰M1PÔ¹¥I=4Ñ•±•É…µ}±¥¹­ÌÑ°)=%8ÕÍ•ÉÌÔˆ¤¤É•ÑÕÉ¸ì¥è€‰±¥¹­•µÕÍ•È´Èˆôì4(€€€€€€€€€¥˜€¡ÍÅ°¹¥¹±Õ‘•Ì ‰M1PÕÍ•É}¥I=4Ñ•±•É…µ}±¥¹­Ì]!IÑ•±•É…µ}ÕÍ•É}¥ôüˆ¤¤É•ÑÕÉ¸ìÕÍ•É}¥è€‰±¥¹­•µÕÍ•È´Èˆôì4(€€€€€€€€€¥˜€¡ÍÅ°¹¥¹±Õ‘•Ì ‰M1P€¡M1P=U9P ¨¤I=4ÁÉ½©•ÑÌ]!IÕÍ•É}¥ôü¤ˆ¤¤É•ÑÕÉ¸ìÁÉ½©•ÑÍ}™½Õ¹è€à°µ…Ñ¡•‘}ÁÉ½©•ÑÌè€Ì°ÁÉ½Á½Í…±Í}Í•¹Ðè€È°±¥•¹Ñ}É•Á±¥•Ìè€Äôì4(€€€€€€€€€É•ÑÕÉ¸¹Õ±°ì4(€€€€€€€ô°4(€€€€€€€…Íå¹Œ…±° ¤ì4(€€€€€€€€€É•½É ¤ì4(€€€€€€€€€¥˜€¡ÍÅ°¹¥¹±Õ‘•Ì ‰M1PÀ¹Ñ¥Ñ±”±À¹ÕÉ°±À¹Í½ÕÉ”±À¹‰Õ‘•Ñ}µ¥¸±À¹‰Õ‘•Ñ}µ…à±À¹ÕÉÉ•¹ä±À¹ÁÕ‰±¥Í¡•‘}…ÐI=4ÁÉ½©•ÑÌÀ]!IÀ¹ÕÍ•É}¥ôüˆ¤¤ì4(€€€€€€€€€€€É•ÑÕÉ¸ìÉ•ÍÕ±ÑÌèmìÑ¥Ñ±”è€‰1¥¹­•ÕÍ•ÈÌÁÉ½©•Ðˆ°ÕÉ°è€‰¡ÑÑÁÌè¼½•á…µÁ±”¹Ñ•ÍÐ½ÁÉ½©•Ð¼Äˆ°Í½ÕÉ”è€‰Ñ•±•É…´ˆõtôì4(€€€€€€€€€ô4(€€€€€€€€€É•ÑÕÉ¸ìÉ•ÍÕ±ÑÌèmtôì4(€€€€€€€ô°4(€€€€€€€…Íå¹ŒÉÕ¸ ¤ìÉ•½É ¤ìÉ•ÑÕÉ¸ìµ•Ñ„èì¡…¹•Ìè€Äôôìô4(€€€€€ôì4(€€€ô4(€ôì4(€½¹ÍÐ¡•…‘•ÉÌ€ôì€‰`µ	½ÐµM•É•Ðˆè€‰Ñ•ÍÐµ‰½ÐµÍ•É•Ðˆôì4(€½¹ÍÐÍÕµµ…Éä€ô…Ý…¥ÐÝ½É­•È¹™•Ñ ¡¹•ÜI•ÅÕ•ÍÐ ‰¡ÑÑÁÌè¼½…Á¤¹•á…µÁ±”½Ñ•±•É…´½ÍÕµµ…Éä¼ÄÈÌÐÔˆ°ì¡•…‘•ÉÌô¤°ì°	=Q}A%}MIPè€‰Ñ•ÍÐµ‰½ÐµÍ•É•Ðˆô¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡ÍÕµµ…Éä¹ÍÑ…ÑÕÌ°€ÈÀÀ¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…° ¡…Ý…¥ÐÍÕµµ…Éä¹©Í½¸ ¤¤¹ÁÉ½©•ÑÍ}™½Õ¹°€à¤ì4(€½¹ÍÐÍÕµµ…ÉåEÕ•Éä€ôÍÑ…Ñ•µ•¹ÑÌ¹™¥¹¡•¹ÑÉä€ôø•¹ÑÉä¹ÍÅ°¹¥¹±Õ‘•Ì ‰M1P€¡M1P=U9P ¨¤I=4ÁÉ½©•ÑÌ]!IÕÍ•É}¥ôü¤ˆ¤¤ì4(€…ÍÍ•ÉÐ¹½¬¡ÍÕµµ…ÉåEÕ•Éä¤ì4(€…ÍÍ•ÉÐ¹‘••ÁÅÕ…°¡ÍÕµµ…ÉåEÕ•Éä¹Ù…±Õ•Ì°l‰±¥¹­•µÕÍ•È´Èˆ°€‰±¥¹­•µÕÍ•È´Èˆ°€‰±¥¹­•µÕÍ•È´Èˆ°€‰±¥¹­•µÕÍ•È´È‰t¤ì4(4(€½¹ÍÐÁÉ½©•ÑÌ€ô…Ý…¥ÐÝ½É­•È¹™•Ñ ¡¹•ÜI•ÅÕ•ÍÐ ‰¡ÑÑÁÌè¼½…Á¤¹•á…µÁ±”½Ñ•±•É…´½ÁÉ½©•ÑÌ¼ÄÈÌÐÔý±¥µ¥ÐôÌˆ°ì¡•…‘•ÉÌô¤°ì°	=Q}A%}MIPè€‰Ñ•ÍÐµ‰½ÐµÍ•É•Ðˆô¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡ÁÉ½©•ÑÌ¹ÍÑ…ÑÕÌ°€ÈÀÀ¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…° ¡…Ý…¥ÐÁÉ½©•ÑÌ¹©Í½¸ ¤¤¹¥Ñ•µÍlÁt¹Ñ¥Ñ±”°€‰1¥¹­•ÕÍ•ÈÌÁÉ½©•Ðˆ¤ì4(€½¹ÍÐÁÉ½©•ÑEÕ•Éä€ôÍÑ…Ñ•µ•¹ÑÌ¹™¥¹¡•¹ÑÉä€ôø•¹ÑÉä¹ÍÅ°¹¥¹±Õ‘•Ì ‰M1PÀ¹Ñ¥Ñ±”±À¹ÕÉ°±À¹Í½ÕÉ”±À¹‰Õ‘•Ñ}µ¥¸±À¹‰Õ‘•Ñ}µ…à±À¹ÕÉÉ•¹ä±À¹ÁÕ‰±¥Í¡•‘}…ÐI=4ÁÉ½©•ÑÌÀ]!IÀ¹ÕÍ•É}¥ôüˆ¤¤ì4(€…ÍÍ•ÉÐ¹½¬¡ÁÉ½©•ÑEÕ•Éä¤ì4(€…ÍÍ•ÉÐ¹‘••ÁÅÕ…°¡ÁÉ½©•ÑEÕ•Éä¹Ù…±Õ•Ì°l‰±¥¹­•µÕÍ•È´Èˆ°€Ít¤ì4(4(€½¹ÍÐ½¹ÑÉ½°€ô…Ý…¥ÐÝ½É­•È¹™•Ñ ¡¹•ÜI•ÅÕ•ÍÐ ‰¡ÑÑÁÌè¼½…Á¤¹•á…µÁ±”½Ñ•±•É…´½…•¹Ðµ½¹ÑÉ½°ˆ°ì4(€€€µ•Ñ¡½è€‰A=MPˆ°4(€€€¡•…‘•ÉÌèì€¸¸¹¡•…‘•ÉÌ°€‰½¹Ñ•¹ÐµQåÁ”ˆè€‰…ÁÁ±¥…Ñ¥½¸½©Í½¸ˆô°4(€€€‰½‘äè)M=8¹ÍÑÉ¥¹¥™ä¡ìÑ•±•É…µ}ÕÍ•É}¥è€ˆÄÈÌÐÔˆ°•¹…‰±•è™…±Í”ô¤4(€ô¤°ì°	=Q}A%}MIPè€‰Ñ•ÍÐµ‰½ÐµÍ•É•Ðˆô¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡½¹ÑÉ½°¹ÍÑ…ÑÕÌ°€ÈÀÀ¤ì4(€½¹ÍÐ½¹ÑÉ½±]É¥Ñ”€ôÍÑ…Ñ•µ•¹ÑÌ¹™¥¹¡•¹ÑÉä€ôø•¹ÑÉä¹ÍÅ°¹¥¹±Õ‘•Ì ‰UAQ…•¹Ñ}Í•ÑÑ¥¹ÌMP¥Í}•¹…‰±•ôüˆ¤¤ì4(€…ÍÍ•ÉÐ¹½¬¡½¹ÑÉ½±]É¥Ñ”¤ì4(€…ÍÍ•ÉÐ¹‘••ÁÅÕ…°¡½¹ÑÉ½±]É¥Ñ”¹Ù…±Õ•Ì°lÀ°€‰±¥¹­•µÕÍ•È´È‰t¤ì4)ô¤ì4(4(4)Ñ•ÍÐ ‰Í½ÕÉ”…Ñ…±½œ…‘Ù•ÉÑ¥Í•Ì½¹±ä¥µÁ±•µ•¹Ñ•‘¥Í½Ù•Éä…‘…ÁÑ•ÉÌˆ°…Íå¹Œ€ ¤€ôøì4(€½¹ÍÐÉ•ÍÁ½¹Í”€ô…Ý…¥ÐÝ½É­•È¹™•Ñ ¡¹•ÜI•ÅÕ•ÍÐ ‰¡ÑÑÁÌè¼½…Á¤¹•á…µÁ±”½Í½ÕÉ•Ì½…Ñ…±½œˆ°ì4(€€€¡•…‘•ÉÌèì½½­¥”è€‰™¡}Í•ÍÍ¥½¸õÑ•ÍÐµÍ•ÍÍ¥½¸µÑ½­•¸ˆô4(€ô¤°ìè™…­•ˆ ¤ô¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡É•ÍÁ½¹Í”¹ÍÑ…ÑÕÌ°€ÈÀÀ¤ì4(€½¹ÍÐ…Ñ…±½œ€ô…Ý…¥ÐÉ•ÍÁ½¹Í”¹©Í½¸ ¤ì4(€½¹ÍÐ‰åM½ÕÉ”€ô=‰©•Ð¹™É½µ¹ÑÉ¥•Ì¡…Ñ…±½œ¹µ…À¡¥Ñ•´€ôøm¥Ñ•´¹Í½ÕÉ”°¥Ñ•µt¤¤ì4(€…ÍÍ•ÉÐ¹‘••ÁÅÕ…°¡=‰©•Ð¹­•åÌ¡‰åM½ÕÉ”¤°l‰Ñ•±•É…´ˆ°€‰™±}ÉÔˆ°€‰™É••±…¹•}ÉÔ‰t¤ì4(€…ÍÍ•ÉÐ¹½¬¡‰åM½ÕÉ”¹Ñ•±•É…´¹…Á…‰¥±¥Ñ¥•Ì¹¥¹±Õ‘•Ì ‰É•…‘}ÁÕ‰±¥}Á½ÍÑÌˆ¤¤ì4(€™½È€¡½¹ÍÐÍ½ÕÉ”½˜l‰™±}ÉÔˆ°€‰™É••±…¹•}ÉÔ‰t¤ì4(€€€…ÍÍ•ÉÐ¹½¬¡‰åM½ÕÉ•mÍ½ÕÉ•t¹…Á…‰¥±¥Ñ¥•Ì¹¥¹±Õ‘•Ì ‰É•…‘}ÁÕ‰±¥}ÁÉ½©•ÑÌˆ¤¤ì4(€€€…ÍÍ•ÉÐ¹½¬¡‰åM½ÕÉ•mÍ½ÕÉ•t¹…Á…‰¥±¥Ñ¥•Ì¹¥¹±Õ‘•Ì ‰µ…¹Õ…±}ÍÕ‰µ¥ÍÍ¥½¹}½¹±äˆ¤¤ì4(€ô4)ô¤ì4(4)Ñ•ÍÐ ‰0¹ÉÔIMLÁ…ÉÍ•È­••ÁÌÉ••¹Ð™¥ÉÍÐµÁ…ÉÑäÁÉ½©•Ð±¥ÍÑ¥¹Ì½¹±äˆ°€ ¤€ôøì4(€½¹ÍÐÁÕ‰±¥Í¡•€ô¹•Ü…Ñ”¡…Ñ”¹¹½Ü ¤€´€ØÁ|ÀÀÀ¤¹Ñ½UQMÑÉ¥¹œ ¤ì4(€½¹ÍÐÍÑ…±”€ô¹•Ü…Ñ”¡…Ñ”¹¹½Ü ¤€´€ÜÌ€¨€ØÀ€¨€ØÀ€¨€ÄÀÀÀ¤¹Ñ½UQMÑÉ¥¹œ ¤ì4(€½¹ÍÐáµ°€ô€ˆñÉÍÌøñ¡…¹¹•°øˆ€¬4(€€€€ˆñ¥Ñ•´øñÑ¥Ñ±”øð…mQoB‡BÓB×BïBÃFF0Q•±•É…´·BÇBûFBÁutøð½Ñ¥Ñ±”øñ±¥¹¬ù¡ÑÑÁÌè¼½ÝÝÜ¹™°¹ÉÔ½ÁÉ½©•ÑÌ¼ÄÈÌÐÔØ¼ð½±¥¹¬øñ‘•ÍÉ¥ÁÑ¥½¸øð…mQoBwFBÛB×BôƒBÇBûFƒB÷BÀAåÑ¡½¸°ƒBÇF;BÓBÛB×F€ÄÀ€ÀÀÀƒŠ
+õutøð½‘•ÍÉ¥ÁÑ¥½¸øñÁÕ‰…Ñ”øˆ€¬ÁÕ‰±¥Í¡•€¬€ˆð½ÁÕ‰…Ñ”øð½¥Ñ•´øˆ€¬4(€€€€ˆñ¥Ñ•´øñÑ¥Ñ±”ûBFFBÃFB×BËF#BãBäƒBßBÃBëBÃBÜð½Ñ¥Ñ±”øñ±¥¹¬ù¡ÑÑÁÌè¼½ÝÝÜ¹™°¹ÉÔ½ÁÉ½©•ÑÌ¼ÄÈÌÐÔÜ¼ð½±¥¹¬øñ‘•ÍÉ¥ÁÑ¥½¸ûB_BÃBëBÃBÜð½‘•ÍÉ¥ÁÑ¥½¸øñÁÕ‰…Ñ”øˆ€¬ÍÑ…±”€¬€ˆð½ÁÕ‰…Ñ”øð½¥Ñ•´øˆ€¬4(€€€€ˆñ¥Ñ•´øñÑ¥Ñ±”ûBŸFBÛBûBäƒBÓBûBóB×Bôð½Ñ¥Ñ±”øñ±¥¹¬ù¡ÑÑÁÌè¼½•á…µÁ±”¹½´½ÁÉ½©•ÑÌ¼ÄÈÌÐÔà¼ð½±¥¹¬øñ‘•ÍÉ¥ÁÑ¥½¸ûB_BÃBëBÃBÜð½‘•ÍÉ¥ÁÑ¥½¸øñÁÕ‰…Ñ”øˆ€¬ÁÕ‰±¥Í¡•€¬€ˆð½ÁÕ‰…Ñ”øð½¥Ñ•´øˆ€¬4(€€€€ˆð½¡…¹¹•°øð½ÉÍÌøˆì4(€½¹ÍÐ±¥ÍÑ¥¹Ì€ôÁ…ÉÍ•±IÕIÍÌ¡áµ°¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡±¥ÍÑ¥¹Ì¹±•¹Ñ °€Ä¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡±¥ÍÑ¥¹ÍlÁt¹¥°€ˆ½ÁÉ½©•ÑÌ¼ÄÈÌÐÔØˆ¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡±¥ÍÑ¥¹ÍlÁt¹Ñ¥Ñ±”°€‹B‡BÓB×BïBÃFF0Q•±•É…´·BÇBûFBÀˆ¤ì4(€…ÍÍ•ÉÐ¹µ…Ñ ¡±¥ÍÑ¥¹ÍlÁt¹‘•ÍÉ¥ÁÑ¥½¸°€¿BÇF;BÓBÛB×F€ÄÀ€ÀÀÀƒŠ
+ô¼¤ì4)ô¤ì4(4)Ñ•ÍÐ ‰É••±…¹”¹ÉÔÁ…ÉÍ•È­••ÁÌ½¹±äÉ••¹ÐÑ…Í­ÌÙ¥Í¥‰±”Ñ¼•Ù•Éå½¹”ˆ°€ ¤€ôøì4(€½¹ÍÐ™½Éµ…Ñ5½Í½Ü€ô‘…Ñ”€ôømMÑÉ¥¹œ¡‘…Ñ”¹•ÑUQ…Ñ” ¤¤¹Á…‘MÑ…ÉÐ È°€ˆÀˆ¤°MÑÉ¥¹œ¡‘…Ñ”¹•ÑUQ5½¹Ñ  ¤€¬€Ä¤¹Á…‘MÑ…ÉÐ È°€ˆÀˆ¤°‘…Ñ”¹•ÑUQÕ±±e•…È ¥t¹©½¥¸ ˆ¸ˆ¤€¬€ˆ€ˆ€¬MÑÉ¥¹œ¡‘…Ñ”¹•ÑUQ!½ÕÉÌ ¤¤¹Á…‘MÑ…ÉÐ È°€ˆÀˆ¤€¬€ˆèˆ€¬MÑÉ¥¹œ¡‘…Ñ”¹•ÑUQ5¥¹ÕÑ•Ì ¤¤¹Á…‘MÑ…ÉÐ È°€ˆÀˆ¤ì4(€½¹ÍÐÉ••¹Ð€ô™½Éµ…Ñ5½Í½Ü¡¹•Ü…Ñ”¡…Ñ”¹¹½Ü ¤€´€ØÁ|ÀÀÀ€¬€Ì€¨€ØÀ€¨€ØÀ€¨€ÄÀÀÀ¤¤ì4(€½¹ÍÐÍÑ…±”€ô™½Éµ…Ñ5½Í½Ü¡¹•Ü…Ñ”¡…Ñ”¹¹½Ü ¤€´€ÜÌ€¨€ØÀ€¨€ØÀ€¨€ÄÀÀÀ€¬€Ì€¨€ØÀ€¨€ØÀ€¨€ÄÀÀÀ¤¤ì4(€½¹ÍÐ…É€ô€¡¥°‘…Ñ”°‰…‘”€ô€‰Ñ…Í¬µ‰…‘”´µ…±°ˆ¤€ôø€ˆñ…ÉÑ¥±”±…ÍÌõp‰Ñ…Í¬µ…É‘pˆøñÍÁ…¸±…ÍÌõpˆˆ€¬‰…‘”€¬€‰pˆûBKBãBÓB÷BøƒBËFB×Bðð½ÍÁ…¸øñ„±…ÍÌõp‰Ñ…Í¬µ…É‘}}Ñ¥Ñ±”µ±¥¹­pˆ¡É•˜õpˆ½Ñ…Í¬½Ù¥•Ü¼ˆ€¬¥€¬€‰pˆûBƒBÃBßFBÃBÇBûFBÃFF0Q•±•É…´·BÇBûFBÀð½„øñÀ±…ÍÌõp‰Ñ…Í¬µ…É‘}}‘•ÍpˆûBwFBÛB×BôƒBÇBûFƒB÷BÀAåÑ¡½¸ð½ÀøñÍÁ…¸±…ÍÌõp‰Ñ…Í¬µ¡¥À´µ…ÑpˆûBƒBÃBßFBÃBÇBûFBëBÀƒBÇBûFBûBÈð½ÍÁ…¸øñ‘¥Ø±…ÍÌõp‰Ñ…Í¬µ…É‘}}‰Õ‘•ÑpˆøÄÀ€ÀÀÀƒŠ
+ôð½‘¥ØøñÍÁ…¸±…ÍÌõp‰Ñ…Í¬µ…É‘}}™½½Ðµ¥Ñ•µpˆÑ¥Ñ±”õpˆˆ€¬‘…Ñ”€¬€‰pˆûB‡B×BÏBûBÓB÷F<ð½ÍÁ…¸øð½…ÉÑ¥±”øˆì4(€½¹ÍÐ±¥ÍÑ¥¹Ì€ôÁ…ÉÍ•É••±…¹•IÕQ…Í­Ì¡…É ÄÈ°É••¹Ð¤€¬…É ÄÌ°ÍÑ…±”¤€¬…É ÄÐ°É••¹Ð°€‰Ñ…Í¬µ‰…‘”´µÁÉ•µ¥Õ´ˆ¤¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡±¥ÍÑ¥¹Ì¹±•¹Ñ °€Ä¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡±¥ÍÑ¥¹ÍlÁt¹¥°€ˆÄÈˆ¤ì4(€…ÍÍ•ÉÐ¹•ÅÕ…°¡±¥ÍÑ¥¹ÍlÁt¹ÕÉ°°€‰¡ÑÑÁÌè¼½™É••±…¹”¹ÉÔ½Ñ…Í¬½Ù¥•Ü¼ÄÈˆ¤ì4(€…ÍÍ•ÉÐ¹µ…Ñ ¡±¥ÍÑ¥¹ÍlÁt¹‘•ÍÉ¥ÁÑ¥½¸°€¿BƒBÃBßFBÃBÇBûFBëBÀƒBÇBûFBûBÈ¼¤ì4(€…ÍÍ•ÉÐ¹µ…Ñ ¡±¥ÍÑ¥¹ÍlÁt¹‘•ÍÉ¥ÁÑ¥½¸°€¼ÄÀ€ÀÀÀƒŠ
+ô¼¤ì4)ô¤ì4(4)Ñ•ÍÐ ‰µ…¹Õ…°Í…¸™•Ñ¡•Ì…¹Í…Ù•Ì™É•Í 0¹ÉÔIMLÁÉ½©•ÑÌˆ°…Íå¹Œ€ ¤€ôøì4(€½¹ÍÐ½É¥¥¹…±•Ñ €ô±½‰…±Q¡¥Ì¹™•Ñ ì4(€½¹ÍÐÁÕ‰±¥Í¡•€ô¹•Ü…Ñ”¡…Ñ”¹¹½Ü ¤€´€ØÁ|ÀÀÀ¤¹Ñ½UQMÑÉ¥¹œ ¤ì4(€½¹ÍÐáµ°€ô€ˆñÉÍÌøñ¡…¹¹•°øñ¥Ñ•´øñÑ¥Ñ±”ùAåÑ¡½¸Q•±•É…´‰½Ðð½Ñ¥Ñ±”øñ±¥¹¬ù¡ÑÑÁÌè¼½ÝÝÜ¹™°¹ÉÔ½ÁÉ½©•ÑÌ¼ÌÌÐÐÔÔ¼ð½±¥¹¬øñ‘•ÍÉ¥ÁÑ¥½¸ù9••„AåÑ¡½¸Q•±•É…´‰½Ð¸	Õ‘•Ð€ÔÀÀUM¸ð½‘•ÍÉ¥ÁÑ¥½¸øñÁÕ‰…Ñ”øˆ€¬ÁÕ‰±¥Í¡•€¬€ˆð½ÁÕ‰…Ñ”øð½¥Ñ•´øð½¡…¹¹•°øð½ÉÍÌøˆì4(€±½‰…±Q¡¥Ì¹™•Ñ €ô…Íå¹Œ¥¹ÁÕÐ€ôøì4(€€€…ÍÍ•ÉÐ¹•ÅÕ…°¡MÑÉ¥¹œ¡¥¹ÁÕÐ¤°€‰¡ÑÑÁÌè¼½ÝÝÜ¹™°¹ÉÔ½ÉÍÌ½…±°¹áµ°ˆ¤ì4(€€€É•ÑÕÉ¸¹•ÜI•ÍÁ½¹Í”¡áµ°°ìÍÑ…ÑÕÌè€ÈÀÀ°¡•…‘•ÉÌèì€‰½¹Ñ•¹ÐµQåÁ”ˆè€‰…ÁÁ±¥…Ñ¥½¸½ÉÍÌ­áµ°ˆôô¤ì4(€ôì4(€½¹ÍÐÁÉ½©•Ñ%¹Í•ÉÑÌ€ômtì4(€ÑÉäì4(€€€½¹ÍÐÉ•ÍÁ½¹Í”€ô…Ý…¥ÐÝ½É­•È¹™•Ñ ¡¹•ÜI•ÅÕ•ÍÐ ‰¡ÑÑÁÌè¼½…Á¤¹•á…µÁ±”½…•¹Ð½Í…¸ˆ°ì4(€€€€€µ•Ñ¡½è€‰A=MPˆ°4(€€€€€¡•…‘•ÉÌèì½½­¥”è€‰™¡}Í•ÍÍ¥½¸õÑ•ÍÐµÍ•ÍÍ¥½¸µÑ½­•¸ˆ°€‰½¹Ñ•¹ÐµQåÁ”ˆè€‰…ÁÁ±¥…Ñ¥½¸½©Í½¸ˆô°4(€€€€€‰½‘äè€‰íôˆ4(€€€ô¤°ìè™…­•ˆ¡ìµ…É­•ÑÁ±…•M½ÕÉ”è€‰™±}ÉÔˆ°ÁÉ½©•Ñ%¹Í•ÉÑÌô¤ô¤ì4(€€€…ÍÍ•ÉÐ¹•ÅÕ…°¡É•ÍÁ½¹Í”¹ÍÑ…ÑÕÌ°€ÈÀÀ¤ì4(€€€½¹ÍÐÉ•ÍÕ±Ð€ô…Ý…¥ÐÉ•ÍÁ½¹Í”¹©Í½¸ ¤ì4(€€€…ÍÍ•ÉÐ¹•ÅÕ…°¡É•ÍÕ±Ð¹Í…¹¹•‘M½ÕÉ•Ì°€Ä¤ì4(€€€…ÍÍ•ÉÐ¹•ÅÕ…°¡É•ÍÕ±Ð¹¹•ÝAÉ½©•ÑÌ°€Ä¤ì4(€€€…ÍÍ•ÉÐ¹‘••ÁÅÕ…°¡É•ÍÕ±Ð¹•ÉÉ½ÉÌ°mt¤ì4(€€€…ÍÍ•ÉÐ¹•ÅÕ…°¡ÁÉ½©•Ñ%¹Í•ÉÑÍlÁt¹Ù…±Õ•ÍlÅt°€‰™±}ÉÔˆ¤ì4(€€€…ÍÍ•ÉÐ¹•ÅÕ…°¡ÁÉ½©•Ñ%¹Í•ÉÑÍlÁt¹Ù…±Õ•ÍlÍt°€‰¡ÑÑÁÌè¼½ÝÝÜ¹™°¹ÉÔ½ÁÉ½©•ÑÌ¼ÌÌÐÐÔÔ¼ˆ¤ì4(€ô™¥¹…±±äì4(€€€±½‰…±Q¡¥Ì¹™•Ñ €ô½É¥¥¹…±•Ñ ì4(€ô4)ô¤ì4(4)Ñ•ÍÐ ‰µ…¹Õ…°Í…¸™•Ñ¡•Ì½¹±äÁÕ‰±¥ŒÉ••±…¹”¹ÉÔÑ…Í­Ìˆ°…Íå¹Œ€ ¤€ôøì4(€½¹ÍÐ½É¥¥¹…±•Ñ €ô±½‰…±Q¡¥Ì¹™•Ñ ì4(€½¹ÍÐµ½Í½Ü€ô¹•Ü…Ñ”¡…Ñ”¹¹½Ü ¤€´€ØÁ|ÀÀÀ€¬€Ì€¨€ØÀ€¨€ØÀ€¨€ÄÀÀÀ¤ì4(€½¹ÍÐ‘…Ñ”€ômMÑÉ¥¹œ¡µ½Í½Ü¹•ÑUQ…Ñ” ¤¤¹Á…‘MÑ…ÉÐ È°€ˆÀˆ¤°MÑÉ¥¹œ¡µ½Í½Ü¹•ÑUQ5½¹Ñ  ¤€¬€Ä¤¹Á…‘MÑ…ÉÐ È°€ˆÀˆ¤°µ½Í½Ü¹•ÑUQÕ±±e•…È ¥t¹©½¥¸ ˆ¸ˆ¤€¬€ˆ€ˆ€¬MÑÉ¥¹œ¡µ½Í½Ü¹•ÑUQ!½ÕÉÌ ¤¤¹Á…‘MÑ…ÉÐ È°€ˆÀˆ¤€¬€ˆèˆ€¬MÑÉ¥¹œ¡µ½Í½Ü¹•ÑUQ5¥¹ÕÑ•Ì ¤¤¹Á…‘MÑ…ÉÐ È°€ˆÀˆ¤ì4(€½¹ÍÐ¡Ñµ°€ô€ˆñ…ÉÑ¥±”±…ÍÌõp‰Ñ…Í¬µ…É‘pˆøñÍÁ…¸±…ÍÌõp‰Ñ…Í¬µ‰…‘”´µ…±±pˆûBKBãBÓB÷BøƒBËFB×Bðð½ÍÁ…¸øñ„±…ÍÌõp‰Ñ…Í¬µ…É‘}}Ñ¥Ñ±”µ±¥¹­pˆ¡É•˜õpˆ½Ñ…Í¬½Ù¥•Ü¼ÔÔØØÜÝpˆùAåÑ¡½¸Q•±•É…´‰½Ðð½„øñÀ±…ÍÌõp‰Ñ…Í¬µ…É‘}}‘•Ípˆù9••„AåÑ¡½¸Q•±•É…´‰½Ð¸	Õ‘•Ð€ÔÀÀUM¸ð½ÀøñÍÁ…¸±…ÍÌõp‰Ñ…Í¬µ¡¥À´µ…Ñpˆù•Ù•±½Áµ•¹Ðð½ÍÁ…¸øñ‘¥Ø±…ÍÌõp‰Ñ…Í¬µ…É‘}}‰Õ‘•ÑpˆøÔÀÀUMð½‘¥ØøñÍÁ…¸±…ÍÌõp‰Ñ…Í¬µ…É‘}}™½½Ðµ¥Ñ•µpˆÑ¥Ñ±”õpˆˆ€¬‘…Ñ”€¬€‰pˆùQ½‘…äð½ÍÁ…¸øð½…ÉÑ¥±”øˆì4(€±½‰…±Q¡¥Ì¹™•Ñ €ô…Íå¹Œ¥¹ÁÕÐ€ôøì4(€€€…ÍÍ•ÉÐ¹•ÅÕ…°¡MÑÉ¥¹œ¡¥¹ÁÕÐ¤°€‰¡ÑÑÁÌè¼½™É••±…¹”¹ÉÔ½Ñ…Í¬ˆ¤ì4(€€€É•ÑÕÉ¸¹•ÜI•ÍÁ½¹Í”¡¡Ñµ°°ìÍÑ…ÑÕÌè€ÈÀÀ°¡•…‘•ÉÌèì€‰½¹Ñ•¹ÐµQåÁ”ˆè€‰Ñ•áÐ½¡Ñµ°ˆôô¤ì4(€ôì4(€½¹ÍÐÁÉ½©•Ñ%¹Í•ÉÑÌ€ômtì4(€ÑÉäì4(€€€½¹ÍÐÉ•ÍÁ½¹Í”€ô…Ý…¥ÐÝ½É­•È¹™•Ñ ¡¹•ÜI•ÅÕ•ÍÐ ‰¡ÑÑÁÌè¼½…Á¤¹•á…µÁ±”½…•¹Ð½Í…¸ˆ°ì4(€€€€€µ•Ñ¡½è€‰A=MPˆ°4(€€€€€¡•…‘•ÉÌèì½½­¥”è€‰™¡}Í•ÍÍ¥½¸õÑ•ÍÐµÍ•ÍÍ¥½¸µÑ½­•¸ˆ°€‰½¹Ñ•¹ÐµQåÁ”ˆè€‰…ÁÁ±¥…Ñ¥½¸½©Í½¸ˆô°4(€€€€€‰½‘äè€‰íôˆ4(€€€ô¤°ìè™…­•ˆ¡ìµ…É­•ÑÁ±…•M½ÕÉ”è€‰™É••±…¹•}ÉÔˆ°ÁÉ½©•Ñ%¹Í•ÉÑÌô¤ô¤ì4(€€€…ÍÍ•ÉÐ¹•ÅÕ…°¡É•ÍÁ½¹Í”¹ÍÑ…ÑÕÌ°€ÈÀÀ¤ì4(€€€½¹ÍÐÉ•ÍÕ±Ð€ô…Ý…¥ÐÉ•ÍÁ½¹Í”¹©Í½¸ ¤ì4(€€€…ÍÍ•ÉÐ¹•ÅÕ…°¡É•ÍÕ±Ð¹Í…¹¹•‘M½ÕÉ•Ì°€Ä¤ì4(€€€…ÍÍ•ÉÐ¹•ÅÕ…°¡É•ÍÕ±Ð¹¹•ÝAÉ½©•ÑÌ°€Ä¤ì4(€€€…ÍÍ•ÉÐ¹‘••ÁÅÕ…°¡É•ÍÕ±Ð¹•ÉÉ½ÉÌ°mt¤ì4(€€€…ÍÍ•ÉÐ¹•ÅÕ…°¡ÁÉ½©•Ñ%¹Í•ÉÑÍlÁt¹Ù…±Õ•ÍlÅt°€‰™É••±…¹•}ÉÔˆ¤ì4(€€€…ÍÍ•ÉÐ¹•ÅÕ…°¡ÁÉ½©•Ñ%¹Í•ÉÑÍlÁt¹Ù…±Õ•ÍlÍt°€‰¡ÑÑÁÌè¼½™É••±…¹”¹ÉÔ½Ñ…Í¬½Ù¥•Ü¼ÔÔØØÜÜˆ¤ì4(€ô™¥¹…±±äì4(€€€±½‰…±Q¡¥Ì¹™•Ñ €ô½É¥¥¹…±•Ñ ì4(€ô4)ô¤ì4
