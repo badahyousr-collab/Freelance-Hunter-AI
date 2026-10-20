@@ -330,7 +330,8 @@ export function detectProjectTimeline(value: unknown): string {
 }
 
 export function detectProjectLanguage(value: unknown): string {
-  const text = String(value ?? "").toLocaleLowerCase();
+  // Hashtags are often cross-language keywords, so exclude them when identifying the listing language.
+  const text = String(value ?? "").toLocaleLowerCase().replace(/#[\p{L}\p{N}_]+/gu, " ");
   // Ukrainian uses letters that are absent from Russian, but short posts may
   // not contain one. Common Ukrainian function words cover those cases.
   if (/[іїєґ]/u.test(text) || /(^|[^\p{L}])(потрібно|шукаю|можемо|допомогти|проєкт|будь ласка|термін|виконати|замовник|роботи|зробити)(?=$|[^\p{L}])/u.test(text)) return "uk";
@@ -390,6 +391,18 @@ export function proposalValidationIssue(value: unknown, language: string, profil
     if (["es", "fr", "de", "pt", "it"].includes(language) && detectProjectLanguage(text) !== language) return "language";
   }
   if (/(^|[^\p{L}])(у меня есть опыт|мой опыт|опыт работы|я работал[а]?|в одном проекте|я разработал[а]?|я создал[а]?|я реализовал[а]?|я исправил[а]?|я написал[а]?|я настроил[а]?|я тестировал[а]?|маю досвід|мій досвід|досвід роботи|я працював|я працювала|в одному проєкті|я розробив|я створив|я виправив|я написав|я налаштував|я тестував|i have experience|i have (?:extensive|significant|substantial|proven) experience|(?:extensive|significant|substantial|proven) experience(?: (?:in|with|building|developing))?|i have \d+ years? of experience|i (?:routinely|regularly|consistently) (?:deliver|complete|finish|meet deadlines|communicate)|my experience|i worked|i have worked|in one project|i developed|i created|i implemented|i wrote|i built|i fixed|i configured|i tested)(?=$|[^\p{L}])/iu.test(text)) return "unsupported_experience";
+  const unsupportedPersonalClaimPatterns = [
+    /(^|[^\p{L}])(?:тр[её]х|четыр[её]х|пят[иью]|шест[иью]|сем[иью]|восьм[иью]|девят[иью]|десят[иью]|[0-9]{1,2})летн(?:им|ий|его|ей|яя|ее|ые|ых|ую|ым)?\s+опыт(?:ом|а)?(?=$|[^\p{L}])/iu,
+    /(^|[^\p{L}])[0-9]{1,2}(?:\+)?\s*(?:лет|года?)\s+(?:коммерческий\s+)?опыт(?:а|ом)?(?=$|[^\p{L}])/iu,
+    /(^|[^\p{L}])опыт(?:а|ом)?\s+от\s+[0-9]{1,2}\s+лет(?=$|[^\p{L}])/iu,
+    /(^|[^\p{L}])(?:готов|готова)\s+(?:присоединиться|выйти|начать|приступить|работать|переехать)(?=$|[^\p{L}])/iu,
+    /(^|[^\p{L}])(?:работать|работаю)\s+(?:в|из)\s+офисе(?=$|[^\p{L}])/iu,
+    /(^|[^\p{L}])в\s+офисе\s+[\p{L}-]+(?=$|[^\p{L}])/iu,
+    /начать работу в ближайшее время/iu,
+    /\b(?:i am|i'm)\s+(?:based in|located in|available to start|ready to (?:join|work|relocate))\b/iu,
+    /\b(?:work|working) from (?:the )?office\b/iu
+  ];
+  if (unsupportedPersonalClaimPatterns.some(pattern => pattern.test(text))) return "unsupported_experience";
   const listedSkills = (Array.isArray(profileSkills) ? profileSkills : []).map((skill) => String(skill).toLocaleLowerCase());
   const skillClaims: Array<{ pattern: RegExp; accepted: string[] }> = [
     { pattern: /(^|[^a-z0-9])php([^a-z0-9]|$)/iu, accepted: ["php"] },
