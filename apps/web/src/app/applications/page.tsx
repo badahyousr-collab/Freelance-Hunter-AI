@@ -46,7 +46,7 @@ export default function ApplicationsPage() {
       setSubmissionInputs(Object.fromEntries((data as Application[]).map((item) => [item.id, {
         budget_amount: item.project?.budget_max ? String(item.project.budget_max) : "",
         currency: ["UAH","RUB"].includes(String(item.project?.currency ?? "").toUpperCase()) ? String(item.project?.currency).toUpperCase() : "RUB",
-        days: "3",
+        days: "",
         safe_type: "employer"
       }])));
     } catch (caught) {
@@ -125,14 +125,14 @@ export default function ApplicationsPage() {
               {item.status === "awaiting_confirmation" && item.project?.source === "freelancehunt" && (
                 <div className="sub-form" style={{ marginTop: 12, maxWidth: 560 }}>
                   <label htmlFor={"bid-amount-" + item.id}>Сумма отклика (UAH или RUB)</label>
-                  <input id={"bid-amount-" + item.id} className="sub-input" type="number" min="1" step="0.01" value={submissionInputs[item.id]?.budget_amount ?? ""} onChange={event => setSubmissionInputs(current => ({...current,[item.id]:{...(current[item.id] ?? {budget_amount:"",currency:"RUB",days:"3",safe_type:"employer"}),budget_amount:event.target.value}}))} />
+                  <input id={"bid-amount-" + item.id} className="sub-input" type="number" min="1" step="0.01" value={submissionInputs[item.id]?.budget_amount ?? ""} onChange={event => setSubmissionInputs(current => ({...current,[item.id]:{...(current[item.id] ?? {budget_amount:"",currency:"RUB",days:"",safe_type:"employer"}),budget_amount:event.target.value}}))} />
                   <label htmlFor={"bid-currency-" + item.id}>Валюта</label>
-                  <select id={"bid-currency-" + item.id} className="sub-input" value={submissionInputs[item.id]?.currency ?? "RUB"} onChange={event => setSubmissionInputs(current => ({...current,[item.id]:{...(current[item.id] ?? {budget_amount:"",currency:"RUB",days:"3",safe_type:"employer"}),currency:event.target.value}}))}><option value="RUB">RUB</option><option value="UAH">UAH</option></select>
+                  <select id={"bid-currency-" + item.id} className="sub-input" value={submissionInputs[item.id]?.currency ?? "RUB"} onChange={event => setSubmissionInputs(current => ({...current,[item.id]:{...(current[item.id] ?? {budget_amount:"",currency:"RUB",days:"",safe_type:"employer"}),currency:event.target.value}}))}><option value="RUB">RUB</option><option value="UAH">UAH</option></select>
                   <label htmlFor={"bid-days-" + item.id}>Срок выполнения, дней</label>
-                  <input id={"bid-days-" + item.id} className="sub-input" type="number" min="1" max="365" step="1" value={submissionInputs[item.id]?.days ?? "3"} onChange={event => setSubmissionInputs(current => ({...current,[item.id]:{...(current[item.id] ?? {budget_amount:"",currency:"RUB",days:"3",safe_type:"employer"}),days:event.target.value}}))} />
+                  <input id={"bid-days-" + item.id} className="sub-input" type="number" min="1" max="365" step="1" required value={submissionInputs[item.id]?.days ?? ""} onChange={event => setSubmissionInputs(current => ({...current,[item.id]:{...(current[item.id] ?? {budget_amount:"",currency:"RUB",days:"",safe_type:"employer"}),days:event.target.value}}))} />
                   <label htmlFor={"bid-safe-" + item.id}>Тип оплаты</label>
-                  <select id={"bid-safe-" + item.id} className="sub-input" value={submissionInputs[item.id]?.safe_type ?? "employer"} onChange={event => setSubmissionInputs(current => ({...current,[item.id]:{...(current[item.id] ?? {budget_amount:"",currency:"RUB",days:"3",safe_type:"employer"}),safe_type:event.target.value}}))}><option value="employer">Безопасная сделка, комиссия работодателя</option><option value="developer">Безопасная сделка, комиссия исполнителя</option><option value="split">Комиссия пополам</option><option value="null">Прямая оплата</option><option value="employer_cashless">Безопасная сделка для юрлиц</option></select>
-                  <button className="sub-button primary" type="button" disabled={actionId===item.id || savingId===item.id || !submissionInputs[item.id]?.budget_amount} onClick={() => void submitFreelancehunt(item)}><Send size={14}/>{actionId===item.id ? "Отправляем…" : "Подтвердить и отправить через Freelancehunt"}</button>
+                  <select id={"bid-safe-" + item.id} className="sub-input" value={submissionInputs[item.id]?.safe_type ?? "employer"} onChange={event => setSubmissionInputs(current => ({...current,[item.id]:{...(current[item.id] ?? {budget_amount:"",currency:"RUB",days:"",safe_type:"employer"}),safe_type:event.target.value}}))}><option value="employer">Безопасная сделка, комиссия работодателя</option><option value="developer">Безопасная сделка, комиссия исполнителя</option><option value="split">Комиссия пополам</option><option value="null">Прямая оплата</option><option value="employer_cashless">Безопасная сделка для юрлиц</option></select>
+                  <button className="sub-button primary" type="button" disabled={actionId===item.id || savingId===item.id || !submissionInputs[item.id]?.budget_amount || !submissionInputs[item.id]?.days} onClick={() => void submitFreelancehunt(item)}><Send size={14}/>{actionId===item.id ? "Отправляем…" : "Подтвердить и отправить через Freelancehunt"}</button>
                 </div>
               )}
               <div className="sub-actions">
@@ -151,3 +151,4 @@ export default function ApplicationsPage() {
     </section>
   </WorkspacePage>;
 }
+
