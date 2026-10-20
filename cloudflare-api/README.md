@@ -46,7 +46,7 @@ The website creates a single-use 9-digit Telegram code with a 10-minute expiry. 
 
 ## Marketplace credentials
 
-Freelancehunt is the only marketplace credential adapter currently enabled. FL.ru and Freelance.ru need no credentials for their public discovery feeds. Set `INTEGRATION_ENCRYPTION_KEY` as a Cloudflare Worker secret before connecting a Freelancehunt token. It must contain at least 32 characters. Generate a strong random value with `python -c "import secrets; print(secrets.token_urlsafe(48))"`. Tokens are validated against the official API and encrypted with AES-GCM before they are stored. Losing the key makes saved tokens unrecoverable. Never put the token or encryption key in frontend variables or Git.
+Freelancehunt is the only marketplace credential adapter currently enabled. FL.ru and Freelance.ru need no credentials for their public discovery feeds. Set `INTEGRATION_ENCRYPTION_KEY` as a Cloudflare Worker secret before connecting a token. It must contain at least 32 characters. Generate a strong random value with `python -c "import secrets; print(secrets.token_urlsafe(48))"`. Tokens are validated against the official API and encrypted with AES-GCM before they are stored. Losing the key makes saved tokens unrecoverable. Never put the token or encryption key in frontend variables or Git.
 
 ## AI proposal drafting
 
@@ -66,4 +66,3 @@ For the Cloudflare-native webhook bot, configure these as **Worker secrets** (no
 The website registration/login flow creates a one-time 9-digit code. Open the bot, press Start, then send the code as a normal message - no `/link` command is needed for authentication. The website provides a copy-code button and lets the user refresh an expired or rejected code. Registration detects an already-linked Telegram account and shows an error on both the bot and website; use the login page for an existing account. The bot exposes `/stats`, `/projects`, `/pause`, `/resume`, and `/help`. It provides a short summary of recent orders and application counts. Proposal drafts can be edited and prepared for submission or closed. Freelancehunt applications are marked sent only after the provider returns a bid ID. Client attempts to set `sent` or `replied` directly are rejected. Add public Telegram sources in the Sources page; scans run when the agent starts and every 15 minutes while it is enabled.
 
 If a bot token has been pasted into chat, a ticket, or source control, revoke it in `@BotFather` and use a newly issued token only as a deployment secret.
-
