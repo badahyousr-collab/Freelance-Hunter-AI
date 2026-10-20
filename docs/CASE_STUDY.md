@@ -13,7 +13,7 @@ Freelance requests are scattered across channels and platforms. Manually reviewi
 - Telegram-only sign-in with a short-lived one-time code and HTTP-only session cookie.
 - User-scoped workspace data for projects, source subscriptions, profiles, agent settings, integrations, and applications.
 - Public Telegram preview ingestion with normalized listing records, duplicate prevention, source health fields, and a scheduled scan trigger.
-- A curated list of nine public Telegram channels for developer work, no-code, IT freelance, and broader freelance listings. A listed channel is not considered verified until a real scan succeeds.
+- A curated list of ten public Telegram channels for developer work, no-code, IT freelance, and broader freelance listings. The production scan verified @FreelancehuntProjects; each other channel still needs its own scan evidence.
 - Explainable matching scores with language, budget, excluded-keyword, unpaid-work, risk, and complexity signals.
 - RU/EN proposal drafting through an OpenAI-compatible endpoint. Prompts treat listing text as untrusted and instruct the model not to invent experience or credentials.
 - Editable proposal drafts and an awaiting-confirmation workflow. The application is never marked as sent without a verified provider result.
