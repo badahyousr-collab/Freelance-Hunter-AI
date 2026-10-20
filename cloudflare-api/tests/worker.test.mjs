@@ -35,6 +35,8 @@ test("proposal validation rejects unsupported English experience and reliability
   assert.equal(proposalValidationIssue("I have extensive experience building full-stack applications with React, Next.js, Node.js, FastAPI, and Django.", "en", skills), "unsupported_experience");
   assert.equal(proposalValidationIssue("I routinely deliver projects on time.", "en", skills), "unsupported_experience");
   assert.equal(proposalValidationIssue("I can use React and Next.js to build the interface for your project.", "en", skills), null);
+  assert.equal(proposalValidationIssue("Здравствуйте! Я обладаю более чем трёхлетним опытом тестирования мобильных приложений iOS и Android. Я готов присоединиться к команде в офисе Тбилиси и начать работу в ближайшее время.", "ru", ["Тестирование", "отладка", "CI/CD"]), "unsupported_experience");
+  assert.equal(proposalValidationIssue("Здравствуйте! Могу помочь с тестированием. Уточните, возможна ли удалённая работа и какие сроки Вы рассматриваете?", "ru", ["Тестирование"]), null);
 });
 
 test("AI readiness check reserves enough completion tokens for visible text", async () => {
