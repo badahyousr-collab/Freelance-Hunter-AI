@@ -137,6 +137,10 @@ test("source catalog can connect FL.ru and Freelance.ru as draft-only sources", 
   });
 
   await page.goto("/sources");
+  const marketplaceAccordion = page.locator(".source-group-summary").filter({ hasText: "Фриланс-биржи" });
+  await expect(marketplaceAccordion).toContainText("0 из 3 подключено");
+  await expect(page.locator("article.sub-list-row").filter({ hasText: "FL.ru" })).toBeHidden();
+  await marketplaceAccordion.click();
   await expect(page.locator("article.sub-list-row").filter({ hasText: "FL.ru" })).toBeVisible();
   await expect(page.locator("article.sub-list-row").filter({ hasText: "Freelance.ru" })).toBeVisible();
   await expect(page.getByText(/без регистрации/)).toBeVisible();

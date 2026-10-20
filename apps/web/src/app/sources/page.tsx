@@ -137,12 +137,16 @@ export default function SourcesPage() {
   const marketplaceChecking = loading && integrations.length === 0;
   const marketplaceSources = catalog.filter(item => item.kind === "marketplace");
   const configuredMarketplaces = new Set(items.filter(item => item.source !== "telegram").map(item => item.source));
+  const connectedMarketplaceCount = Number(marketplaceConnected) + marketplaceSources.filter(item => configuredMarketplaces.has(item.source)).length;
 
   return <WorkspacePage title="Источники" subtitle="Подключай фриланс-биржи и публичные Telegram-каналы для поиска заказов.">
     {error && <div className="sub-alert error" role="alert">{error}</div>}
     {message && <div className="sub-alert" role="status">{message}</div>}
 
     <section className="content-card">
+      <details className="source-group-accordion">
+        <summary className="source-group-summary"><span><strong>Фриланс-биржи</strong><small>{connectedMarketplaceCount} из {marketplaceSources.length + 1} подключено · настройки и подключение</small></span><ChevronDown className="source-chevron" size={16} aria-hidden="true"/></summary>
+        <div className="source-group-content">
       <div className="panel-heading"><div><h2>Фриланс-биржи</h2><p>FL.ru и Freelance.ru ищутся по публичным объявлениям без регистрации. Чтобы отправить подготовленный AI черновик, войди в свой аккаунт на бирже.</p></div><Workflow size={18}/></div>
       <div className="sub-list">
         <article className="sub-list-row">
@@ -167,6 +171,8 @@ export default function SourcesPage() {
           </article>;
         })}
       </div>
+        </div>
+      </details>
     </section>
 
     <section className="content-card">
