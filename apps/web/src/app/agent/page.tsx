@@ -9,11 +9,13 @@ const API = "/api/backend";
 type AgentSettings = { enabled: boolean; auto_draft?: boolean; auto_submit?: boolean; daily_submission_limit?: number; telegram_linked: boolean; notify_application_updates?: boolean };
 export default function AgentPage() {
   const [agent, setAgent] = useState<AgentSettings | null>(null);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
 
   async function load() {
+    setLoading(true);
     setError("");
     try {
       const rs = await Promise.all([
@@ -25,6 +27,8 @@ export default function AgentPage() {
       setAgent(a);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Ошибка соединения с API");
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -153,32 +157,37 @@ export default function AgentPage() {
     } finally { setBusy(false); }
   }
 
+  const statusLabel = agent ? agent.enabled ? "Включён" : "Приостановлен" : loading ? "Загрузка состояния…" : "Состояние недоступно";
+  const toggleLabel = busy ? "Сохраняем…" : loading ? "Загружаем состояние…" : agent ? agent.enabled ? "Приостановить агента" : "Включить агента" : "Агент недоступен";
+
   return <WorkspacePage title="AI-агент" subtitle="Управляй поиском заказов, подготовкой и отправкой откликов.">
     {error && <div className="sub-alert error">{error}</div>}
     {message && <div className="sub-alert">{message}</div>}
     <section className="content-card">
-      <div className="panel-heading"><div><h2><Bot size={17} style={{ verticalAlign: "middle", marginRight: 8 }} />Управление агентом</h2><p>Состояние управляет плановым сканированием включённых источников пользователя.</p></div><span className={"sub-badge " + (agent?.enabled ? "" : "pending")}>{agent?.enabled ? "Включён" : "Приостановлен"}</span></div>
-      <button className={"sub-button " + (agent?.enabled ? "danger" : "primary")} style={{ marginTop: 16 }} disabled={busy || !agent} onClick={() => void toggle()}>
-        {agent?.enabled ? <Pause size={15} /> : <Play size={15} />}{busy ? "Сохраняем…" : agent?.enabled ? "Приостановить агента" : "Включить агента"}
+      <div className="panel-heading"><div><h2><Bot size={17} style={{ verticalAlign: "middle", marginRight: 8 }} />Управление агентом</h2><p>Состояние управляет плановым сканированием включённых источников пользователя.</p></div><span aria-live="polite" className={"sub-badge " + (agent?.enabled ? "" : "pending")}>{statusLabel}</span></div>
+      <button className={"sub-button " + (agent?.enabled ? "danger" : "primary")} style={{ marginTop: 16 }} disabled={busy || loading || !agent} onClick={() => void toggle()}>
+        {agent?.enabled ? <Pause size={15} /> : <Play size={15} />}{toggleLabel}
       </button>
+      {!agent && !loading && <button className="sub-button" style={{ marginTop: 8 }} onClick={() => void load()}>Повторить загрузку</button>}
       <p style={{ marginTop: 12 }}>После запуска агент проверяет подключённые источники и продолжает искать подходящие заказы по расписанию.</p>
       <button className="sub-button" style={{ marginTop: 8 }} disabled={busy || !agent} onClick={() => void testAi()}>Проверить AI</button>
       <label style={{ display: "flex", alignItems: "flex-start", gap: 10, marginTop: 16 }}>
-        <input type="checkbox" checked={Boolean(agent?.auto_draft)} disabled={busy || !agent} onChange={() => void toggleAutoDraft()} />
+        <input type="checkbox" checked={agent ? Boolean(agent.auto_draft) : false} disabled={busy || loading || !agent} onChange={() => void toggleAutoDraft()} />
         <span><strong>Автоматически готовить отклики</strong><br/><span className="sub-muted">AI пишет персональные сообщения для свежих подходящих заказов. Там, где подключённый адаптер поддерживает отправку, агент может отправить их сам.</span></span>
       </label>
       <label style={{ display: "flex", alignItems: "flex-start", gap: 10, marginTop: 12 }}>
-        <input type="checkbox" checked={Boolean(agent?.auto_submit ?? true)} disabled={busy || !agent} onChange={() => void toggleAutoSubmit()} />
+        <input type="checkbox" checked={agent ? Boolean(agent.auto_submit ?? true) : false} disabled={busy || loading || !agent} onChange={() => void toggleAutoSubmit()} />
         <span><strong>Автоматически отправлять отклики</strong><br/><span className="sub-muted">Без подтверждения каждой заявки. Сейчас отправка реализуется через официальный API Freelancehunt; для Telegram-публикаций и неподключённых бирж доступна только подготовка текста.</span></span>
       </label>
       <label style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 12 }}>
         <span><strong>Лимит отправок в сутки</strong><br/><span className="sub-muted">Для подключённых бирж с поддержкой отправки.</span></span>
-        <select value={agent?.daily_submission_limit ?? 10} disabled={busy || !agent} onChange={e => void changeDailyLimit(Number(e.target.value))} style={{ marginLeft: "auto", minWidth: 90 }}>
+        <select value={agent ? agent.daily_submission_limit ?? 10 : ""} disabled={busy || loading || !agent} onChange={e => void changeDailyLimit(Number(e.target.value))} style={{ marginLeft: "auto", minWidth: 90 }}>
+          {!agent && <option value="">{loading ? "Загрузка…" : "Недоступно"}</option>}
           <option value={5}>5</option><option value={10}>10</option><option value={20}>20</option><option value={30}>30</option><option value={50}>50</option>
         </select>
       </label>
       <label style={{ display: "flex", alignItems: "flex-start", gap: 10, marginTop: 12 }}>
-        <input type="checkbox" checked={Boolean(agent?.notify_application_updates ?? true)} disabled={busy || !agent} onChange={() => void toggleApplicationUpdateNotifications()} />
+        <input type="checkbox" checked={agent ? Boolean(agent.notify_application_updates ?? true) : false} disabled={busy || loading || !agent} onChange={() => void toggleApplicationUpdateNotifications()} />
         <span><strong>Уведомлять об ответах на отклики в Telegram</strong><br/><span className="sub-muted">После ручной синхронизации Freelancehunt бот сообщит о подтверждённом отклонении отклика или выборе исполнителя.</span></span>
       </label>
     </section>

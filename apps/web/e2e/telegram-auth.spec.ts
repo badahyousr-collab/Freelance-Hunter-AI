@@ -316,6 +316,33 @@ test("AI agent starts a first scan and application reply notifications persist",
   await expect(page.getByRole("button", { name: "Приостановить агента" })).toBeVisible();
 });
 
+test("AI agent settings stay neutral until the saved state has loaded", async ({ page }) => {
+  await mockAuthenticatedAccount(page);
+  let releaseSettings!: () => void;
+  const settingsGate = new Promise<void>(resolve => { releaseSettings = resolve; });
+  await page.route("**/api/backend/agent/settings", async route => {
+    await settingsGate;
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ enabled: true, auto_draft: true, auto_submit: true, daily_submission_limit: 50, notify_application_updates: true, telegram_linked: true })
+    });
+  });
+
+  await page.goto("/agent");
+  await expect(page.getByText("Загрузка состояния…")).toBeVisible();
+  const autoSubmit = page.locator("label").filter({ hasText: "Автоматически отправлять отклики" }).locator("input");
+  const dailyLimit = page.locator("select");
+  await expect(autoSubmit).not.toBeChecked();
+  await expect(autoSubmit).toBeDisabled();
+  await expect(dailyLimit).toHaveValue("");
+  await expect(dailyLimit).toBeDisabled();
+
+  releaseSettings();
+  await expect(page.getByText("Включён", { exact: true })).toBeVisible();
+  await expect(autoSubmit).toBeChecked();
+  await expect(dailyLimit).toHaveValue("50");
+});
 test("integrations page offers only the verified Freelancehunt connection", async ({ page }) => {
   await mockAuthenticatedAccount(page);
   await page.route("**/api/backend/integrations/catalog", async route => {
