@@ -39,7 +39,8 @@ The public discovery adapters run on the existing 15-minute schedule when the AI
 - **Freelancer.com:** despite an official API, the User Agreement prohibits automated website/API access without express written permission and prohibits aggregating its listings with other websites' listings without that permission. It cannot be used as a source in this multi-marketplace dashboard without written permission. See https://www.freelancer.com/about/terms and https://www.freelancer.com/about/apiterms.
 - **Kwork:** its terms prohibit bots/robots and automated extraction or collection of marketplace data. See https://kwork.ru/terms_of_service.
 - **Fiverr:** its Terms of Service prohibit robots, scraping, or systematic collection of marketplace content and data. See https://www.fiverr.com/legal-portal/legal-terms/terms-of-service.
-- **Workana:** its Terms prohibit automated access and scripts for scraping or data mining. See https://www.workana.com/en/pages/view/terms.
+- **Workana:** its Terms prohibit automated access and scripts for scraping or data mining.
+- **Workzilla:** clause 3.5 of its user agreement prohibits third-party software directly or indirectly related to the site's services. Do not automate access or collection without written permission and an approved method. See https://work-zilla.com/users-agreement. See https://www.workana.com/en/pages/view/terms.
 - **PeoplePerHour / Guru.com:** no official, permitted public API for searching freelance jobs was verified. Guru's published developer API is for Guru's knowledge product, not Guru.com project listings. These stay unavailable until an official method and its terms are confirmed.
 
 Never use account passwords, session cookies, private APIs, anti-bot workarounds, or CAPTCHA bypasses for these sources. A platform stays unavailable until an official permitted access path is confirmed and tested.
