@@ -395,11 +395,12 @@ test("source creation has no arbitrary per-account limit", async () => {
 test("scheduled scan saves AI drafts and sends a fallback Telegram card when no supported sender can contact the employer", async () => {
   const originalFetch = globalThis.fetch;
   const telegramPayloads = [];
+  const aiRequests = [];
   const html = '<div class="tgme_widget_message_wrap" data-post="python_jobs/203"><div class="tgme_widget_message_text js-message_text" dir="auto">We need a Python developer for a freelance project. Budget 500 USD.</div><time datetime="2026-10-16T10:00:00+00:00"></time></div>';
   globalThis.fetch = async (input, init) => {
     const url = String(input);
     if (url.startsWith("https://t.me/s/python_jobs")) return new Response(html, { status: 200, headers: { "Content-Type": "text/html" } });
-    if (url.includes("/chat/completions")) return Response.json({ choices: [{ message: { content: "Hello! I can help build the Telegram bot in Python. What delivery timeframe do you have in mind?" } }] });
+    if (url.includes("/chat/completions")) { aiRequests.push(JSON.parse(init.body)); return Response.json({ choices: [{ message: { content: "Hello! I can help build the Telegram bot in Python. What delivery timeframe do you have in mind?" } }] }); }
     if (url.includes("api.telegram.org/botTEST_TOKEN/sendMessage")) { telegramPayloads.push(JSON.parse(init?.body ?? "{}")); return Response.json({ ok: true, result: { message_id: 77 } }); }
     return originalFetch(input, init);
   };
@@ -429,6 +430,9 @@ test("scheduled scan saves AI drafts and sends a fallback Telegram card when no 
     assert.match(telegramPayloads[0].text, /500 USD/);
     assert.match(telegramPayloads[0].text, /По договорённости/);
     assert.match(telegramPayloads[0].text, /Hello! I can help with the bot/);
+    const promptFacts = JSON.parse(aiRequests[0].messages[1].content).project;
+    assert.equal(promptFacts.budget_provided, true);
+    assert.match(aiRequests[0].messages[0].content, /when budget_provided is true, do not ask about budget, rate, price, or payment amount again/i);
     assert.equal(telegramPayloads[0].reply_markup.inline_keyboard[0][0].url, "https://t.me/client_person");
   } finally {
     globalThis.fetch = originalFetch;
@@ -1233,13 +1237,18 @@ test("proposal drafting creates language-matched, profile-grounded drafts", asyn
       assert.match(request.messages[0].content, /Never state or imply past projects, experience/i);
       assert.match(request.messages[0].content, /ask the client first what delivery date or timeframe they expect/i);
       assert.match(request.messages[0].content, /when both are missing, ask about timing before budget/i);
+      assert.match(request.messages[0].content, /when budget_provided is true, do not ask about budget, rate, price, or payment amount again/i);
+      assert.match(request.messages[0].content, /when deadline_provided is true, do not ask about delivery timing again/i);
       assert.match(request.messages[0].content, /Do not claim the proposal has been sent/i);
       assert.equal(request.messages[1].role, "user");
       const facts = JSON.parse(request.messages[1].content);
+      const expectedScenario = scenarios.find(item => item.project.title === facts.project.title);
       assert.deepEqual(facts.user_profile.skills, ["Python", "Telegram bots"]);
       assert.ok(facts.project.listing_url.startsWith("https://t.me/example/"));
       assert.equal(facts.project.expected_timeline, "По договорённости");
       assert.equal(facts.project.language, detectProjectLanguage(facts.project.title + "\n" + facts.project.description));
+      assert.equal(facts.project.budget_provided, expectedScenario.project.budget_min != null || expectedScenario.project.budget_max != null);
+      if (facts.project.budget_provided) assert.doesNotMatch(expectedScenario.draft, /budget|бюджет|бюджету/i);
     }
   } finally {
     globalThis.fetch = originalFetch;
