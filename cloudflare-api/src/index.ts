@@ -331,7 +331,7 @@ export function detectProjectTimeline(value: unknown): string {
 
 export function detectProjectLanguage(value: unknown): string {
   // Hashtags are often cross-language keywords, so exclude them when identifying the listing language.
-  const text = String(value ?? "").toLocaleLowerCase().replace(/#[\\p{L}\\p{N}_]+/gu, " ");
+  const text = String(value ?? "").toLocaleLowerCase().replace(/#[\p{L}\p{N}_]+/gu, " ");
   // Ukrainian uses letters that are absent from Russian, but short posts may
   // not contain one. Common Ukrainian function words cover those cases.
   if (/[іїєґ]/u.test(text) || /(^|[^\p{L}])(потрібно|шукаю|можемо|допомогти|проєкт|будь ласка|термін|виконати|замовник|роботи|зробити)(?=$|[^\p{L}])/u.test(text)) return "uk";
