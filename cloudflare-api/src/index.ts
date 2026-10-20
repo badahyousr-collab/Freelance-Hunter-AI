@@ -329,6 +329,42 @@ export function detectProjectTimeline(value: unknown): string {
   return "По договорённости";
 }
 
+export function bidDurationDays(value: unknown, now = new Date()): number | null {
+  const timeline = detectProjectTimeline(value);
+  if (timeline === "По договорённости") return null;
+
+  const dateMatch = /^до\s*(\d{1,2})[./-](\d{1,2})(?:[./-](\d{2,4}))?$/i.exec(timeline);
+  if (dateMatch) {
+    const day = Number(dateMatch[1]);
+    const month = Number(dateMatch[2]);
+    const rawYear = dateMatch[3];
+    const year = rawYear ? Number(rawYear.length === 2 ? `20${rawYear}` : rawYear) : now.getUTCFullYear();
+    const deadline = new Date(Date.UTC(year, month - 1, day));
+    if (deadline.getUTCFullYear() !== year || deadline.getUTCMonth() !== month - 1 || deadline.getUTCDate() !== day) return null;
+    const today = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+    const days = Math.ceil((deadline.getTime() - today) / 86_400_000);
+    return days >= 1 && days <= 365 ? days : null;
+  }
+
+  const durationMatch = /^(\d+)\s*(рабоч(?:ий|их|их\s+дней)?\s+)?(час(?:а|ов)?|ч\.?|д(?:ень|ня|ней|н\.)|сут(?:ки|ок)?|недел(?:я|ю|и|ь)|недель|day(?:s)?|hour(?:s)?|week(?:s)?|month(?:s)?)$/i.exec(timeline);
+  if (!durationMatch || durationMatch[2]) return null;
+  const amount = Number(durationMatch[1]);
+  const unit = durationMatch[3].toLowerCase();
+  if (!Number.isInteger(amount) || amount < 1) return null;
+  if (/^(?:час|ч\.?|hour)/i.test(unit) || /^(?:месяц|мес\.?|month)/i.test(unit)) return null;
+  const days = /^(?:недел|week)/i.test(unit) ? amount * 7 : amount;
+  return days <= 365 ? days : null;
+}
+
+export function freelancehuntAutoBidTerms(project: any, now = new Date()): { days: number; amount: number; currency: "UAH" | "RUB" } | null {
+  const days = bidDurationDays(project?.description, now);
+  const listedBudget = project?.budget_min ?? project?.budget_max;
+  const amount = Number(listedBudget);
+  const currency = String(project?.currency ?? "").toUpperCase();
+  if (!days || listedBudget === null || listedBudget === undefined || !Number.isFinite(amount) || amount <= 0 || !["UAH", "RUB"].includes(currency)) return null;
+  return { days, amount: Math.round(amount * 100) / 100, currency: currency as "UAH" | "RUB" };
+}
+
 export function findTelegramEmployerUsername(description: unknown, sourceProjectId = ""): string | null {
   const text = String(description ?? "");
   const sourceChannel = String(sourceProjectId).split(":")[0].replace(/^@/, "").toLowerCase();
@@ -832,14 +868,13 @@ async function scanFreelanceRuSource(env: Env, userId: string, source: any): Pro
   }
 }
 
-async function autoSubmitFreelancehuntProposal(env: Env, userId: string, applicationId: number, project: any, profile: any): Promise<boolean> {
+async function autoSubmitFreelancehuntProposal(env: Env, userId: string, applicationId: number, project: any): Promise<boolean> {
+  const bidTerms = freelancehuntAutoBidTerms(project);
+  if (!bidTerms) return false;
   const settings = await env.DB.prepare("SELECT auto_submit,daily_submission_limit FROM agent_settings WHERE user_id=?").bind(userId).first<any>();
   if (Number(settings?.auto_submit ?? 1) !== 1) return false;
   if (!env.INTEGRATION_ENCRYPTION_KEY || env.INTEGRATION_ENCRYPTION_KEY.trim().length < 32) return false;
   if (String(project.source) !== "freelancehunt" || !/^\d+$/.test(String(project.source_project_id ?? ""))) return false;
-  const amount = Number(project.budget_min ?? project.budget_max ?? profile.min_budget ?? 0);
-  const currency = String(project.currency ?? profile.currency ?? "").toUpperCase();
-  if (!Number.isFinite(amount) || amount <= 0 || !["UAH", "RUB"].includes(currency)) return false;
   const limit = Math.max(1, Math.min(50, Number(settings?.daily_submission_limit ?? 10)));
   const today = await env.DB.prepare("SELECT COUNT(*) AS total FROM applications WHERE user_id=? AND status IN ('sent','submitting','submission_unknown') AND (submitted_at >= date('now') OR (submitted_at IS NULL AND created_at >= date('now')))").bind(userId).first<any>();
   if (Number(today?.total ?? 0) >= limit) return false;
@@ -857,7 +892,7 @@ async function autoSubmitFreelancehuntProposal(env: Env, userId: string, applica
   try {
     const result = await freelancehuntApi(token, "/projects/" + String(project.source_project_id) + "/bids", {
       method: "POST",
-      body: JSON.stringify({ days: 7, budget: { amount: Math.round(amount * 100) / 100, currency }, safe_type: null, comment }),
+      body: JSON.stringify({ days: bidTerms.days, budget: { amount: bidTerms.amount, currency: bidTerms.currency }, safe_type: null, comment }),
       signal: AbortSignal.timeout(15000)
     });
     if (!result.response.ok) {
@@ -950,11 +985,10 @@ async function autoSubmitPendingFreelancehuntDrafts(env: Env, userId: string): P
   if (Number(settings?.is_enabled) !== 1 || Number(settings?.auto_submit ?? 1) !== 1) return 0;
   if (!env.INTEGRATION_ENCRYPTION_KEY || env.INTEGRATION_ENCRYPTION_KEY.trim().length < 32) return 0;
   const threshold = Math.max(0, Math.min(100, Number(settings.min_match_score ?? 60)));
-  const rows = await env.DB.prepare("SELECT a.id AS application_id,p.id,p.source,p.source_project_id,p.budget_min,p.budget_max,p.currency FROM applications a JOIN projects p ON p.id=a.project_id AND p.user_id=a.user_id WHERE a.user_id=? AND a.status='draft' AND p.source='freelancehunt' AND p.match_score>=? AND julianday(p.published_at) BETWEEN julianday('now','-3 days') AND julianday('now','+5 minutes') ORDER BY p.match_score DESC,p.published_at DESC LIMIT 10").bind(userId,threshold).all<any>();
-  const profile = await env.DB.prepare("SELECT min_budget,currency FROM profiles WHERE user_id=?").bind(userId).first<any>() ?? {};
+  const rows = await env.DB.prepare("SELECT a.id AS application_id,p.id,p.source,p.source_project_id,p.description,p.budget_min,p.budget_max,p.currency FROM applications a JOIN projects p ON p.id=a.project_id AND p.user_id=a.user_id WHERE a.user_id=? AND a.status='draft' AND p.source='freelancehunt' AND p.match_score>=? AND julianday(p.published_at) BETWEEN julianday('now','-3 days') AND julianday('now','+5 minutes') ORDER BY p.match_score DESC,p.published_at DESC LIMIT 10").bind(userId,threshold).all<any>();
   let submitted = 0;
   for (const project of rows.results ?? []) {
-    if (await autoSubmitFreelancehuntProposal(env,userId,Number(project.application_id),project,profile)) submitted += 1;
+    if (await autoSubmitFreelancehuntProposal(env,userId,Number(project.application_id),project)) submitted += 1;
   }
   return submitted;
 }
@@ -2113,5 +2147,6 @@ export default {
     ctx.waitUntil(runScheduledScan(env));
   }
 };
+
 
 
