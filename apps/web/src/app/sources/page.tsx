@@ -106,6 +106,24 @@ export default function SourcesPage() {
     } finally { setAddingChannel(""); }
   }
 
+  async function enableFreelancehuntSearch() {
+    const existing = items.find(item => item.source === "freelancehunt");
+    if (existing) {
+      if (!existing.is_enabled) await toggle(existing);
+      return;
+    }
+    setAddingChannel("freelancehunt"); setError(""); setMessage("");
+    try {
+      await saveSource("freelancehunt", "all");
+      setMessage("Поиск Freelancehunt подключён. Агент проверит новые проекты при следующем запуске по расписанию.");
+      await load();
+    } catch (e) {
+      const text = e instanceof Error ? e.message : "Не удалось подключить поиск Freelancehunt";
+      if (/already configured|already exists|уже настроен|уже добавлен/i.test(text)) setMessage("Поиск Freelancehunt уже подключён.");
+      else setError(text);
+    } finally { setAddingChannel(""); }
+  }
+
   async function toggle(item: Source) {
     setError("");
     try {
@@ -135,9 +153,10 @@ export default function SourcesPage() {
   const marketplace = integrations.find(item => item.provider === "freelancehunt");
   const marketplaceConnected = marketplace?.status === "connected";
   const marketplaceChecking = loading && integrations.length === 0;
-  const marketplaceSources = catalog.filter(item => item.kind === "marketplace");
+  const marketplaceSources = catalog.filter(item => item.kind === "marketplace" && item.source !== "freelancehunt");
   const configuredMarketplaces = new Set(items.filter(item => item.source !== "telegram").map(item => item.source));
-  const connectedMarketplaceCount = Number(marketplaceConnected) + marketplaceSources.filter(item => configuredMarketplaces.has(item.source)).length;
+  const freelancehuntSource = items.find(item => item.source === "freelancehunt");
+  const connectedMarketplaceCount = Number(Boolean(marketplaceConnected && freelancehuntSource?.is_enabled)) + marketplaceSources.filter(item => items.some(configured => configured.source === item.source && configured.is_enabled)).length;
 
   return <WorkspacePage title="Источники" subtitle="Подключай фриланс-биржи и публичные Telegram-каналы для поиска заказов.">
     {error && <div className="sub-alert error" role="alert">{error}</div>}
@@ -150,8 +169,8 @@ export default function SourcesPage() {
       <div className="panel-heading"><div><h2>Фриланс-биржи</h2><p>FL.ru и Freelance.ru ищутся по публичным объявлениям без регистрации. Чтобы отправить подготовленный AI черновик, войди в свой аккаунт на бирже.</p></div><Workflow size={18}/></div>
       <div className="sub-list">
         <article className="sub-list-row">
-          <div className="sub-list-main"><strong>Freelancehunt</strong><span>{marketplaceChecking ? "Проверяем подключение…" : marketplaceConnected ? "Подключён · агент ищет проекты и отправляет отклики через официальный API" : "Не подключён · добавь API-ключ для поиска и отправки откликов"}</span>{marketplaceChecking ? <span>Загружаем состояние подключения.</span> : marketplaceConnected ? <span>Подключение активно. Управляй API-ключом в настройках интеграций.</span> : <span>На Freelancehunt открой «Приложения и API», создай API-ключ и добавь его в настройках интеграций.</span>}</div>
-          <div className="sub-actions">{marketplaceChecking ? <span className="sub-muted">Проверяем…</span> : <>{!marketplaceConnected && <a className="sub-button" href="https://freelancehunt.com/my/api" target="_blank" rel="noreferrer"><ExternalLink size={14}/>Где взять API-токен</a>}<Link className="sub-button primary" href="/integrations">{marketplaceConnected ? "Настройки API" : "Подключить API"} ↗</Link></>}</div>
+          <div className="sub-list-main"><strong>Freelancehunt</strong><span>{marketplaceChecking ? "Проверяем подключение…" : !marketplaceConnected ? "API-токен не подключён" : freelancehuntSource?.is_enabled ? "Поиск подключён через официальный API" : freelancehuntSource ? "Поиск приостановлен" : "API-токен подключён · поиск не включён"}</span>{marketplaceChecking ? <span>Загружаем состояние подключения.</span> : marketplaceConnected ? <span>{freelancehuntSource?.is_enabled ? "Агент проверяет свежие проекты по расписанию. Автоотправка работает только при включённой настройке агента." : "Включи поиск, чтобы агент получал проекты с Freelancehunt. API-токен уже проверен."}</span> : <span>На Freelancehunt открой «Приложения и API», создай API-токен и добавь его в настройках интеграций.</span>}</div>
+          <div className="sub-actions">{marketplaceChecking ? <span className="sub-muted">Проверяем…</span> : !marketplaceConnected ? <><a className="sub-button" href="https://freelancehunt.com/my/api" target="_blank" rel="noreferrer"><ExternalLink size={14}/>Где взять API-токен</a><Link className="sub-button primary" href="/integrations">Подключить API ↗</Link></> : freelancehuntSource?.is_enabled ? <Link className="sub-button primary" href="/integrations">Настройки API ↗</Link> : <button className="sub-button primary" type="button" disabled={Boolean(addingChannel)} onClick={() => void enableFreelancehuntSearch()}><Plus size={14}/>{addingChannel === "freelancehunt" ? "Подключаем…" : freelancehuntSource ? "Включить поиск" : "Подключить поиск"}</button>}</div>
         </article>
         {marketplaceSources.map(source => {
           const configured = configuredMarketplaces.has(source.source);
@@ -159,12 +178,12 @@ export default function SourcesPage() {
           return <article className="sub-list-row" key={source.source}>
             <div className="sub-list-main">
               <strong>{source.label}</strong>
-              <span>{configured ? "Поиск подключён" : "Поиск можно подключить"} · публичные объявления не старше 72 часов</span>
+              <span>{!configured ? "Поиск можно подключить" : items.some(item => item.source === source.source && item.is_enabled) ? "Поиск подключён" : "Поиск приостановлен"} · публичные объявления не старше 72 часов</span>
               <span>{source.source === "fl_ru" ? "Сбор идёт из публичной RSS-ленты." : "Сбор идёт из публичного каталога заданий."} AI подготовит текст отклика; отправить его нужно вручную в аккаунте биржи.</span>
             </div>
             <div className="sub-actions">
               <a className="sub-button" href={externalUrl} target="_blank" rel="noreferrer"><ExternalLink size={14}/>Открыть биржу</a>
-              {configured ? <span className="sub-badge source-connected"><Check size={13}/>Поиск подключён</span> : <button className="sub-button primary" type="button" disabled={Boolean(addingChannel)} onClick={() => void addMarketplace(source)}>
+              {configured ? <span className="sub-badge source-connected"><Check size={13}/>{items.some(item => item.source === source.source && item.is_enabled) ? "Поиск подключён" : "Поиск на паузе"}</span> : <button className="sub-button primary" type="button" disabled={Boolean(addingChannel)} onClick={() => void addMarketplace(source)}>
                 <Plus size={14}/>{addingChannel === source.source ? "Подключаем…" : "Подключить поиск"}
               </button>}
             </div>

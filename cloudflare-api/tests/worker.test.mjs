@@ -66,6 +66,7 @@ test("AI readiness check reserves enough completion tokens for visible text", as
 
 function fakeDb({ scan = false, telegramChannel = "@python_jobs", existingProject = null, budgetBackfills = [], freelancehuntScan = false, marketplaceSource = null, skills = ["python", "telegram"], telegramAuth = null, telegramCode = null, linkedAccount = null, application = null, fallbackApplication = null, telegramProjects = [], telegramLinkedUserId = null, project = null, recentProjects = [], profile = null, integration = null, notificationTarget = null, agentSettings = null, pendingDraftProjects = [], sourceCount = 0, insertChanges = 1, projectInserts = [], telegramIdentitySchema = true, notificationsSchema = true, submissionSchema = true, providerStatusSchema = true, applicationUpdateNotificationsSchema = true, autoSubmissionSchema = true } = {}) {
   const profileRecalculations = [];
+  const createdSources = [];
   return {
     get storedIntegration() { return integration; },
     set storedIntegration(value) { integration = value; },
@@ -73,6 +74,7 @@ function fakeDb({ scan = false, telegramChannel = "@python_jobs", existingProjec
     set applicationRecord(value) { application = value; },
     get insertedProjects() { return projectInserts; },
     get profileRecalculations() { return profileRecalculations; },
+    get createdSources() { return createdSources; },
     get backfilledProject() { return existingProject; },
     get budgetBackfillWrites() { return budgetBackfills; },
     async batch(statements) { profileRecalculations.push(statements.length); return statements.map(() => ({ meta: { changes: 1 } })); },
@@ -105,6 +107,7 @@ function fakeDb({ scan = false, telegramChannel = "@python_jobs", existingProjec
           if (sql.includes("INSERT INTO integrations")) {
             integration = { id: 1, user_id: "user-1", provider: values[1], label: values[2], status: values[3], credentials_json: values[4] ?? "{}", created_at: "2026-10-17 10:00:00" };
           }
+          if (sql.includes("INSERT INTO sources")) createdSources.push({ sql, values: [...values] });
           if (sql.includes("INSERT INTO projects")) projectInserts.push({ sql, values: [...values] });
           if (sql.includes("UPDATE projects SET budget_min=COALESCE")) {
             budgetBackfills.push({ sql, values: [...values] });
@@ -122,6 +125,7 @@ function fakeDb({ scan = false, telegramChannel = "@python_jobs", existingProjec
           if (sql.includes("SELECT id FROM applications WHERE user_id=? AND project_id=?")) return application;
           if (sql.includes("SELECT * FROM profiles WHERE user_id=?")) return profile;
           if (sql.includes("SELECT credentials_json FROM integrations WHERE user_id=? AND provider='freelancehunt'")) return integration?.status === "connected" ? integration : null;
+          if (sql.includes("SELECT status FROM integrations WHERE user_id=? AND provider='freelancehunt'")) return integration ? { status: integration.status } : null;
           if (sql.includes("SELECT id,provider,label,status,created_at FROM integrations WHERE user_id=? AND provider=?")) return integration ? { id: integration.id, provider: integration.provider, label: integration.label, status: integration.status, created_at: integration.created_at } : null;
           if (sql.includes("SELECT a.id,a.project_id,a.status,a.draft_text,p.source,p.source_project_id,p.url,p.title,p.description FROM applications a JOIN projects")) return application;
           if (sql.includes("SELECT id,project_id,status,draft_text,created_at,submitted_at,replied_at,provider_submission_id,submission_error FROM applications WHERE id=? AND user_id=?")) return application;
@@ -977,6 +981,7 @@ test("Freelancehunt token is validated, encrypted, and used to ingest official A
     assert.equal(JSON.stringify(connected).includes(token), false);
     assert.ok(db.storedIntegration.credentials_json.includes("ciphertext"));
     assert.equal(db.storedIntegration.credentials_json.includes(token), false);
+    assert.ok(db.createdSources.some(source => source.values[0] === "user-1" && source.sql.includes("'freelancehunt', 'all'")));
 
     const scanResponse = await worker.fetch(new Request("https://api.example/agent/scan", {
       method: "POST",
@@ -1836,12 +1841,37 @@ test("source catalog advertises only implemented discovery adapters", async () =
   assert.equal(response.status, 200);
   const catalog = await response.json();
   const bySource = Object.fromEntries(catalog.map(item => [item.source, item]));
-  assert.deepEqual(Object.keys(bySource), ["telegram", "fl_ru", "freelance_ru"]);
+  assert.deepEqual(Object.keys(bySource), ["telegram", "freelancehunt", "fl_ru", "freelance_ru"]);
   assert.ok(bySource.telegram.capabilities.includes("read_public_posts"));
+  assert.ok(bySource.freelancehunt.capabilities.includes("read_projects"));
+  assert.ok(bySource.freelancehunt.capabilities.includes("submit_bids"));
   for (const source of ["fl_ru", "freelance_ru"]) {
     assert.ok(bySource[source].capabilities.includes("read_public_projects"));
     assert.ok(bySource[source].capabilities.includes("manual_submission_only"));
   }
+});
+
+test("Freelancehunt search source requires a connected API token and all-projects identifier", async () => {
+  const noIntegration = await worker.fetch(new Request("https://api.example/sources", {
+    method: "POST",
+    headers: { Cookie: "fh_session=test-session-token", "Content-Type": "application/json" },
+    body: JSON.stringify({ source: "freelancehunt", identifier: "all", is_enabled: true })
+  }), { DB: fakeDb() });
+  assert.equal(noIntegration.status, 409);
+
+  const wrongIdentifier = await worker.fetch(new Request("https://api.example/sources", {
+    method: "POST",
+    headers: { Cookie: "fh_session=test-session-token", "Content-Type": "application/json" },
+    body: JSON.stringify({ source: "freelancehunt", identifier: "some-project", is_enabled: true })
+  }), { DB: fakeDb({ integration: { status: "connected" } }) });
+  assert.equal(wrongIdentifier.status, 400);
+
+  const connected = await worker.fetch(new Request("https://api.example/sources", {
+    method: "POST",
+    headers: { Cookie: "fh_session=test-session-token", "Content-Type": "application/json" },
+    body: JSON.stringify({ source: "freelancehunt", identifier: "all", is_enabled: true })
+  }), { DB: fakeDb({ integration: { status: "connected" } }) });
+  assert.equal(connected.status, 201);
 });
 
 test("FL.ru RSS parser keeps recent first-party project listings only", () => {

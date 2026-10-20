@@ -163,6 +163,45 @@ test("source catalog can connect FL.ru and Freelance.ru as draft-only sources", 
   ]);
 });
 
+test("connected Freelancehunt token can enable the missing scheduled search source", async ({ page }) => {
+  await mockAuthenticatedAccount(page);
+  const savedSources: Array<Record<string, unknown>> = [];
+  const submitted: Array<Record<string, unknown>> = [];
+  await page.route("**/api/backend/sources/catalog", async route => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([
+      { source: "telegram", label: "Telegram", kind: "telegram", capabilities: ["read_public_posts"], setup_note: "Public channels." },
+      { source: "freelancehunt", label: "Freelancehunt", kind: "marketplace", capabilities: ["read_projects", "generate_drafts", "submit_bids"], setup_note: "Official API." },
+      { source: "fl_ru", label: "FL.ru", kind: "marketplace", capabilities: ["read_public_projects", "generate_drafts", "manual_submission_only"], setup_note: "RSS-заказы." },
+      { source: "freelance_ru", label: "Freelance.ru", kind: "marketplace", capabilities: ["read_public_projects", "generate_drafts", "manual_submission_only"], setup_note: "Открытые задания." }
+    ]) });
+  });
+  await page.route("**/api/backend/integrations", async route => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([{ id: 1, provider: "freelancehunt", status: "connected", label: "Freelancehunt" }]) });
+  });
+  await page.route("**/api/backend/sources", async route => {
+    if (route.request().method() === "GET") {
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(savedSources) });
+      return;
+    }
+    const payload = route.request().postDataJSON() as Record<string, unknown>;
+    submitted.push(payload);
+    const item = { id: savedSources.length + 1, ...payload, status: "configured", created_at: "2026-10-18T10:00:00Z", last_scan_at: null, last_error: null, last_discovered_count: 0 };
+    savedSources.push(item);
+    await route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify(item) });
+  });
+
+  await page.goto("/sources");
+  const marketplaceAccordion = page.locator(".source-group-summary").filter({ hasText: "Фриланс-биржи" });
+  await expect(marketplaceAccordion).toContainText("0 из 3 подключено");
+  await marketplaceAccordion.click();
+  const row = page.locator("article.sub-list-row").filter({ has: page.locator(".sub-list-main > strong").getByText("Freelancehunt", { exact: true }) });
+  await expect(row).toContainText("API-токен подключён · поиск не включён");
+  await row.getByRole("button", { name: "Подключить поиск" }).click();
+  await expect(row).toContainText("Поиск подключён через официальный API");
+  await expect(marketplaceAccordion).toContainText("1 из 3 подключено");
+  expect(submitted).toEqual([{ source: "freelancehunt", identifier: "all", is_enabled: true }]);
+});
+
 test("projects search sends filters to the API and renders returned projects", async ({ page }) => {
   await mockAuthenticatedAccount(page);
   let lastQuery: string | null = null;
