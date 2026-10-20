@@ -88,7 +88,7 @@ export default function SettingsPage() {
         <p>Пустой список способов оплаты означает, что агент не фильтрует заказы по этому признаку.</p>
         <div className="sub-form-grid">
           <div className="sub-form-field"><label htmlFor="min-budget">Минимальный бюджет</label><input id="min-budget" className="sub-input" type="number" min="0" step="any" value={budget} onChange={event => setBudget(event.target.value)} placeholder="Без минимума" /></div>
-          <div className="sub-form-field"><label htmlFor="currency">Валюта бюджета</label><select id="currency" className="sub-select" value={currency} onChange={event => setCurrency(event.target.value)}><option value="USD">USD</option><option value="RUB">RUB</option><option value="EUR">EUR</option><option value="KZT">KZT</option><option value="ALL">Все валюты</option></select></div>
+          <div className="sub-form-field"><label htmlFor="currency">Валюта бюджета</label><select id="currency" className="sub-select" value={currency} onChange={event => setCurrency(event.target.value)}><option value="USD">USD</option><option value="RUB">RUB</option><option value="EUR">EUR</option><option value="KZT">KZT</option><option value="UAH">UAH</option><option value="ALL">Все валюты</option></select></div>
           <fieldset className="sub-form-field payment-options">
             <legend>Предпочтительные способы оплаты</legend>
             {paymentOptions.map(option => <label className="payment-option" key={option.id}><input type="checkbox" checked={payments.includes(option.id)} onChange={() => togglePayment(option.id)} />{option.label}</label>)}
