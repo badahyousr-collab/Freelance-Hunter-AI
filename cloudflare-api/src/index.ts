@@ -343,6 +343,9 @@ export function detectProjectLanguage(value: unknown): string {
   if (/\p{Script=Hebrew}/u.test(text)) return "he";
   if (/\p{Script=Thai}/u.test(text)) return "th";
   if (/[а-яё]/u.test(text)) return "ru";
+  // Detect Portuguese from terms that distinguish it from Spanish before
+  // checking the shared Latin-language vocabulary below.
+  if (/\b(orçamento|trabalho|vocês|poderia)\b/giu.test(text)) return "pt";
   const latinLanguageWords: Record<string, RegExp> = {
     en: /\b(the|and|you|your|for|with|need|looking|build|help|please|project|work|task|from|what|how)\b/giu,
     es: /\b(el|la|los|las|que|para|con|busco|necesito|proyecto|trabajo)\b/giu,
@@ -443,6 +446,117 @@ export function proposalValidationIssue(value: unknown, language: string, profil
   if (skillClaims.some(({ pattern, accepted }) => pattern.test(text) && !accepted.some(skill => listedSkills.some(listed => listed.includes(skill))))) return "unsupported_skill";
   if (/(с уважением|sincerely|best regards|kind regards|regards|pipiskin)\s*[,.!\-]*$/iu.test(text)) return "signoff";
   return null;
+}
+
+export function safeFallbackProposal(language: string, askTimeline: boolean, askBudget: boolean): string | null {
+  const templates: Record<string, { intro: string; timeline: string; budget: string; scope: string }> = {
+    ru: {
+      intro: "Здравствуйте! Чтобы подготовить точное предложение по проекту, уточните, пожалуйста:",
+      timeline: "какой срок или дату завершения Вы рассматриваете?",
+      budget: "какой диапазон бюджета Вы планируете?",
+      scope: "какие задачи и результат для Вас приоритетны?"
+    },
+    uk: {
+      intro: "Вітаю! Щоб підготувати точну пропозицію щодо проєкту, підкажіть, будь ласка:",
+      timeline: "який строк або дату завершення Ви розглядаєте?",
+      budget: "який діапазон бюджету Ви плануєте?",
+      scope: "які завдання та результат для Вас пріоритетні?"
+    },
+    en: {
+      intro: "Hello! To prepare a proposal that fits your project, could you please clarify:",
+      timeline: "what delivery date or timeframe do you have in mind?",
+      budget: "what budget range are you considering?",
+      scope: "which tasks and outcomes are the priority for you?"
+    },
+    es: {
+      intro: "Hola. Para preparar una propuesta adecuada para su proyecto, ¿podría indicar, por favor:",
+      timeline: "qué plazo o fecha de entrega tiene prevista?",
+      budget: "qué rango de presupuesto está considerando?",
+      scope: "qué tareas y resultados son prioritarios para usted?"
+    },
+    fr: {
+      intro: "Bonjour. Pour préparer une proposition adaptée à votre projet, pourriez-vous préciser :",
+      timeline: "quel délai ou quelle date de livraison prévoyez-vous ?",
+      budget: "quelle fourchette de budget envisagez-vous ?",
+      scope: "quelles tâches et quels résultats sont prioritaires pour vous ?"
+    },
+    de: {
+      intro: "Guten Tag. Damit ich ein passendes Angebot für Ihr Projekt vorbereiten kann, könnten Sie bitte mitteilen:",
+      timeline: "welchen Zeitrahmen oder Liefertermin Sie erwarten?",
+      budget: "welchen Budgetrahmen Sie vorgesehen haben?",
+      scope: "welche Aufgaben und Ergebnisse für Sie am wichtigsten sind?"
+    },
+    pt: {
+      intro: "Olá. Para preparar uma proposta adequada para o seu projeto, poderia informar, por favor:",
+      timeline: "qual prazo ou data de entrega está considerando?",
+      budget: "qual faixa de orçamento está considerando?",
+      scope: "quais tarefas e resultados são prioritários para você?"
+    },
+    it: {
+      intro: "Buongiorno. Per preparare una proposta adatta al Suo progetto, potrebbe indicare:",
+      timeline: "quale scadenza o data di consegna prevede?",
+      budget: "quale fascia di budget ha previsto?",
+      scope: "quali attività e risultati sono prioritari per Lei?"
+    },
+    zh: {
+      intro: "您好。为了为您的项目准备合适的方案，请您说明：",
+      timeline: "您期望的交付时间或截止日期是什么？",
+      budget: "您考虑的预算范围是多少？",
+      scope: "哪些任务和成果对您最重要？"
+    },
+    ja: {
+      intro: "こんにちは。ご依頼に合った提案を準備するため、次の点をお知らせいただけますか。",
+      timeline: "ご希望の納期または期間はいつ頃でしょうか。",
+      budget: "ご予算の範囲をお聞かせいただけますか。",
+      scope: "優先される作業と成果をお聞かせください。"
+    },
+    ko: {
+      intro: "안녕하세요. 요청에 맞는 제안을 준비할 수 있도록 다음 내용을 알려주시겠어요?",
+      timeline: "희망하시는 완료 일정이나 기간은 어떻게 되나요?",
+      budget: "고려하시는 예산 범위는 어떻게 되나요?",
+      scope: "우선순위가 높은 작업과 결과는 무엇인가요?"
+    },
+    ar: {
+      intro: "مرحباً. لإعداد عرض مناسب لمشروعكم، يرجى توضيح ما يلي:",
+      timeline: "ما الموعد أو الإطار الزمني المتوقع للتسليم؟",
+      budget: "ما نطاق الميزانية الذي تفكرون فيه؟",
+      scope: "ما المهام والنتائج ذات الأولوية بالنسبة لكم؟"
+    },
+    hi: {
+      intro: "नमस्ते। आपके प्रोजेक्ट के लिए उपयुक्त प्रस्ताव तैयार करने के लिए कृपया बताइए:",
+      timeline: "आपकी अपेक्षित समय-सीमा या अंतिम तारीख क्या है?",
+      budget: "आप किस बजट सीमा पर विचार कर रहे हैं?",
+      scope: "आपके लिए कौन-से काम और परिणाम प्राथमिकता हैं?"
+    },
+    el: {
+      intro: "Καλησπέρα. Για να ετοιμάσω κατάλληλη πρόταση για το έργο σας, θα μπορούσατε να διευκρινίσετε:",
+      timeline: "ποιο χρονικό πλαίσιο ή ημερομηνία παράδοσης έχετε υπόψη;",
+      budget: "ποιο εύρος προϋπολογισμού εξετάζετε;",
+      scope: "ποιες εργασίες και αποτελέσματα έχουν προτεραιότητα για εσάς;"
+    },
+    he: {
+      intro: "שלום. כדי להכין הצעה מתאימה לפרויקט שלכם, אנא ציינו:",
+      timeline: "מה לוח הזמנים או מועד המסירה הרצוי?",
+      budget: "מה טווח התקציב שאתם שוקלים?",
+      scope: "אילו משימות ותוצאות חשובות לכם ביותר?"
+    },
+    th: {
+      intro: "สวัสดีครับ เพื่อจัดทำข้อเสนอที่เหมาะกับโครงการของคุณ กรุณาระบุ:",
+      timeline: "กำหนดเวลาหรือวันที่ต้องการรับงานคือเมื่อใด?",
+      budget: "คุณกำลังพิจารณางบประมาณช่วงใด?",
+      scope: "งานและผลลัพธ์ใดที่คุณให้ความสำคัญเป็นอันดับแรก?"
+    }
+  };
+  const template = templates[language];
+  if (!template) return null;
+  const questions = askTimeline && askBudget
+    ? `${template.timeline} ${template.budget}`
+    : askTimeline
+      ? template.timeline
+      : askBudget
+        ? template.budget
+        : template.scope;
+  return `${template.intro} ${questions}`;
 }
 
 export function proposalSubmissionValidationIssue(value: unknown, title: unknown, description: unknown, profileSkills: unknown = []): string | null {
@@ -1971,6 +2085,14 @@ async function handle(request: Request, env: Env): Promise<Response> {
           );
         }
       }
+      if (validationIssue) {
+        const fallback = safeFallbackProposal(listingLanguage, timeline === "По договорённости", !projectFacts.budget_provided);
+        const fallbackIssue = fallback ? proposalValidationIssue(fallback, listingLanguage, profileFacts.skills) : "language";
+        if (fallback && !fallbackIssue) {
+          draftText = fallback;
+          validationIssue = null;
+        }
+      }
     } catch {
       return response(request, { detail: "Could not reach the AI provider. Check the endpoint and try again." }, 502);
     }
@@ -2309,5 +2431,6 @@ export default {
     ctx.waitUntil(runScheduledScan(env));
   }
 };
+
 
 
