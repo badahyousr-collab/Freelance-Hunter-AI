@@ -16,4 +16,7 @@ test("Ukrainian proposals reject Russian phrases and lowercase formal address", 
 test("proposal drafts cannot claim technologies missing from the user's profile", () => {
   assert.equal(proposalValidationIssue("Я можу інтегрувати PHP-код у цей сайт.", "uk", ["HTML", "CSS", "JavaScript"]), "unsupported_skill");
   assert.equal(proposalValidationIssue("I can build this with PHP.", "en", ["PHP", "JavaScript"]), null);
+  assert.equal(proposalValidationIssue("I can adapt the OpenCart admin panel.", "en", ["HTML", "CSS"]), "unsupported_skill");
+  assert.equal(proposalValidationIssue("Мої навички включають UML і BPMN.", "uk", ["Python", "SQL"]), "unsupported_skill");
+  assert.equal(proposalValidationIssue("I wrote a pytest suite for a medical bot.", "en", ["Python"]), "unsupported_experience");
 });

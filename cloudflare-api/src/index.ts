@@ -382,7 +382,7 @@ export function proposalValidationIssue(value: unknown, language: string, profil
     if (scriptPatterns[language] && !scriptPatterns[language].test(normalized)) return "language";
     if (["es", "fr", "de", "pt", "it"].includes(language) && detectProjectLanguage(text) !== language) return "language";
   }
-  if (/(^|[^\p{L}])(у меня есть опыт|мой опыт|опыт работы|я работал[а]?|в одном проекте|я разработал[а]?|я создал[а]?|я реализовал[а]?|я исправил[а]?|маю досвід|мій досвід|досвід роботи|я працював|я працювала|в одному проєкті|я розробив|я створив|я виправив|i have experience|my experience|i worked|i have worked|in one project|i developed|i created|i implemented)(?=$|[^\p{L}])/iu.test(text)) return "unsupported_experience";
+  if (/(^|[^\p{L}])(у меня есть опыт|мой опыт|опыт работы|я работал[а]?|в одном проекте|я разработал[а]?|я создал[а]?|я реализовал[а]?|я исправил[а]?|я написал[а]?|я настроил[а]?|я тестировал[а]?|маю досвід|мій досвід|досвід роботи|я працював|я працювала|в одному проєкті|я розробив|я створив|я виправив|я написав|я налаштував|я тестував|i have experience|my experience|i worked|i have worked|in one project|i developed|i created|i implemented|i wrote|i built|i fixed|i configured|i tested)(?=$|[^\p{L}])/iu.test(text)) return "unsupported_experience";
   const listedSkills = (Array.isArray(profileSkills) ? profileSkills : []).map((skill) => String(skill).toLocaleLowerCase());
   const skillClaims: Array<{ pattern: RegExp; accepted: string[] }> = [
     { pattern: /(^|[^a-z0-9])php([^a-z0-9]|$)/iu, accepted: ["php"] },
@@ -414,7 +414,11 @@ export function proposalValidationIssue(value: unknown, language: string, profil
     { pattern: /(^|[^a-z0-9])terraform([^a-z0-9]|$)/iu, accepted: ["terraform"] },
     { pattern: /(^|[^a-z0-9])n8n([^a-z0-9]|$)/iu, accepted: ["n8n"] },
     { pattern: /(^|[^a-z0-9])zapier([^a-z0-9]|$)/iu, accepted: ["zapier"] },
-    { pattern: /(^|[^a-z0-9])graphql([^a-z0-9]|$)/iu, accepted: ["graphql"] }
+    { pattern: /(^|[^a-z0-9])graphql([^a-z0-9]|$)/iu, accepted: ["graphql"] },
+    { pattern: /(^|[^a-z0-9])opencart([^a-z0-9]|$)/iu, accepted: ["opencart"] },
+    { pattern: /(^|[^a-z0-9])uml([^a-z0-9]|$)/iu, accepted: ["uml"] },
+    { pattern: /(^|[^a-z0-9])bpmn([^a-z0-9]|$)/iu, accepted: ["bpmn"] },
+    { pattern: /(^|[^a-z0-9])pytest([^a-z0-9]|$)/iu, accepted: ["pytest"] }
   ];
   if (skillClaims.some(({ pattern, accepted }) => pattern.test(text) && !accepted.some(skill => listedSkills.some(listed => listed.includes(skill))))) return "unsupported_skill";
   if (/(с уважением|sincerely|best regards|kind regards|regards|pipiskin)\s*[,.!\-]*$/iu.test(text)) return "signoff";
