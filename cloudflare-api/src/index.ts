@@ -622,7 +622,7 @@ export function parseFreelanceRuTasks(html: string): MarketplaceListing[] {
 export function detectedBudget(text: string): { amount: number; currency: string } | null {
   const numberPattern = String.raw`\d{1,3}(?:[\s\u00a0]\d{3})+(?:[.,]\d+)?|\d+(?:[.,]\d+)?`;
   const unitPattern = String.raw`(?:\s*(тыс\.?|тысяч|k|к))?`;
-  const currencies = String.raw`₽|руб(?:\.|лей|ля|ль)?|RUB|USD|EUR|US\$|CA\$|AU\$|\$|€`;
+  const currencies = String.raw`₽|руб(?:\.|лей|ля|ль)?|RUB|UAH|грн\.?|грив(?:ня|ні|ень|ню|ни)|USD|EUR|US\$|CA\$|AU\$|\$|€`;
   const after = new RegExp(String.raw`(?:\b(?:бюджет|оплата|стоимость|до|от)\b\s*)?(${numberPattern})${unitPattern}\s*(${currencies})`, "i").exec(text);
   const before = new RegExp(String.raw`(US\$|CA\$|AU\$|\$|€)\s*(${numberPattern})${unitPattern}`, "i").exec(text);
   if (!after && !before) return null;
@@ -653,8 +653,9 @@ export function detectedBudget(text: string): { amount: number; currency: string
   const raw = rawCurrency.toLowerCase().replace(/\./g, "");
   const currency = raw.includes("руб") || raw === "₽" || raw === "rub"
     ? "RUB"
-    : raw === "€" || raw === "eur" ? "EUR"
-      : raw === "ca$" ? "CAD" : raw === "au$" ? "AUD" : "USD";
+    : raw === "uah" || raw.includes("грн") || raw.includes("грив") ? "UAH"
+      : raw === "€" || raw === "eur" ? "EUR"
+        : raw === "ca$" ? "CAD" : raw === "au$" ? "AUD" : "USD";
   return { amount: Math.round(amount * 100) / 100, currency };
 }
 
@@ -822,6 +823,14 @@ async function scanTelegramSource(env: Env, userId: string, source: any): Promis
           language, budget?.amount ?? null, budget?.amount ?? null,
           budget?.currency ?? null, post.publishedAt, evaluation.score, JSON.stringify(evaluation.reasons)).run();
       const inserted = Number(result.meta.changes ?? 0);
+      if (budget) {
+        await env.DB.prepare(`UPDATE projects SET budget_min=COALESCE(budget_min,?),budget_max=COALESCE(budget_max,?),
+          currency=CASE WHEN budget_min IS NULL AND budget_max IS NULL THEN ? ELSE COALESCE(NULLIF(currency,''),?) END,
+          match_score=?,match_reasons=?
+          WHERE user_id=? AND source='telegram' AND source_project_id=?
+            AND (budget_min IS NULL OR budget_max IS NULL OR currency IS NULL OR currency='')`)
+          .bind(budget.amount,budget.amount,budget.currency,budget.currency,evaluation.score,JSON.stringify(evaluation.reasons),userId,`${channel}:${post.postId}`).run();
+      }
       added += inserted;
     }
     await env.DB.prepare("UPDATE sources SET status='active',last_scan_at=datetime('now'),last_error=NULL,last_discovered_count=? WHERE id=? AND user_id=?")
