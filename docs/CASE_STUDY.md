@@ -30,8 +30,8 @@ Freelance requests are scattered across channels and platforms. Manually reviewi
 ## Production verification snapshot (20 October 2026)
 
 - The API Worker is healthy (status ok, D1 connected, schema ready). Cloudflare shows version ce8b2a98, built from merge commit de98e0f, Ready at 100% production traffic.
-- The production dashboard reported 451 discovered projects, 12 profile matches, 3 marketplace discovery sources (1 API-connected and 2 public-search), 10 Telegram channels, 1 linked bot, 0 provider-confirmed bids, and 0 tracked replies.
-- A scheduled scan completed at 03:00:36 UTC. Two existing public Telegram listings that include 2500 UAH display as 2 500 UAH in the project list. These listings remain in the Найден state; no bid or employer message was sent during acceptance.
+- The production dashboard reported 453 discovered projects, 12 profile matches, 3 marketplace discovery sources (1 API-connected and 2 public-search), 10 Telegram channels, 1 linked bot, 0 provider-confirmed bids, and 0 tracked replies.
+- Scheduled scans completed at 04:30:27 UTC for @FreelancehuntProjects, 04:30:36 UTC for FL.ru, and 04:30:39 UTC for Freelance.ru. Two existing public Telegram listings that include 2500 UAH display as 2 500 UAH in the project list. These listings remain in the Найден state; no bid or employer message was sent during acceptance.
 - The configured AI provider accepted a real generation request for a Russian skills-aligned listing. It produced a saved draft; no proposal was submitted.
 - The PR for UAH parsing/backfill passed CI #668 (backend, Worker tests and migrations, frontend lint/Playwright/build, Compose smoke) and CodeQL #247 before merge.
 
@@ -42,7 +42,7 @@ Freelance requests are scattered across channels and platforms. Manually reviewi
 - Live two-account data isolation and session-expiry behavior have not been exercised with two real production accounts. Automated tests cover owner-scoped endpoints and expired-session rejection.
 - English proposal quality has not been demonstrated on a safe, clearly English skills-aligned listing. Russian generation was verified as described above.
 - Automated bid submission is available only through Freelancehunt's verified API; FL.ru and Freelance.ru are discovery-only and require manual submission. A real employer-facing bid was not sent as an acceptance test.
-- A synthetic local D1 export/import drill passed, but no production backup artifact or production-data restore has been tested.
+- Cloudflare D1 Time Travel is available for the production database with a seven-day restore window. A production restore has not been attempted because it overwrites live data; the synthetic local D1 export/import drill passed.
 - User-specific project counts are a snapshot, not a throughput or success-rate claim. No production latency, cost, or conversion metrics are claimed.
 - Screenshots and a demo recording are not yet captured. This document is a verified engineering snapshot, not a finished visual portfolio case.
 
