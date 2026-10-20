@@ -635,7 +635,10 @@ test("budget parser handles Russian and international currency formats", () => {
     ["$2,500", { amount: 2500, currency: "USD" }],
     ["€1 200,50", { amount: 1200.5, currency: "EUR" }],
     ["Budget 2.5k USD", { amount: 2500, currency: "USD" }],
-    ["Оплата: 5000 RUB", { amount: 5000, currency: "RUB" }]
+    ["Оплата: 5000 RUB", { amount: 5000, currency: "RUB" }],
+    ["Бюджет: 2 500 UAH", { amount: 2500, currency: "UAH" }],
+    ["Оплата 2500 грн", { amount: 2500, currency: "UAH" }],
+    ["Бюджет 3 000 гривень", { amount: 3000, currency: "UAH" }]
   ];
   for (const [input, expected] of cases) {
     assert.deepEqual(detectedBudget(input), expected, input);
