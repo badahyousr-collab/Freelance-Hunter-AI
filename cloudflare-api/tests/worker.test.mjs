@@ -744,7 +744,7 @@ test("application review returns not found for records outside the current user'
 
 test("manual scan does not send individual Telegram messages for newly inserted projects", async () => {
   const originalFetch = globalThis.fetch;
-  const html = '<div class="tgme_widget_message_wrap" data-post="python_jobs/777"><div class="tgme_widget_message_text js-message_text" dir="auto">We need a Python developer to build a Telegram bot for a freelance project. Budget 500 USD.</div><time datetime="2026-10-17T10:00:00+00:00"></time></div>';
+  const html = `<div class="tgme_widget_message_wrap" data-post="python_jobs/777"><div class="tgme_widget_message_text js-message_text" dir="auto">We need a Python developer to build a Telegram bot for a freelance project. Budget 500 USD.</div><time datetime="${new Date().toISOString()}"></time></div>`;
   let sentPayload = null;
   globalThis.fetch = async (input, init) => {
     const url = String(input);
