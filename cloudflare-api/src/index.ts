@@ -620,11 +620,12 @@ export function parseFreelanceRuTasks(html: string): MarketplaceListing[] {
 }
 
 export function detectedBudget(text: string): { amount: number; currency: string } | null {
+  const normalizedText = text.normalize("NFKC").replace(/&(?:nbsp|thinsp|nnbsp);/gi, " ").replace(/&#(?:160|8239);/gi, " ");
   const numberPattern = String.raw`\d{1,3}(?:[\s\u00a0]\d{3})+(?:[.,]\d+)?|\d+(?:[.,]\d+)?`;
   const unitPattern = String.raw`(?:\s*(тыс\.?|тысяч|k|к))?`;
   const currencies = String.raw`₽|руб(?:\.|лей|ля|ль)?|RUB|UAH|грн\.?|грив(?:ня|ні|ень|ню|ни)|USD|EUR|US\$|CA\$|AU\$|\$|€`;
-  const after = new RegExp(String.raw`(?:\b(?:бюджет|оплата|стоимость|до|от)\b\s*)?(${numberPattern})${unitPattern}\s*(${currencies})`, "i").exec(text);
-  const before = new RegExp(String.raw`(US\$|CA\$|AU\$|\$|€)\s*(${numberPattern})${unitPattern}`, "i").exec(text);
+  const after = new RegExp(String.raw`(?:\b(?:бюджет|оплата|стоимость|до|от)\b\s*)?(${numberPattern})${unitPattern}\s*(${currencies})`, "i").exec(normalizedText);
+  const before = new RegExp(String.raw`(US\$|CA\$|AU\$|\$|€)\s*(${numberPattern})${unitPattern}`, "i").exec(normalizedText);
   if (!after && !before) return null;
   const rawAmount = after ? after[1] : before?.[2];
   const rawUnit = after ? after[2] : before?.[3];
@@ -827,7 +828,7 @@ async function scanTelegramSource(env: Env, userId: string, source: any): Promis
         await env.DB.prepare(`UPDATE projects SET budget_min=COALESCE(budget_min,?),budget_max=COALESCE(budget_max,?),
           currency=CASE WHEN budget_min IS NULL AND budget_max IS NULL THEN ? ELSE COALESCE(NULLIF(currency,''),?) END,
           match_score=?,match_reasons=?
-          WHERE user_id=? AND source='telegram' AND source_project_id=?
+          WHERE user_id=? AND source='telegram' AND LOWER(source_project_id)=LOWER(?)
             AND (budget_min IS NULL OR budget_max IS NULL OR currency IS NULL OR currency='')`)
           .bind(budget.amount,budget.amount,budget.currency,budget.currency,evaluation.score,JSON.stringify(evaluation.reasons),userId,`${channel}:${post.postId}`).run();
       }
