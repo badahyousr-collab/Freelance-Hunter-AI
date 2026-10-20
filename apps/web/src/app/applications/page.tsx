@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Check, FileText, Save, Send, X } from "lucide-react";
+import { Check, Copy, FileText, Save, Send, X } from "lucide-react";
 import WorkspacePage from "@/components/WorkspacePage";
 
 const API = "/api/backend";
@@ -113,12 +113,22 @@ export default function ApplicationsPage() {
     } finally { setActionId(null); }
   }
 
-  return <WorkspacePage title="Отклики" subtitle="Редактируй черновики. Подтверждённая отправка доступна через официальный Freelancehunt API после подключения токена.">
+  async function copyDraft(item: Application) {
+    setError(""); setMessage("");
+    try {
+      await navigator.clipboard.writeText(draftTexts[item.id] ?? "");
+      setMessage("Текст отклика скопирован. Открой заказ и отправь его вручную на площадке.");
+    } catch {
+      setError("Не удалось скопировать текст. Выдели его в поле и скопируй вручную.");
+    }
+  }
+
+  return <WorkspacePage title="Отклики" subtitle="Отправка через официальный API доступна только на Freelancehunt. Для Telegram, FL.ru и Freelance.ru скопируй текст и отправь его вручную на площадке.">
     {error && <div className="sub-alert error" role="alert">{error}</div>}
     {message && <div className="sub-alert" role="status">{message}</div>}
     <section className="content-card">
       <h2>История откликов</h2>
-      <p>Статус «Отправлен» устанавливается только после успешного ответа биржи. Перед реальной отправкой сайт покажет подтверждение и потребует бюджет, срок и тип оплаты.</p>
+      <p>Статус «Отправлен» устанавливается только после успешного ответа Freelancehunt. Перед отправкой сайт покажет подтверждение и попросит указать условия заявки.</p>
       {loading ? <div className="sub-empty">Загружаем историю откликов…</div> : items.length===0 ? <div className="sub-empty"><FileText size={25}/><strong>Откликов пока нет</strong><span>Создай черновик на странице проектов, чтобы он появился здесь.</span><Link href="/projects" className="sub-button">Перейти к проектам</Link></div> :
       <div className="sub-list">{items.map(item => {
         const editable = ["draft","awaiting_confirmation","failed"].includes(item.status);
@@ -133,6 +143,7 @@ export default function ApplicationsPage() {
               <label htmlFor={"proposal-" + item.id}>Текст отклика</label>
               <textarea id={"proposal-" + item.id} className="sub-input" rows={7} maxLength={5000} value={draftTexts[item.id] ?? ""} onChange={event => setDraftTexts(current => ({...current,[item.id]:event.target.value}))} />
               <span>{(draftTexts[item.id] ?? "").length}/5000 символов</span>
+              {item.project?.source !== "freelancehunt" && <span>Эта биржа не подключена для отправки. Скопируй текст и открой заказ, чтобы отправить его вручную.</span>}
               {item.status === "awaiting_confirmation" && item.project?.source === "freelancehunt" && (
                 <div className="sub-form" style={{ marginTop: 12, maxWidth: 560 }}>
                   <label htmlFor={"bid-amount-" + item.id}>Сумма отклика (UAH или RUB)</label>
@@ -148,7 +159,8 @@ export default function ApplicationsPage() {
               )}
               <div className="sub-actions">
                 <button className="sub-button" type="button" disabled={savingId===item.id || actionId===item.id} onClick={() => void update(item,{draft_text:draftTexts[item.id] ?? ""},"Черновик сохранён.",setSavingId)}><Save size={14}/>{savingId===item.id ? "Сохраняем…" : "Сохранить текст"}</button>
-                {item.status === "draft" ? <button className="sub-button primary" type="button" disabled={savingId===item.id || actionId===item.id} onClick={() => void update(item,{draft_text:draftTexts[item.id] ?? "",status:"awaiting_confirmation"},"Черновик подготовлен к подтверждению. Отправка не выполнялась.",setActionId)}><Check size={14}/>Подготовить к подтверждению</button> : <button className="sub-button" type="button" disabled={savingId===item.id || actionId===item.id} onClick={() => void update(item,{status:"draft"},"Отклик возвращён в черновики.",setActionId)}>Вернуть в черновик</button>}
+                {item.project?.source !== "freelancehunt" && <button className="sub-button" type="button" disabled={!draftTexts[item.id]} onClick={() => void copyDraft(item)}><Copy size={14}/>Скопировать текст</button>}
+                {item.project?.source === "freelancehunt" && (item.status === "draft" ? <button className="sub-button primary" type="button" disabled={savingId===item.id || actionId===item.id} onClick={() => void update(item,{draft_text:draftTexts[item.id] ?? "",status:"awaiting_confirmation"},"Черновик подготовлен к подтверждению. Отправка не выполнялась.",setActionId)}><Check size={14}/>Подготовить к подтверждению</button> : <button className="sub-button" type="button" disabled={savingId===item.id || actionId===item.id} onClick={() => void update(item,{status:"draft"},"Отклик возвращён в черновики.",setActionId)}>Вернуть в черновик</button>)}
                 <button className="sub-button danger" type="button" disabled={savingId===item.id || actionId===item.id} onClick={() => void update(item,{status:"closed"},"Черновик закрыт.",setActionId)}><X size={14}/>Закрыть</button>
               </div>
             </>}

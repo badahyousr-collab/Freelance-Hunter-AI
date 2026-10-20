@@ -385,7 +385,8 @@ test("security page logs out and returns to Telegram login", async ({ page }) =>
 });
 
 
-test("proposal draft can be edited and prepared for confirmation without claiming it was sent", async ({ page }) => {
+test("Telegram proposal drafts can be edited and copied without implying automatic sending", async ({ page }) => {
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
   await mockAuthenticatedAccount(page);
   const application: Record<string, unknown> = {
     id: 42,
@@ -411,10 +412,12 @@ test("proposal draft can be edited and prepared for confirmation without claimin
   await editor.fill("Hello, I can build the requested bot using the skills in my profile.");
   await page.getByRole("button", { name: "Сохранить текст" }).click();
   await expect(page.getByText("Черновик сохранён.")).toBeVisible();
-  await page.getByRole("button", { name: "Подготовить к подтверждению" }).click();
-  await expect(page.getByText("Черновик подготовлен к подтверждению. Отправка не выполнялась.")).toBeVisible();
-  await expect(page.getByText("Готов к подтверждению")).toBeVisible();
-  expect(application.status).toBe("awaiting_confirmation");
+  await expect(page.getByText(/Для Telegram, FL\.ru и Freelance\.ru скопируй текст и отправь его вручную/i)).toBeVisible();
+  await expect(page.getByRole("button", { name: "Подготовить к подтверждению" })).toHaveCount(0);
+  await page.getByRole("button", { name: "Скопировать текст" }).click();
+  await expect(page.getByText(/Текст отклика скопирован/i)).toBeVisible();
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe("Hello, I can build the requested bot using the skills in my profile.");
+  expect(application.status).toBe("draft");
   expect(application.draft_text).toContain("skills in my profile");
   expect(application.status).not.toBe("sent");
 });
