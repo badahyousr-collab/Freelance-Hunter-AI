@@ -23,6 +23,17 @@ function statusLabel(status: string) {
   return labels[status] ?? status;
 }
 
+function sourceLabel(source?: string | null) {
+  if (!source) return "Источник неизвестен";
+  const labels: Record<string, string> = {
+    telegram: "Telegram",
+    freelancehunt: "Freelancehunt",
+    fl_ru: "FL.ru",
+    freelance_ru: "Freelance.ru"
+  };
+  return labels[source] ?? source;
+}
+
 export default function ApplicationsPage() {
   const [items,setItems] = useState<Application[]>([]);
   const [draftTexts,setDraftTexts] = useState<Record<number,string>>({});
@@ -114,7 +125,7 @@ export default function ApplicationsPage() {
         return <article className="sub-list-row" key={item.id}>
           <div className="sub-list-main">
             <strong>{item.project?.title ?? ("Проект #" + item.project_id)}</strong>
-            <span>{(item.project?.source ?? "Источник неизвестен") + " · Создан " + new Date(item.created_at).toLocaleString()}</span>
+            <span>{sourceLabel(item.project?.source) + " · Создан " + new Date(item.created_at).toLocaleString()}</span>
             <span className="sub-badge">{statusLabel(item.status)}</span>
             {item.submission_error && <span className="sub-alert error" role="status">{item.submission_error}</span>}
             {item.status === "submission_unknown" && <span>Не отправляй повторно, пока вручную не проверишь статус заявки на Freelancehunt.</span>}
