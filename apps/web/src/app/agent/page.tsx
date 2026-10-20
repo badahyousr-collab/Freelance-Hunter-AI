@@ -6,7 +6,7 @@ import { Bot, Pause, Play, Settings2, Workflow } from "lucide-react";
 import WorkspacePage from "@/components/WorkspacePage";
 
 const API = "/api/backend";
-type AgentSettings = { enabled: boolean; auto_draft?: boolean; auto_submit?: boolean; daily_submission_limit?: number; telegram_linked: boolean; notify_application_updates?: boolean };
+type AgentSettings = { enabled: boolean; auto_draft?: boolean; auto_submit?: boolean; auto_reply?: boolean; daily_submission_limit?: number; telegram_linked: boolean; notify_application_updates?: boolean };
 export default function AgentPage() {
   const [agent, setAgent] = useState<AgentSettings | null>(null);
   const [loading, setLoading] = useState(true);
@@ -116,6 +116,26 @@ export default function AgentPage() {
     } finally { setBusy(false); }
   }
 
+  async function toggleAutoReply() {
+    if (!agent) return;
+    const nextValue = !Boolean(agent.auto_reply);
+    setBusy(true); setError(""); setMessage("");
+    try {
+      const r = await fetch(API + "/agent/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ auto_reply: nextValue })
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.detail ?? "Не удалось изменить автоматические ответы");
+      setAgent(current => current ? { ...current, ...d } : current);
+      setMessage(nextValue ? "Автоматические ответы Freelancehunt включены." : "Автоматические ответы Freelancehunt отключены.");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Не удалось изменить автоматические ответы");
+    } finally { setBusy(false); }
+  }
+
   async function changeDailyLimit(value: number) {
     setBusy(true); setError(""); setMessage("");
     try {
@@ -178,6 +198,10 @@ export default function AgentPage() {
       <label style={{ display: "flex", alignItems: "flex-start", gap: 10, marginTop: 12 }}>
         <input type="checkbox" checked={agent ? Boolean(agent.auto_submit ?? true) : false} disabled={busy || loading || !agent} onChange={() => void toggleAutoSubmit()} />
         <span><strong>Автоматически отправлять отклики</strong><br/><span className="sub-muted">Без подтверждения каждой заявки. Сейчас отправка реализуется через официальный API Freelancehunt; для Telegram-публикаций и неподключённых бирж доступна только подготовка текста.</span></span>
+      </label>
+      <label style={{ display: "flex", alignItems: "flex-start", gap: 10, marginTop: 12 }}>
+        <input type="checkbox" checked={agent ? Boolean(agent.auto_reply) : false} disabled={busy || loading || !agent || !agent.enabled} onChange={() => void toggleAutoReply()} />
+        <span><strong>Отвечать на новые сообщения Freelancehunt</strong><br/><span className="sub-muted">AI ответит в переписке по подтверждённой заявке после нового сообщения заказчика. Старые переписки при первом подключении не затрагиваются. Для Telegram-каналов и остальных площадок отправка сообщений недоступна.</span></span>
       </label>
       <label style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 12 }}>
         <span><strong>Лимит отправок в сутки</strong><br/><span className="sub-muted">Для подключённых бирж с поддержкой отправки.</span></span>
