@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import worker, { detectProjectTimeline, detectedBudget, evaluateProjectMatch, findTelegramEmployerUsername, parseFlRuRss, parseFreelanceRuTasks } from "../.test-dist/src/index.js";
+import worker, { bidDurationDays, detectProjectTimeline, detectedBudget, evaluateProjectMatch, findTelegramEmployerUsername, freelancehuntAutoBidTerms, parseFlRuRss, parseFreelanceRuTasks } from "../.test-dist/src/index.js";
 
 function fakeDb({ scan = false, freelancehuntScan = false, marketplaceSource = null, skills = ["python", "telegram"], telegramAuth = null, telegramCode = null, linkedAccount = null, application = null, fallbackApplication = null, telegramProjects = [], telegramLinkedUserId = null, project = null, recentProjects = [], profile = null, integration = null, notificationTarget = null, agentSettings = null, pendingDraftProjects = [], sourceCount = 0, insertChanges = 1, projectInserts = [], telegramIdentitySchema = true, notificationsSchema = true, submissionSchema = true, providerStatusSchema = true, applicationUpdateNotificationsSchema = true, autoSubmissionSchema = true } = {}) {
   const profileRecalculations = [];
@@ -517,6 +517,19 @@ test("project timeline parser reports agreed timing when absent and reads common
   assert.equal(detectProjectTimeline("Срок выполнения: 2 недели"), "2 недели");
   assert.equal(detectProjectTimeline("Please deliver within 5 days"), "5 days");
   assert.equal(detectProjectTimeline("Работы нужно завершить до 20.11.2026"), "до 20.11.2026");
+});
+
+test("automatic Freelancehunt bids require an explicit deadline and listed supported budget", () => {
+  const now = new Date("2026-10-19T10:00:00Z");
+  assert.equal(bidDurationDays("Нужен сайт на React", now), null);
+  assert.equal(bidDurationDays("Срок выполнения 2 недели", now), 14);
+  assert.equal(bidDurationDays("Please deliver within 5 days", now), 5);
+  assert.equal(bidDurationDays("Срок 1-2 недели", now), null);
+  assert.equal(bidDurationDays("до 22.10.2026", now), 3);
+  assert.equal(bidDurationDays("до 18.10.2026", now), null);
+  assert.equal(freelancehuntAutoBidTerms({ description: "Срок 5 дней", budget_min: null, budget_max: null, currency: "RUB" }, now), null);
+  assert.equal(freelancehuntAutoBidTerms({ description: "Срок 5 дней", budget_min: 5000, budget_max: null, currency: "" }, now), null);
+  assert.deepEqual(freelancehuntAutoBidTerms({ description: "Срок выполнения 2 недели", budget_min: 4500, budget_max: 5000, currency: "RUB" }, now), { days: 14, amount: 4500, currency: "RUB" });
 });
 
 test("Telegram employer contact extraction ignores the source channel and accepts explicit usernames", () => {
@@ -1754,3 +1767,4 @@ test("Groq GPT-OSS proposal requests disable exposed reasoning and use low effor
     globalThis.fetch = originalFetch;
   }
 });
+
