@@ -44,7 +44,11 @@ Freelance requests are scattered across channels and platforms. Manually reviewi
 - Automated bid submission is available only through Freelancehunt's verified API; FL.ru and Freelance.ru are discovery-only and require manual submission. A real employer-facing bid was not sent as an acceptance test.
 - Cloudflare D1 Time Travel is available for the production database with a seven-day restore window. A production restore has not been attempted because it overwrites live data; the synthetic local D1 export/import drill passed.
 - User-specific project counts are a snapshot, not a throughput or success-rate claim. No production latency, cost, or conversion metrics are claimed.
-- Screenshots and a demo recording are not yet captured. This document is a verified engineering snapshot, not a finished visual portfolio case.
+- A production screenshot of the Telegram-only sign-in page and entry 3D molecule is captured below. Authenticated workspace/Telegram bot screenshots and a demo recording remain to be captured before this becomes a complete visual portfolio case.
+
+## Production sign-in screenshot
+
+![Production Telegram sign-in page with the 3D molecule](screenshots/production-login-2026-10-20.png)
 
 ## Verification
 
