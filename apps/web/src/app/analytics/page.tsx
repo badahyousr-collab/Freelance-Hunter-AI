@@ -7,7 +7,8 @@ import WorkspacePage from "@/components/WorkspacePage";
 const API = "/api/backend";
 type Summary = {
   projects_found: number; matched_projects: number; proposals_sent: number; client_replies: number;
-  telegram_channels_connected: number; marketplaces_connected: number; telegram_bots_connected: number;
+  telegram_channels_connected: number; marketplaces_connected: number;
+  marketplace_public_sources_connected: number; marketplace_sources_enabled: number; telegram_bots_connected: number;
   daily_activity: { day: string; projects_found: number }[];
 };
 
@@ -43,9 +44,10 @@ export default function AnalyticsPage() {
     {error && <div className="sub-alert error" role="alert">{error}</div>}
     <div className="metric-grid">{cards.map(card => { const Icon = card.icon; return <article className="metric-card" key={card.key}><div className="metric-top"><span>{card.label}</span><span className="metric-icon"><Icon size={18} /></span></div><div className="metric-value">{data ? data[card.key] : "—"}</div><div className="metric-change">За всё время</div></article>; })}</div>
     <section className="content-card" style={{ marginTop: 16 }}>
-      <div className="panel-heading"><div><h2>Подключённые источники</h2><p>Считаются активные каналы и проверенные подключения.</p></div></div>
+      <div className="panel-heading"><div><h2>Источники и подключения</h2><p>Отдельно показаны API-подключения и площадки с публичным поиском.</p></div></div>
       <div className="sub-list" style={{ marginTop: 16 }}>
-        <div className="sub-list-row"><div className="sub-list-main"><strong>Биржи фриланса</strong><span>Freelancehunt с подтверждённым подключением</span></div><strong>{data?.marketplaces_connected ?? "—"}</strong></div>
+        <div className="sub-list-row"><div className="sub-list-main"><strong>Биржи с API-подключением</strong><span>Freelancehunt: официальный API</span></div><strong>{data?.marketplaces_connected ?? "—"}</strong></div>
+        <div className="sub-list-row"><div className="sub-list-main"><strong>Биржи с публичным поиском</strong><span>FL.ru и Freelance.ru; отклик отправляется вручную</span></div><strong>{data?.marketplace_public_sources_connected ?? "—"}</strong></div>
         <div className="sub-list-row"><div className="sub-list-main"><strong>Telegram-каналы</strong><span>Включённые каналы с заказами</span></div><strong>{data?.telegram_channels_connected ?? "—"}</strong></div>
         <div className="sub-list-row"><div className="sub-list-main"><strong>Telegram-бот</strong><span>Привязанный к аккаунту бот</span></div><strong>{data?.telegram_bots_connected ?? "—"}</strong></div>
       </div>
@@ -58,3 +60,4 @@ export default function AnalyticsPage() {
     </section>
   </WorkspacePage>;
 }
+

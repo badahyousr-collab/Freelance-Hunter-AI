@@ -1665,7 +1665,8 @@ test("dashboard summary includes user-scoped source counts and a seven-day disco
           if (sql.includes("FROM sessions s JOIN users")) return { id: "user-1", created_at: "2026-10-16 10:00:00" };
           if (sql.includes("AS telegram_channels_connected")) return {
             projects_found: 11, matched_projects: 5, proposals_sent: 2, client_replies: 1,
-            telegram_channels_connected: 3, marketplaces_connected: 3, telegram_bots_connected: 1, agent_enabled: 1
+            telegram_channels_connected: 3, marketplaces_connected: 1, marketplace_public_sources_connected: 2,
+            marketplace_sources_enabled: 3, telegram_bots_connected: 1, agent_enabled: 1
           };
           return null;
         },
@@ -1685,15 +1686,17 @@ test("dashboard summary includes user-scoped source counts and a seven-day disco
   assert.equal(response.status, 200);
   const summary = await response.json();
   assert.equal(summary.telegram_channels_connected, 3);
-  assert.equal(summary.marketplaces_connected, 3);
+  assert.equal(summary.marketplaces_connected, 1);
+  assert.equal(summary.marketplace_public_sources_connected, 2);
+  assert.equal(summary.marketplace_sources_enabled, 3);
   assert.equal(summary.telegram_bots_connected, 1);
   assert.equal(summary.agent_enabled, 1);
   assert.equal(summary.daily_activity.length, 7);
   assert.equal(summary.daily_activity.at(-2).projects_found, 2);
   assert.equal(summary.daily_activity.at(-1).projects_found, 4);
   const metricsQuery = statements.find(entry => entry.sql.includes("AS telegram_channels_connected"));
-  assert.match(metricsQuery.sql, /COUNT\(DISTINCT source\).*fl_ru.*freelance_ru/s);
-  assert.deepEqual(metricsQuery.values, Array(9).fill("user-1"));
+  assert.match(metricsQuery.sql, /source IN \('fl_ru','freelance_ru'\)/);
+  assert.deepEqual(metricsQuery.values, Array(11).fill("user-1"));
   const activityQuery = statements.find(entry => entry.sql.includes("date(discovered_at) AS day"));
   assert.deepEqual(activityQuery.values, ["user-1"]);
 });
@@ -1879,3 +1882,4 @@ test("Groq GPT-OSS proposal requests disable exposed reasoning and use low effor
     globalThis.fetch = originalFetch;
   }
 });
+

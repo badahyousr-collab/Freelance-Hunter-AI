@@ -1754,10 +1754,12 @@ async function handle(request: Request, env: Env): Promise<Response> {
       (SELECT COUNT(*) FROM applications WHERE user_id=? AND status='sent') AS proposals_sent,
       (SELECT COUNT(*) FROM applications WHERE user_id=? AND replied_at IS NOT NULL) AS client_replies,
       (SELECT COUNT(*) FROM sources WHERE user_id=? AND source='telegram' AND is_enabled=1) AS telegram_channels_connected,
+      (SELECT COUNT(*) FROM integrations WHERE user_id=? AND provider='freelancehunt' AND status='connected') AS marketplaces_connected,
+      (SELECT COUNT(DISTINCT source) FROM sources WHERE user_id=? AND source IN ('fl_ru','freelance_ru') AND is_enabled=1) AS marketplace_public_sources_connected,
       ((SELECT COUNT(*) FROM integrations WHERE user_id=? AND provider='freelancehunt' AND status='connected') +
-       (SELECT COUNT(DISTINCT source) FROM sources WHERE user_id=? AND source IN ('fl_ru','freelance_ru') AND is_enabled=1)) AS marketplaces_connected,
+       (SELECT COUNT(DISTINCT source) FROM sources WHERE user_id=? AND source IN ('fl_ru','freelance_ru') AND is_enabled=1)) AS marketplace_sources_enabled,
       (SELECT COUNT(*) FROM telegram_links WHERE user_id=? AND telegram_user_id IS NOT NULL) AS telegram_bots_connected,
-      (SELECT COALESCE(MAX(is_enabled),0) FROM agent_settings WHERE user_id=?) AS agent_enabled`).bind(uid,uid,uid,uid,uid,uid,uid,uid,uid).first<any>();
+      (SELECT COALESCE(MAX(is_enabled),0) FROM agent_settings WHERE user_id=?) AS agent_enabled`).bind(uid,uid,uid,uid,uid,uid,uid,uid,uid,uid,uid).first<any>();
     const activityResult = await env.DB.prepare(`SELECT date(discovered_at) AS day,COUNT(*) AS projects_found
       FROM projects WHERE user_id=? AND discovered_at >= datetime('now','-6 days')
       GROUP BY date(discovered_at) ORDER BY day`).bind(uid).all<any>();
@@ -1767,7 +1769,8 @@ async function handle(request: Request, env: Env): Promise<Response> {
       return { day, projects_found: byDay.get(day) ?? 0 };
     });
     return response(request, { projects_found: 0, matched_projects: 0, proposals_sent: 0, client_replies: 0,
-      telegram_channels_connected: 0, marketplaces_connected: 0, telegram_bots_connected: 0, agent_enabled: 0,
+      telegram_channels_connected: 0, marketplaces_connected: 0, marketplace_public_sources_connected: 0,
+      marketplace_sources_enabled: 0, telegram_bots_connected: 0, agent_enabled: 0,
       ...(row ?? {}), daily_activity: dailyActivity });
   }
 
