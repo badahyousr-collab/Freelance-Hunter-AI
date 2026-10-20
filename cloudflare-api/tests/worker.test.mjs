@@ -105,7 +105,7 @@ function fakeDb({ scan = false, freelancehuntScan = false, marketplaceSource = n
           if (sql.includes("SELECT * FROM profiles WHERE user_id=?")) return profile;
           if (sql.includes("SELECT credentials_json FROM integrations WHERE user_id=? AND provider='freelancehunt'")) return integration?.status === "connected" ? integration : null;
           if (sql.includes("SELECT id,provider,label,status,created_at FROM integrations WHERE user_id=? AND provider=?")) return integration ? { id: integration.id, provider: integration.provider, label: integration.label, status: integration.status, created_at: integration.created_at } : null;
-          if (sql.includes("SELECT a.id,a.project_id,a.status,a.draft_text,p.source,p.source_project_id,p.url FROM applications a JOIN projects")) return application;
+          if (sql.includes("SELECT a.id,a.project_id,a.status,a.draft_text,p.source,p.source_project_id,p.url,p.title,p.description FROM applications a JOIN projects")) return application;
           if (sql.includes("SELECT id,project_id,status,draft_text,created_at,submitted_at,replied_at,provider_submission_id,submission_error FROM applications WHERE id=? AND user_id=?")) return application;
           if (sql.includes("SELECT id,project_id,status,draft_text FROM applications WHERE id=? AND user_id=?")) return application;
           if (sql.includes("SELECT id,project_id,status,draft_text,created_at,submitted_at,replied_at FROM applications WHERE id=? AND user_id=?")) return application;
@@ -120,6 +120,7 @@ function fakeDb({ scan = false, freelancehuntScan = false, marketplaceSource = n
           if (sql.includes("SELECT COUNT(*) AS total FROM sources")) return { total: sourceCount };
           if (sql.includes("SELECT is_enabled,auto_draft,auto_submit,daily_submission_limit,min_match_score FROM agent_settings WHERE user_id=?")) return agentSettings;
           if (sql.includes("SELECT skills,languages,payment_preferences,min_budget,currency,excluded_keywords")) return { skills: JSON.stringify(skills), languages: '["ru","en"]', payment_preferences: "[]", min_budget: null, currency: "RUB", excluded_keywords: "[]" };
+          if (sql.includes("SELECT skills FROM profiles WHERE user_id=?")) return { skills: JSON.stringify(skills) };
           if (sql.includes("SELECT skills, min_budget, currency, excluded_keywords")) return { skills: JSON.stringify(skills), min_budget: null, currency: "USD", excluded_keywords: "[]" };
           if (sql.includes("SELECT min_match_score FROM agent_settings")) return { min_match_score: 60 };
           if (sql.includes("SELECT 1 AS ok")) return { ok: 1 };
@@ -998,6 +999,8 @@ test("Freelancehunt bid submission requires confirmation and records only provid
       id: 5, project_id: 299172, status: "awaiting_confirmation",
       draft_text: "I can build the requested Telegram bot.",
       source: "freelancehunt", source_project_id: "299172",
+      title: "Python Telegram bot",
+      description: "Build a Telegram bot with Python.",
       url: "https://freelancehunt.com/project/python-telegram-bot/299172.html",
       created_at: "2026-10-17 10:00:00", submitted_at: null, replied_at: null,
       provider_submission_id: null, submission_error: null
@@ -1025,6 +1028,26 @@ test("Freelancehunt bid submission requires confirmation and records only provid
   } finally {
     globalThis.fetch = originalFetch;
   }
+});
+
+test("Freelancehunt manual submission rejects stale unsupported claims before contacting the marketplace", async () => {
+  const db = fakeDb({ skills: ["python", "telegram"] });
+  db.applicationRecord = {
+    id: 15, project_id: 299173, status: "awaiting_confirmation",
+    draft_text: "I have experience with OpenCart and pytest.",
+    source: "freelancehunt", source_project_id: "299173",
+    title: "OpenCart admin layout update",
+    description: "Adjust the order table in an existing OpenCart store.",
+    url: "https://freelancehunt.com/project/opencart-layout/299173.html"
+  };
+  const response = await worker.fetch(new Request("https://api.example/applications/15/submit", {
+    method: "POST",
+    headers: { Cookie: "fh_session=test-session-token", "Content-Type": "application/json" },
+    body: JSON.stringify({ days: 5, budget_amount: 4500, currency: "RUB", safe_type: "employer" })
+  }), { DB: db, INTEGRATION_ENCRYPTION_KEY: "test-integration-encryption-key-0123456789" });
+  assert.equal(response.status, 422);
+  assert.match((await response.json()).detail, /claims.*not supported/i);
+  assert.equal(db.applicationRecord.status, "awaiting_confirmation");
 });
 
 test("Freelancehunt submission rejects drafts that were not prepared for confirmation", async () => {
