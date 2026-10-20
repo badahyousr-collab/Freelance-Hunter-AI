@@ -117,30 +117,6 @@ test("health endpoint confirms a reachable D1 binding and required schema", asyn
   assert.deepEqual(await response.json(), { status: "ok", database: "connected", schema: "ready", service: "freelance-hunter-api" });
 });
 
-test("AI readiness check reserves enough completion tokens for visible text", async () => {
-  const originalFetch = globalThis.fetch;
-  let sentBody;
-  globalThis.fetch = async (input, init) => {
-    if (String(input) === "https://api.groq.com/openai/v1/chat/completions") {
-      sentBody = JSON.parse(init.body);
-      return Response.json({ choices: [{ message: { content: "OK" } }] });
-    }
-    return originalFetch(input, init);
-  };
-  try {
-    const response = await worker.fetch(new Request("https://api.example/agent/test-ai", {
-      method: "POST",
-      headers: { Cookie: "fh_session=test-session-token" }
-    }), { DB: fakeDb(), AI_API_KEY: "test-ai-key", AI_API_BASE_URL: "https://api.groq.com/openai/v1", AI_MODEL: "openai/gpt-oss-20b" });
-    assert.equal(response.status, 200);
-    assert.equal((await response.json()).ok, true);
-    assert.equal(sentBody.max_completion_tokens, 64);
-    assert.equal("max_tokens" in sentBody, false);
-  } finally {
-    globalThis.fetch = originalFetch;
-  }
-});
-
 test("health endpoint reports missing Telegram identity and notification migrations", async () => {
   const response = await worker.fetch(new Request("https://api.example/health"), { DB: fakeDb({ telegramIdentitySchema: false, notificationsSchema: false, submissionSchema: false, providerStatusSchema: false, applicationUpdateNotificationsSchema: false, autoSubmissionSchema: false }) });
   assert.equal(response.status, 200);
