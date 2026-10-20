@@ -54,7 +54,7 @@ test("AI readiness check reserves enough completion tokens for visible text", as
 });
 
 
-function fakeDb({ scan = false, freelancehuntScan = false, marketplaceSource = null, skills = ["python", "telegram"], telegramAuth = null, telegramCode = null, linkedAccount = null, application = null, fallbackApplication = null, telegramProjects = [], telegramLinkedUserId = null, project = null, recentProjects = [], profile = null, integration = null, notificationTarget = null, agentSettings = null, pendingDraftProjects = [], sourceCount = 0, insertChanges = 1, projectInserts = [], telegramIdentitySchema = true, notificationsSchema = true, submissionSchema = true, providerStatusSchema = true, applicationUpdateNotificationsSchema = true, autoSubmissionSchema = true } = {}) {
+function fakeDb({ scan = false, telegramChannel = "@python_jobs", existingProject = null, budgetBackfills = [], freelancehuntScan = false, marketplaceSource = null, skills = ["python", "telegram"], telegramAuth = null, telegramCode = null, linkedAccount = null, application = null, fallbackApplication = null, telegramProjects = [], telegramLinkedUserId = null, project = null, recentProjects = [], profile = null, integration = null, notificationTarget = null, agentSettings = null, pendingDraftProjects = [], sourceCount = 0, insertChanges = 1, projectInserts = [], telegramIdentitySchema = true, notificationsSchema = true, submissionSchema = true, providerStatusSchema = true, applicationUpdateNotificationsSchema = true, autoSubmissionSchema = true } = {}) {
   const profileRecalculations = [];
   return {
     get storedIntegration() { return integration; },
@@ -63,6 +63,8 @@ function fakeDb({ scan = false, freelancehuntScan = false, marketplaceSource = n
     set applicationRecord(value) { application = value; },
     get insertedProjects() { return projectInserts; },
     get profileRecalculations() { return profileRecalculations; },
+    get backfilledProject() { return existingProject; },
+    get budgetBackfillWrites() { return budgetBackfills; },
     async batch(statements) { profileRecalculations.push(statements.length); return statements.map(() => ({ meta: { changes: 1 } })); },
     prepare(sql) {
       let values = [];
@@ -94,6 +96,12 @@ function fakeDb({ scan = false, freelancehuntScan = false, marketplaceSource = n
             integration = { id: 1, user_id: "user-1", provider: values[1], label: values[2], status: values[3], credentials_json: values[4] ?? "{}", created_at: "2026-10-17 10:00:00" };
           }
           if (sql.includes("INSERT INTO projects")) projectInserts.push({ sql, values: [...values] });
+          if (sql.includes("UPDATE projects SET budget_min=COALESCE")) {
+            budgetBackfills.push({ sql, values: [...values] });
+            if (existingProject && existingProject.user_id === values[6] && existingProject.source_project_id.toLowerCase() === String(values[7]).toLowerCase() && sql.includes("LOWER(source_project_id)=LOWER(?)")) {
+              existingProject = { ...existingProject, budget_min: existingProject.budget_min ?? values[0], budget_max: existingProject.budget_max ?? values[1], currency: existingProject.currency ?? values[2], match_score: values[4], match_reasons: values[5] };
+            }
+          }
           return { meta: { changes: sql.includes("INSERT INTO projects") ? insertChanges : 1 } };
         },
         async first() {
@@ -140,7 +148,7 @@ function fakeDb({ scan = false, freelancehuntScan = false, marketplaceSource = n
           if (sql.includes("SELECT * FROM sources WHERE user_id=? AND is_enabled=1")) {
             if (marketplaceSource) return { results: [{ id: 9, user_id: "user-1", identifier: marketplaceSource === "fl_ru" ? "all" : "public", is_enabled: 1, source: marketplaceSource }] };
             if (freelancehuntScan) return { results: [{ id: 8, user_id: "user-1", source: "freelancehunt", identifier: "", is_enabled: 1 }] };
-            if (scan) return { results: [{ id: 7, user_id: "user-1", source: "telegram", identifier: "@python_jobs", is_enabled: 1 }] };
+            if (scan) return { results: [{ id: 7, user_id: "user-1", source: "telegram", identifier: telegramChannel, is_enabled: 1 }] };
           }
           if (sql.includes("FROM projects p LEFT JOIN applications a ON a.user_id=p.user_id AND a.project_id=p.id") && sql.includes("p.match_score>=COALESCE")) return { results: telegramProjects };
           if (sql.includes("FROM projects") && sql.includes("julianday(")) return { results: recentProjects };
