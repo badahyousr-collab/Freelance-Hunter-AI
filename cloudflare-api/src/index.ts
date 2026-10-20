@@ -177,6 +177,7 @@ async function linkedTelegramAccount(env: Env, telegramUserId: string): Promise<
 
 const sourceCatalog = [
   { source: "telegram", label: "Telegram", kind: "telegram", capabilities: ["read_public_posts"], setup_note: "Добавь публичный канал с заказами. Агент будет проверять новые публикации до 72 часов." },
+  { source: "freelancehunt", label: "Freelancehunt", kind: "marketplace", capabilities: ["read_projects", "generate_drafts", "submit_bids"], setup_note: "Подключи и проверь API-токен в интеграциях; поиск и автоматическая отправка доступны через официальный API." },
   { source: "fl_ru", label: "FL.ru", kind: "marketplace", capabilities: ["read_public_projects", "generate_drafts", "manual_submission_only"], setup_note: "Публичная RSS-лента заказов FL.ru. AI подготовит черновик, отклик отправляется вручную на сайте биржи." },
   { source: "freelance_ru", label: "Freelance.ru", kind: "marketplace", capabilities: ["read_public_projects", "generate_drafts", "manual_submission_only"], setup_note: "Открытые задания Freelance.ru. AI подготовит черновик, отклик отправляется вручную на сайте биржи." }
 ];
@@ -1942,10 +1943,15 @@ async function handle(request: Request, env: Env): Promise<Response> {
     const identifier = String(input.identifier ?? "").trim();
     if (!sourceCatalog.some(s => s.source === source)) return response(request, { detail: "Unsupported source type." }, 400);
     if (source === "telegram" && !/^@[a-zA-Z0-9_]{5,}$/.test(identifier)) return response(request, { detail: "Enter a public Telegram channel username such as @python_jobs." }, 400);
+    if (source === "freelancehunt") {
+      if (identifier !== "all") return response(request, { detail: "Freelancehunt uses all projects available to the connected API account." }, 400);
+      const integration = await env.DB.prepare("SELECT status FROM integrations WHERE user_id=? AND provider='freelancehunt'").bind(uid).first<any>();
+      if (integration?.status !== "connected") return response(request, { detail: "Подключи и проверь API-токен Freelancehunt перед включением поиска." }, 409);
+    }
     if (source === "fl_ru" && identifier !== "all") return response(request, { detail: "FL.ru uses the official public all-projects RSS feed." }, 400);
     if (source === "freelance_ru" && identifier !== "public") return response(request, { detail: "Freelance.ru uses its public open-tasks feed." }, 400);
     try {
-      const status = ["telegram", "fl_ru", "freelance_ru"].includes(source) ? "configured" : "pending_integration";
+      const status = ["telegram", "freelancehunt", "fl_ru", "freelance_ru"].includes(source) ? "configured" : "pending_integration";
       await env.DB.prepare("INSERT INTO sources (user_id,source,identifier,is_enabled,status) VALUES (?,?,?,?,?)").bind(uid, source, identifier, input.is_enabled === false ? 0 : 1, status).run();
     } catch { return response(request, { detail: "This source is already configured." }, 409); }
     const row = await env.DB.prepare("SELECT * FROM sources WHERE user_id=? AND source=? AND identifier=?").bind(uid, source, identifier).first<any>();
@@ -2375,6 +2381,7 @@ async function handle(request: Request, env: Env): Promise<Response> {
       const label = String(input.label ?? (profile.login ? `Freelancehunt · ${profile.login}` : item.label)).slice(0,100);
       await env.DB.prepare("INSERT INTO integrations (user_id,provider,label,status,credentials_json) VALUES (?,?,?,?,?) ON CONFLICT(user_id,provider) DO UPDATE SET label=excluded.label,status='connected',credentials_json=excluded.credentials_json")
         .bind(uid, provider, label, "connected", encrypted).run();
+      await env.DB.prepare("INSERT INTO sources (user_id,source,identifier,is_enabled,status) VALUES (?, 'freelancehunt', 'all', 1, 'configured') ON CONFLICT(user_id,source,identifier) DO NOTHING").bind(uid).run();
       const saved = await env.DB.prepare("SELECT id,provider,label,status,created_at FROM integrations WHERE user_id=? AND provider=?").bind(uid,provider).first<any>();
       return response(request, saved, 201);
     }
