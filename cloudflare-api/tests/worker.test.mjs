@@ -950,7 +950,7 @@ test("Freelancehunt token is validated, encrypted, and used to ingest official A
           description_html: "<p>Need a Python developer to build a Telegram bot.</p>",
           budget: { amount: 5000, currency: "RUB" },
           safe_type: "employer",
-          published_at: "2026-10-17T09:00:00+00:00",
+          published_at: new Date().toISOString(),
           self: { web: "https://freelancehunt.com/project/python-telegram-bot/299172.html" }
         }
       }] });
