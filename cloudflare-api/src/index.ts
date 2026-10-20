@@ -1276,7 +1276,8 @@ async function generateFreelancehuntReply(env: Env, project: any, profile: any, 
   const latestEmployerText = [...conversation].reverse().find(item => item.sender === "employer")?.text ?? "";
   const language = detectProjectLanguage(latestEmployerText || conversation.map(item => item.text).join("\n"));
   const skills = safeJson(profile?.skills, []);
-  const apiBase = (env.AI_API_BASE_URL || "https://api.openai.com/v1").replace(/\/+$/, "");
+  let apiBase = env.AI_API_BASE_URL || "https://api.openai.com/v1";
+  while (apiBase.endsWith("/")) apiBase = apiBase.slice(0, -1);
   const endpoint = apiBase.endsWith("/chat/completions") ? apiBase : apiBase + "/chat/completions";
   const upstream = await fetch(endpoint, {
     method: "POST",
