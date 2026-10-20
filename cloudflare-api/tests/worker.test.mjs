@@ -54,7 +54,7 @@ test("AI readiness check reserves enough completion tokens for visible text", as
 });
 
 
-function fakeDb({ scan = false, freelancehuntScan = false, marketplaceSource = null, skills = ["python", "telegram"], telegramAuth = null, telegramCode = null, linkedAccount = null, application = null, fallbackApplication = null, telegramProjects = [], telegramLinkedUserId = null, project = null, recentProjects = [], profile = null, integration = null, notificationTarget = null, agentSettings = null, pendingDraftProjects = [], sourceCount = 0, insertChanges = 1, projectInserts = [], telegramIdentitySchema = true, notificationsSchema = true, submissionSchema = true, providerStatusSchema = true, applicationUpdateNotificationsSchema = true, autoSubmissionSchema = true } = {}) {
+function fakeDb({ scan = false, telegramChannel = "@python_jobs", existingProject = null, budgetBackfills = [], freelancehuntScan = false, marketplaceSource = null, skills = ["python", "telegram"], telegramAuth = null, telegramCode = null, linkedAccount = null, application = null, fallbackApplication = null, telegramProjects = [], telegramLinkedUserId = null, project = null, recentProjects = [], profile = null, integration = null, notificationTarget = null, agentSettings = null, pendingDraftProjects = [], sourceCount = 0, insertChanges = 1, projectInserts = [], telegramIdentitySchema = true, notificationsSchema = true, submissionSchema = true, providerStatusSchema = true, applicationUpdateNotificationsSchema = true, autoSubmissionSchema = true } = {}) {
   const profileRecalculations = [];
   return {
     get storedIntegration() { return integration; },
@@ -63,6 +63,8 @@ function fakeDb({ scan = false, freelancehuntScan = false, marketplaceSource = n
     set applicationRecord(value) { application = value; },
     get insertedProjects() { return projectInserts; },
     get profileRecalculations() { return profileRecalculations; },
+    get backfilledProject() { return existingProject; },
+    get budgetBackfillWrites() { return budgetBackfills; },
     async batch(statements) { profileRecalculations.push(statements.length); return statements.map(() => ({ meta: { changes: 1 } })); },
     prepare(sql) {
       let values = [];
@@ -94,6 +96,12 @@ function fakeDb({ scan = false, freelancehuntScan = false, marketplaceSource = n
             integration = { id: 1, user_id: "user-1", provider: values[1], label: values[2], status: values[3], credentials_json: values[4] ?? "{}", created_at: "2026-10-17 10:00:00" };
           }
           if (sql.includes("INSERT INTO projects")) projectInserts.push({ sql, values: [...values] });
+          if (sql.includes("UPDATE projects SET budget_min=COALESCE")) {
+            budgetBackfills.push({ sql, values: [...values] });
+            if (existingProject && existingProject.user_id === values[6] && existingProject.source_project_id.toLowerCase() === String(values[7]).toLowerCase() && sql.includes("LOWER(source_project_id)=LOWER(?)")) {
+              existingProject = { ...existingProject, budget_min: existingProject.budget_min ?? values[0], budget_max: existingProject.budget_max ?? values[1], currency: existingProject.currency ?? values[2], match_score: values[4], match_reasons: values[5] };
+            }
+          }
           return { meta: { changes: sql.includes("INSERT INTO projects") ? insertChanges : 1 } };
         },
         async first() {
@@ -140,7 +148,7 @@ function fakeDb({ scan = false, freelancehuntScan = false, marketplaceSource = n
           if (sql.includes("SELECT * FROM sources WHERE user_id=? AND is_enabled=1")) {
             if (marketplaceSource) return { results: [{ id: 9, user_id: "user-1", identifier: marketplaceSource === "fl_ru" ? "all" : "public", is_enabled: 1, source: marketplaceSource }] };
             if (freelancehuntScan) return { results: [{ id: 8, user_id: "user-1", source: "freelancehunt", identifier: "", is_enabled: 1 }] };
-            if (scan) return { results: [{ id: 7, user_id: "user-1", source: "telegram", identifier: "@python_jobs", is_enabled: 1 }] };
+            if (scan) return { results: [{ id: 7, user_id: "user-1", source: "telegram", identifier: telegramChannel, is_enabled: 1 }] };
           }
           if (sql.includes("FROM projects p LEFT JOIN applications a ON a.user_id=p.user_id AND a.project_id=p.id") && sql.includes("p.match_score>=COALESCE")) return { results: telegramProjects };
           if (sql.includes("FROM projects") && sql.includes("julianday(")) return { results: recentProjects };
@@ -326,6 +334,44 @@ test("scan ignores Telegram listings older than 72 hours and listings without a 
   }
 });
 
+
+test("Telegram scan backfills an existing listing budget when the source ID casing differs", async () => {
+  const originalFetch = globalThis.fetch;
+  const publishedAt = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+  const html = `<div class="tgme_widget_message_wrap" data-post="FreelancehuntProjects/908578"><div class="tgme_widget_message_text js-message_text" dir="auto">Потрібно замінити лендінг інтернет-магазину. 💰 2500&#8239;UAH<br>🛠 #html_и_css_верстка</div><time datetime="${publishedAt}"></time></div>`;
+  globalThis.fetch = async input => String(input).startsWith("https://t.me/s/FreelancehuntProjects")
+    ? new Response(html, { status: 200, headers: { "Content-Type": "text/html" } })
+    : originalFetch(input);
+  const db = fakeDb({
+    scan: true,
+    telegramChannel: "@FreelancehuntProjects",
+    insertChanges: 0,
+    existingProject: {
+      user_id: "user-1",
+      source: "telegram",
+      source_project_id: "freelancehuntprojects:908578",
+      budget_min: null,
+      budget_max: null,
+      currency: null
+    }
+  });
+  try {
+    const response = await worker.fetch(new Request("https://api.example/agent/scan", {
+      method: "POST",
+      headers: { Cookie: "fh_session=test-session-token", "Content-Type": "application/json" },
+      body: "{}"
+    }), { DB: db });
+    assert.equal(response.status, 200);
+    assert.equal((await response.json()).newProjects, 0);
+    assert.equal(db.budgetBackfillWrites.length, 1);
+    assert.match(db.budgetBackfillWrites[0].sql, /LOWER\(source_project_id\)=LOWER\(\?\)/);
+    assert.equal(db.backfilledProject.budget_min, 2500);
+    assert.equal(db.backfilledProject.budget_max, 2500);
+    assert.equal(db.backfilledProject.currency, "UAH");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
 
 test("source creation has no arbitrary per-account limit", async () => {
   const response = await worker.fetch(new Request("https://api.example/sources", {
@@ -638,7 +684,10 @@ test("budget parser handles Russian and international currency formats", () => {
     ["Оплата: 5000 RUB", { amount: 5000, currency: "RUB" }],
     ["Бюджет: 2 500 UAH", { amount: 2500, currency: "UAH" }],
     ["Оплата 2500 грн", { amount: 2500, currency: "UAH" }],
-    ["Бюджет 3 000 гривень", { amount: 3000, currency: "UAH" }]
+    ["Бюджет 3 000 гривень", { amount: 3000, currency: "UAH" }],
+    ["💰 2500\u202fUAH", { amount: 2500, currency: "UAH" }],
+    ["💰 2500&#8239;UAH", { amount: 2500, currency: "UAH" }],
+    ["💰 2500&thinsp;UAH", { amount: 2500, currency: "UAH" }]
   ];
   for (const [input, expected] of cases) {
     assert.deepEqual(detectedBudget(input), expected, input);
