@@ -122,6 +122,7 @@ test("source catalog can connect FL.ru and Freelance.ru as draft-only sources", 
     ]) });
   });
   await page.route("**/api/backend/integrations", async route => {
+    await integrationResponseReady;
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([]) });
   });
   await page.route("**/api/backend/sources", async route => {
@@ -136,8 +137,12 @@ test("source catalog can connect FL.ru and Freelance.ru as draft-only sources", 
     await route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify(item) });
   });
 
+  let resolveIntegrationResponse!: () => void;
+  const integrationResponseReady = new Promise<void>(resolve => { resolveIntegrationResponse = resolve; });
   await page.goto("/sources");
   const marketplaceAccordion = page.locator(".source-group-summary").filter({ hasText: "Фриланс-биржи" });
+  await expect(marketplaceAccordion).toContainText("Проверяем подключения…");
+  resolveIntegrationResponse();
   await expect(marketplaceAccordion).toContainText("0 из 3 подключено");
   await expect(page.locator("article.sub-list-row").filter({ hasText: "FL.ru" })).toBeHidden();
   await marketplaceAccordion.click();
