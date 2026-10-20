@@ -6,6 +6,7 @@ test("listing language detection distinguishes Russian, Ukrainian, and English",
   assert.equal(detectProjectLanguage("Нужно разработать Telegram-бота для заявок"), "ru");
   assert.equal(detectProjectLanguage("Потрібно розробити Telegram-бота для заявок"), "uk");
   assert.equal(detectProjectLanguage("Build a Telegram bot for project applications"), "en");
+  assert.equal(detectProjectLanguage("Full-Stack Engineer Needed for Web Application Development #javascript_и_typescript #веб_программирование Project Overview We are looking for an experienced Full-Stack Engineer to join our project and help design, develop, and maintain a scalable web application."), "en");
   assert.equal(detectProjectLanguage("Je recherche un développeur pour ce projet"), "fr");
   assert.equal(proposalValidationIssue("Je recherche une solution pour votre projet.", "fr"), null);
   assert.equal(proposalValidationIssue("Привет! Какой срок ты рассматриваешь?", "ru"), "informal_address");
