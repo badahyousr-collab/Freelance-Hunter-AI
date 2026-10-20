@@ -1851,14 +1851,16 @@ test("FL.ru RSS parser keeps recent first-party project listings only", () => {
 });
 
 test("Freelance.ru parser keeps only recent tasks visible to everyone", () => {
+  const now = Date.UTC(2026, 9, 20, 21, 15);
   const formatMoscow = date => [String(date.getUTCDate()).padStart(2, "0"), String(date.getUTCMonth() + 1).padStart(2, "0"), date.getUTCFullYear()].join(".") + " " + String(date.getUTCHours()).padStart(2, "0") + ":" + String(date.getUTCMinutes()).padStart(2, "0");
-  const recent = formatMoscow(new Date(Date.now() - 60_000 + 3 * 60 * 60 * 1000));
-  const stale = formatMoscow(new Date(Date.now() - 73 * 60 * 60 * 1000 + 3 * 60 * 60 * 1000));
+  const recent = formatMoscow(new Date(now - 60_000 + 3 * 60 * 60 * 1000));
+  const stale = formatMoscow(new Date(now - 73 * 60 * 60 * 1000 + 3 * 60 * 60 * 1000));
   const card = (id, date, badge = "task-badge--all") => "<article class=\"task-card\"><span class=\"" + badge + "\">Видно всем</span><a class=\"task-card__title-link\" href=\"/task/view/" + id + "\">Разработать Telegram-бота</a><p class=\"task-card__desc\">Нужен бот на Python</p><span class=\"task-chip--cat\">Разработка ботов</span><div class=\"task-card__budget\">10 000 ₽</div><span class=\"task-card__foot-item\" title=\"" + date + "\">Сегодня</span></article>";
-  const listings = parseFreelanceRuTasks(card(12, recent) + card(13, stale) + card(14, recent, "task-badge--premium"));
+  const listings = parseFreelanceRuTasks(card(12, recent) + card(13, stale) + card(14, recent, "task-badge--premium"), now);
   assert.equal(listings.length, 1);
   assert.equal(listings[0].id, "12");
   assert.equal(listings[0].url, "https://freelance.ru/task/view/12");
+  assert.equal(listings[0].publishedAt, new Date(Date.UTC(2026, 9, 20, 21, 14)).toISOString());
   assert.match(listings[0].description, /Разработка ботов/);
   assert.match(listings[0].description, /10 000 ₽/);
 });
