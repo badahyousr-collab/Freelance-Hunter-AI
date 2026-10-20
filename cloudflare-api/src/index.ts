@@ -875,7 +875,7 @@ async function autoSubmitFreelancehuntProposal(env: Env, userId: string, applica
   if (Number(settings?.auto_submit ?? 1) !== 1) return false;
   if (!env.INTEGRATION_ENCRYPTION_KEY || env.INTEGRATION_ENCRYPTION_KEY.trim().length < 32) return false;
   if (String(project.source) !== "freelancehunt" || !/^\d+$/.test(String(project.source_project_id ?? ""))) return false;
-remove fallback budget  const limit = Math.max(1, Math.min(50, Number(settings?.daily_submission_limit ?? 10)));
+ const limit = Math.max(1, Math.min(50, Number(settings?.daily_submission_limit ?? 10)));
   const today = await env.DB.prepare("SELECT COUNT(*) AS total FROM applications WHERE user_id=? AND status IN ('sent','submitting','submission_unknown') AND (submitted_at >= date('now') OR (submitted_at IS NULL AND created_at >= date('now')))").bind(userId).first<any>();
   if (Number(today?.total ?? 0) >= limit) return false;
   const integration = await env.DB.prepare("SELECT credentials_json FROM integrations WHERE user_id=? AND provider='freelancehunt' AND status='connected'").bind(userId).first<any>();
@@ -986,7 +986,7 @@ async function autoSubmitPendingFreelancehuntDrafts(env: Env, userId: string): P
   if (!env.INTEGRATION_ENCRYPTION_KEY || env.INTEGRATION_ENCRYPTION_KEY.trim().length < 32) return 0;
   const threshold = Math.max(0, Math.min(100, Number(settings.min_match_score ?? 60)));
   const rows = await env.DB.prepare("SELECT a.id AS application_id,p.id,p.source,p.source_project_id,p.description,p.budget_min,p.budget_max,p.currency FROM applications a JOIN projects p ON p.id=a.project_id AND p.user_id=a.user_id WHERE a.user_id=? AND a.status='draft' AND p.source='freelancehunt' AND p.match_score>=? AND julianday(p.published_at) BETWEEN julianday('now','-3 days') AND julianday('now','+5 minutes') ORDER BY p.match_score DESC,p.published_at DESC LIMIT 10").bind(userId,threshold).all<any>();
-remove profile fetch  let submitted = 0;
+ let submitted = 0;
   for (const project of rows.results ?? []) {
     if (await autoSubmitFreelancehuntProposal(env,userId,Number(project.application_id),project)) submitted += 1;
   }
