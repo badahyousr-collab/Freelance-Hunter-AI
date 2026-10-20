@@ -61,7 +61,7 @@ a { color: inherit; text-decoration: none; }
 @media (max-width: 480px) { .auth-card { padding: 24px 20px; } }
 
 
-/* Freelance Hunter visual system — minimal monochrome with Pipisso-inspired signal colors */
+/* Freelance Hunter visual system — minimal monochrome with ByteCraft signal colors */
 :root {
   --accent-yellow: #ffc400;
   --accent-cyan: #14d9e8;

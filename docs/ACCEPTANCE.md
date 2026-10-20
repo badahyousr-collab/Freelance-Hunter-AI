@@ -29,7 +29,7 @@
 - [x] Excluded-keyword filtering and basic detected-budget filtering are implemented in the Cloudflare scanner.
 - [x] Authenticated scans run against the current user's enabled public Telegram sources; agent startup also triggers an initial scan.
 - [x] Curated public Telegram job-channel catalog is populated with public URLs and category/language labels.
-- [x] Verify a real public Telegram channel scan and scheduled Cron execution against the deployed Worker (20 Oct 2026, 03:00:36 UTC).
+- [x] Verify real public Telegram, FL.ru, and Freelance.ru source scans and scheduled Cron execution against the deployed Worker (20 Oct 2026); recheck production API health on 21 Oct 2026.
 - [x] Freelancehunt official API token validation, project ingestion, automatic bid submission controls, provider-confirmed bid status sync, and optional Telegram reply notifications have mocked regression tests. Live account verification remains pending. Other marketplace adapters and message-thread reply sync remain pending.
 
 ## AI and proposals
@@ -37,7 +37,7 @@
 - [x] Proposal prompt treats listing content as untrusted and forbids fabricated experience.
 - [x] Provider absence is reported as a configuration error.
 - [x] Mocked provider-contract tests cover Russian and English drafts, profile/listing payloads, safety instructions, and provider failures.
-- [ ] Configure a real model provider and evaluate proposal quality against real anonymized listings in Russian and English.
+- [x] Configure a real model provider and verify production proposal generation in Russian and English against skills-aligned listings. This is focused smoke coverage, not an exhaustive quality evaluation.
 - [x] Labeled RU/EN test set covers matching quality, budget thresholds, language, excluded keywords, unpaid work, risk, and complexity; deterministic hard filters cannot be overridden by AI.
 - [x] No user-facing endpoint can mark a proposal as sent/replied directly. Freelancehunt is marked sent only after a successful official API response with a bid ID; ambiguous failures are blocked from automatic retry. A manual sync endpoint marks a sent bid as replied only when the official API reports it rejected or selected as winner; message-thread replies remain pending.
 
@@ -46,7 +46,7 @@
 - [x] Loading, empty, and error states are present on core pages.
 - [x] Telegram account linking is expiring, single-use, and verified server-side.
 - [x] Bot setup and server-to-server endpoints require a shared secret.
-- [ ] Configure a newly issued BotFather token and webhook secret, apply migrations `0007` through `0012`, then test real Telegram commands and provider-confirmed reply notifications.
+- [ ] Verify real Telegram commands and provider-confirmed reply notifications. The user explicitly chose to leave Telegram `/stats` and notification E2E open; no Telegram Web login or message was attempted. Production health currently reports the D1 schema ready.
 - [x] CI Playwright smoke tests cover Telegram auth, project search, Telegram source setup, agent startup scan, and settings save/layout.
 - [x] CI browser end-to-end tests cover dashboard, logout, and session expiry.
 - [ ] Full browser end-to-end flows are tested on the deployed site.
@@ -55,7 +55,7 @@
 ## Operations and recovery
 - [x] Structured scan logs include duration, scanned sources, new-project counts, and failure counts.
 - [x] Optional Telegram operations alerts are implemented and covered by a mocked scheduled-scan failure test.
-- [ ] Configure `WORKER_ALERT_CHAT_ID` and verify delivery against the deployed bot.
+- [ ] Verify operational-alert delivery against the deployed bot. Real Telegram command/notification E2E was explicitly left open by the user.
 - [x] Run the local PostgreSQL-backed Docker Compose startup and `/health` smoke test in CI.
 - [x] Run a synthetic local D1 export/restore drill into a separately initialized non-production database. Cloudflare D1 Time Travel exposes a seven-day production restore window; a production restore has not been attempted because it overwrites live data.
 - [ ] Complete the deployed smoke-test checklist and full user-scoped authorization coverage.
@@ -69,5 +69,5 @@
 ## Verification record
 - CI verifies backend tests/migrations, frontend lint/build, Playwright smoke tests, and Cloudflare Worker typecheck/tests. CodeQL and weekly Dependabot checks are configured.
 - [x] Document D1 export, migration, and test-database restore commands in [Operations and recovery](OPERATIONS.md). A synthetic local restore passed. Cloudflare D1 Time Travel exposes a seven-day production restore window; production recovery has not been exercised.
-- Live checks on 20 Oct 2026 confirm API health (D1 connected, schema ready), API Worker version ce8b2a98 at 100% traffic, and scheduled source scans completed at 04:30:27 UTC (Telegram), 04:30:36 UTC (FL.ru), and 04:30:39 UTC (Freelance.ru). The refreshed production dashboard showed 453 projects, 12 profile matches, 3 marketplace discovery sources (1 API-connected and 2 public-search), 10 Telegram channels, 1 linked bot, 0 provider-confirmed bids, and 0 tracked replies. Two observed Telegram listings displayed 2 500 UAH and remained in the Найден state. Russian AI generation produced a saved draft without sending it. English generation quality, real Telegram bot command/notification delivery, two-account production isolation, production-data restore, and an employer-facing bid E2E remain unverified.
-- Known limitations: Freelancehunt API discovery/submission/status sync and optional Telegram reply notifications need further safe live verification. Telegram Web was signed out on the acceptance PC; no OTP login or message was attempted. Telegram-only sign-in is the accepted product scope; email registration and recovery were explicitly removed. Message-thread synchronization and other marketplace adapters are not implemented. Telegram ingestion currently reads public channel previews only.
+- Production verification on 21 Oct 2026: the API health endpoint returned HTTP 200 with D1 connected and schema ready; the public application route returned HTTP 200. The authenticated dashboard hydrated, and the agent page showed the saved settings after loading. Current scan, source, match, and application counts rendered from production data; the account showed zero provider-confirmed submissions and zero tracked replies. The agent and auto-submit preference were enabled with a daily limit of 50; acceptance did not change settings, start a scan, or submit an application. A focused production English draft was verified on 20 Oct; Russian and English drafts were saved without sending. Real Telegram bot command/notification delivery (explicitly deferred by the user), two-account production isolation, a live employer-facing bid, a production-data restore, a complete deployed control audit, and remaining portfolio evidence are unverified.
+- Known limitations: Freelancehunt is the only marketplace with an official account API; FL.ru and Freelance.ru are public discovery sources and do not support sending through this product. Other marketplace adapters and message-thread synchronization are not implemented. Telegram ingestion reads public channel previews only. The real Telegram command/notification test was explicitly left open by the user. Telegram-only sign-in is the accepted product scope; email registration and recovery were explicitly removed.

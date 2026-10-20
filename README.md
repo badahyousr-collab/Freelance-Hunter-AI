@@ -1,6 +1,6 @@
-# Pipisso - Freelance Hunter
+# ByteCraft - Freelance Hunter
 
-Freelance Hunter is part of the Pipisso ecosystem. It discovers freelance opportunities, ranks them against a user's profile, and helps manage proposals through a web workspace and Telegram bot.
+ByteCraft Freelance Hunter discovers freelance opportunities, ranks them against a user's profile, and helps manage proposals through a web workspace and Telegram bot.
 
 ## Product goals
 
