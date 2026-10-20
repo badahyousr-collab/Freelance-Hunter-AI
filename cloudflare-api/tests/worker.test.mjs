@@ -335,6 +335,44 @@ test("scan ignores Telegram listings older than 72 hours and listings without a 
 });
 
 
+test("Telegram scan backfills an existing listing budget when the source ID casing differs", async () => {
+  const originalFetch = globalThis.fetch;
+  const publishedAt = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+  const html = `<div class="tgme_widget_message_wrap" data-post="FreelancehuntProjects/908578"><div class="tgme_widget_message_text js-message_text" dir="auto">Потрібно замінити лендінг інтернет-магазину. 💰 2500&#8239;UAH<br>🛠 #html_и_css_верстка</div><time datetime="${publishedAt}"></time></div>`;
+  globalThis.fetch = async input => String(input).startsWith("https://t.me/s/FreelancehuntProjects")
+    ? new Response(html, { status: 200, headers: { "Content-Type": "text/html" } })
+    : originalFetch(input);
+  const db = fakeDb({
+    scan: true,
+    telegramChannel: "@FreelancehuntProjects",
+    insertChanges: 0,
+    existingProject: {
+      user_id: "user-1",
+      source: "telegram",
+      source_project_id: "freelancehuntprojects:908578",
+      budget_min: null,
+      budget_max: null,
+      currency: null
+    }
+  });
+  try {
+    const response = await worker.fetch(new Request("https://api.example/agent/scan", {
+      method: "POST",
+      headers: { Cookie: "fh_session=test-session-token", "Content-Type": "application/json" },
+      body: "{}"
+    }), { DB: db });
+    assert.equal(response.status, 200);
+    assert.equal((await response.json()).newProjects, 0);
+    assert.equal(db.budgetBackfillWrites.length, 1);
+    assert.match(db.budgetBackfillWrites[0].sql, /LOWER\(source_project_id\)=LOWER\(\?\)/);
+    assert.equal(db.backfilledProject.budget_min, 2500);
+    assert.equal(db.backfilledProject.budget_max, 2500);
+    assert.equal(db.backfilledProject.currency, "UAH");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("source creation has no arbitrary per-account limit", async () => {
   const response = await worker.fetch(new Request("https://api.example/sources", {
     method: "POST",
@@ -646,7 +684,10 @@ test("budget parser handles Russian and international currency formats", () => {
     ["Оплата: 5000 RUB", { amount: 5000, currency: "RUB" }],
     ["Бюджет: 2 500 UAH", { amount: 2500, currency: "UAH" }],
     ["Оплата 2500 грн", { amount: 2500, currency: "UAH" }],
-    ["Бюджет 3 000 гривень", { amount: 3000, currency: "UAH" }]
+    ["Бюджет 3 000 гривень", { amount: 3000, currency: "UAH" }],
+    ["💰 2500\u202fUAH", { amount: 2500, currency: "UAH" }],
+    ["💰 2500&#8239;UAH", { amount: 2500, currency: "UAH" }],
+    ["💰 2500&thinsp;UAH", { amount: 2500, currency: "UAH" }]
   ];
   for (const [input, expected] of cases) {
     assert.deepEqual(detectedBudget(input), expected, input);
