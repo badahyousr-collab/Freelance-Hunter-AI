@@ -29,6 +29,13 @@ test("automatic marketplace submission rejects stale drafts with unsupported cla
   assert.equal(proposalSubmissionValidationIssue("Здравствуйте! Могу обсудить Ваш проект. Какой срок Вы рассматриваете?", "Доработка сайта на Python", "Нужно улучшить Django-проект", ["Python", "Django"]), null);
 });
 
+test("proposal validation rejects unsupported English experience and reliability claims", () => {
+  const skills = ["React", "Next.js", "Node.js", "FastAPI", "Django"];
+  assert.equal(proposalValidationIssue("I have extensive experience building full-stack applications with React, Next.js, Node.js, FastAPI, and Django.", "en", skills), "unsupported_experience");
+  assert.equal(proposalValidationIssue("I routinely deliver projects on time.", "en", skills), "unsupported_experience");
+  assert.equal(proposalValidationIssue("I can use React and Next.js to build the interface for your project.", "en", skills), null);
+});
+
 test("AI readiness check reserves enough completion tokens for visible text", async () => {
   const originalFetch = globalThis.fetch;
   let sentBody;
@@ -427,7 +434,7 @@ test("scheduled scan saves AI drafts and sends a fallback Telegram card when no 
 
 test("manual scan ingests and normalizes a public Telegram listing", async () => {
   const originalFetch = globalThis.fetch;
-  const html = '<div class="tgme_widget_message_wrap" data-post="python_jobs/123"><div class="tgme_widget_message_text js-message_text" dir="auto">We need a Python developer to build a Telegram bot for a freelance project. Budget 500 USD.</div><time datetime="2026-10-17T10:00:00+00:00"></time></div>';
+  const html = `<div class="tgme_widget_message_wrap" data-post="python_jobs/123"><div class="tgme_widget_message_text js-message_text" dir="auto">We need a Python developer to build a Telegram bot for a freelance project. Budget 500 USD.</div><time datetime="${new Date().toISOString()}"></time></div>`;
   globalThis.fetch = async (input, init) => {
     if (String(input).startsWith("https://t.me/s/python_jobs")) return new Response(html, { status: 200, headers: { "Content-Type": "text/html" } });
     return originalFetch(input, init);
@@ -737,7 +744,7 @@ test("application review returns not found for records outside the current user'
 
 test("manual scan does not send individual Telegram messages for newly inserted projects", async () => {
   const originalFetch = globalThis.fetch;
-  const html = '<div class="tgme_widget_message_wrap" data-post="python_jobs/777"><div class="tgme_widget_message_text js-message_text" dir="auto">We need a Python developer to build a Telegram bot for a freelance project. Budget 500 USD.</div><time datetime="2026-10-17T10:00:00+00:00"></time></div>';
+  const html = `<div class="tgme_widget_message_wrap" data-post="python_jobs/777"><div class="tgme_widget_message_text js-message_text" dir="auto">We need a Python developer to build a Telegram bot for a freelance project. Budget 500 USD.</div><time datetime="${new Date().toISOString()}"></time></div>`;
   let sentPayload = null;
   globalThis.fetch = async (input, init) => {
     const url = String(input);
@@ -943,7 +950,7 @@ test("Freelancehunt token is validated, encrypted, and used to ingest official A
           description_html: "<p>Need a Python developer to build a Telegram bot.</p>",
           budget: { amount: 5000, currency: "RUB" },
           safe_type: "employer",
-          published_at: "2026-10-17T09:00:00+00:00",
+          published_at: new Date().toISOString(),
           self: { web: "https://freelancehunt.com/project/python-telegram-bot/299172.html" }
         }
       }] });
