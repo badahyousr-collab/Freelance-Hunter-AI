@@ -1,6 +1,19 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import worker, { bidDurationDays, detectProjectTimeline, detectedBudget, evaluateProjectMatch, findTelegramEmployerUsername, freelancehuntAutoBidTerms, parseFlRuRss, parseFreelanceRuTasks } from "../.test-dist/src/index.js";
+import worker, { bidDurationDays, detectProjectLanguage, detectProjectTimeline, detectedBudget, evaluateProjectMatch, findTelegramEmployerUsername, freelancehuntAutoBidTerms, parseFlRuRss, parseFreelanceRuTasks, proposalValidationIssue } from "../.test-dist/src/index.js";
+
+test("listing language detection distinguishes Russian, Ukrainian, and English", () => {
+  assert.equal(detectProjectLanguage("Нужно разработать Telegram-бота для заявок"), "ru");
+  assert.equal(detectProjectLanguage("Потрібно розробити Telegram-бота для заявок"), "uk");
+  assert.equal(detectProjectLanguage("Build a Telegram bot for project applications"), "en");
+  assert.equal(detectProjectLanguage("Je recherche un développeur pour ce projet"), "fr");
+  assert.equal(proposalValidationIssue("Je recherche une solution pour votre projet.", "fr"), null);
+  assert.equal(proposalValidationIssue("Привет! Какой срок ты рассматриваешь?", "ru"), "informal_address");
+  assert.equal(proposalValidationIssue("Здравствуйте! Какой срок Вы рассматриваете?", "ru"), null);
+  assert.equal(proposalValidationIssue("Вітаю! Який термін Ви розглядаєте?", "uk"), null);
+  assert.equal(proposalValidationIssue("Здравствуйте! Какой срок Вы рассматриваете?", "uk"), "language");
+  assert.equal(proposalValidationIssue("Мой опыт работы с Simpla CMS поможет выполнить задачу.", "ru"), "unsupported_experience");
+});
 
 function fakeDb({ scan = false, freelancehuntScan = false, marketplaceSource = null, skills = ["python", "telegram"], telegramAuth = null, telegramCode = null, linkedAccount = null, application = null, fallbackApplication = null, telegramProjects = [], telegramLinkedUserId = null, project = null, recentProjects = [], profile = null, integration = null, notificationTarget = null, agentSettings = null, pendingDraftProjects = [], sourceCount = 0, insertChanges = 1, projectInserts = [], telegramIdentitySchema = true, notificationsSchema = true, submissionSchema = true, providerStatusSchema = true, applicationUpdateNotificationsSchema = true, autoSubmissionSchema = true } = {}) {
   const profileRecalculations = [];
@@ -1036,7 +1049,7 @@ test("Freelancehunt ambiguous server failures block automatic resubmission", asy
 });
 
 
-test("proposal drafting creates Russian and English drafts from profile-grounded listing facts", async () => {
+test("proposal drafting creates language-matched, profile-grounded drafts", async () => {
   const originalFetch = globalThis.fetch;
   const scenarios = [
     {
@@ -1048,13 +1061,23 @@ test("proposal drafting creates Russian and English drafts from profile-grounded
       language: "en",
       project: { id: 18, source: "telegram", url: "https://t.me/example/18", title: "Build a Python Telegram bot", description: "Build a bot to collect project applications. Budget: $300.", language: "en", budget_min: 300, budget_max: 300, currency: "USD", payment_method: "fixed" },
       draft: "Hi! I can help build a Python Telegram bot to collect project applications. I would start by confirming the user flow and data structure, then implement and test the core features."
+    },
+    {
+      language: "uk",
+      project: { id: 20, source: "telegram", url: "https://t.me/example/20", title: "Потрібно створити Telegram-бота", description: "Потрібно розробити бота для прийому заявок.", language: "ru", budget_min: null, budget_max: null, currency: null, payment_method: null },
+      draft: "Вітаю! Я можу допомогти зі створенням Telegram-бота для прийому заявок. Який термін виконання Ви розглядаєте?"
     }
   ];
   const requests = [];
   globalThis.fetch = async (input, init) => {
     if (String(input) === "https://provider.example/v1/chat/completions") {
-      requests.push(JSON.parse(init.body));
-      return Response.json({ choices: [{ message: { content: scenarios[requests.length - 1].draft } }] });
+      const request = JSON.parse(init.body);
+      requests.push(request);
+      const facts = JSON.parse(request.messages[1].content);
+      const scenario = scenarios.find(item => item.project.title === facts.project.title);
+      const ukrainianAttempts = requests.filter(item => JSON.parse(item.messages[1].content).project.language === "uk").length;
+      const draft = scenario.language === "uk" && ukrainianAttempts === 1 ? "Здравствуйте! Какой срок Вы рассматриваете?" : scenario.draft;
+      return Response.json({ choices: [{ message: { content: draft } }] });
     }
     return originalFetch(input, init);
   };
@@ -1072,18 +1095,18 @@ test("proposal drafting creates Russian and English drafts from profile-grounded
         AI_API_BASE_URL: "https://provider.example/v1",
         AI_MODEL: "test-model"
       });
-      assert.equal(response.status, 201);
+      assert.equal(response.status, 201, `${scenario.language}: ${JSON.stringify(await response.clone().json())}`);
       const data = await response.json();
       assert.equal(data.status, "draft");
       assert.equal(data.draft_text, scenario.draft);
     }
-    assert.equal(requests.length, 2);
+    assert.equal(requests.length, 4);
     for (const request of requests) {
       assert.equal(request.model, "test-model");
       assert.equal(request.include_reasoning, undefined);
       assert.equal(request.temperature, 0.35);
       assert.match(request.messages[0].content, /untrusted data/i);
-      assert.match(request.messages[0].content, /Never invent experience/i);
+      assert.match(request.messages[0].content, /Never state or imply past projects, experience/i);
       assert.match(request.messages[0].content, /ask the client first what delivery date or timeframe they expect/i);
       assert.match(request.messages[0].content, /when both are missing, ask about timing before budget/i);
       assert.match(request.messages[0].content, /Do not claim the proposal has been sent/i);
@@ -1092,7 +1115,35 @@ test("proposal drafting creates Russian and English drafts from profile-grounded
       assert.deepEqual(facts.user_profile.skills, ["Python", "Telegram bots"]);
       assert.ok(facts.project.listing_url.startsWith("https://t.me/example/"));
       assert.equal(facts.project.expected_timeline, "По договорённости");
+      assert.equal(facts.project.language, detectProjectLanguage(facts.project.title + "\n" + facts.project.description));
     }
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("proposal drafting refuses to save a draft after two language-rule violations", async () => {
+  const originalFetch = globalThis.fetch;
+  let calls = 0;
+  const db = fakeDb({
+    project: { id: 21, source: "telegram", url: "https://t.me/example/21", title: "Потрібно створити Telegram-бота", description: "Потрібно розробити бота для прийому заявок.", language: "ru", budget_min: null, budget_max: null, currency: null },
+    profile: { display_name: "Developer", skills: JSON.stringify(["Python"]), languages: JSON.stringify(["ru", "en"]), payment_preferences: "[]", min_budget: null, currency: "RUB" }
+  });
+  globalThis.fetch = async input => {
+    if (String(input) === "https://provider.example/v1/chat/completions") {
+      calls += 1;
+      return Response.json({ choices: [{ message: { content: "Здравствуйте! Какой срок Вы рассматриваете?" } }] });
+    }
+    return originalFetch(input);
+  };
+  try {
+    const response = await worker.fetch(new Request("https://api.example/applications/21/draft", {
+      method: "POST", headers: { Cookie: "fh_session=test-session-token", "CF-Connecting-IP": "198.51.100.83" }
+    }), { DB: db, AI_API_KEY: "test-key", AI_API_BASE_URL: "https://provider.example/v1", AI_MODEL: "test-model" });
+    assert.equal(response.status, 502);
+    assert.match((await response.json()).detail, /No draft was saved/);
+    assert.equal(calls, 2);
+    assert.equal(db.applicationRecord, null);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -1742,7 +1793,7 @@ test("Groq GPT-OSS proposal requests disable exposed reasoning and use low effor
   globalThis.fetch = async (input, init) => {
     if (String(input) === "https://api.groq.com/openai/v1/chat/completions") {
       requestBody = JSON.parse(init.body);
-      return Response.json({ choices: [{ message: { content: "Могу помочь с этим проектом. Какой срок выполнения вы ожидаете?" } }] });
+      return Response.json({ choices: [{ message: { content: "I can help with this project. What delivery timeline are you considering?" } }] });
     }
     return originalFetch(input, init);
   };
@@ -1766,3 +1817,4 @@ test("Groq GPT-OSS proposal requests disable exposed reasoning and use low effor
     globalThis.fetch = originalFetch;
   }
 });
+
