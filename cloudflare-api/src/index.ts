@@ -715,13 +715,15 @@ function freelanceRuPublishedAt(card: string): string | null {
   const [, day, month, year, hour, minute] = match;
   if (Number(month) < 1 || Number(month) > 12 || Number(day) < 1 || Number(day) > 31 || Number(hour) > 23 || Number(minute) > 59) return null;
   // Freelance.ru displays its task timestamps in Moscow time (UTC+03:00).
-  const timestamp = Date.UTC(Number(year), Number(month) - 1, Number(day), Number(hour) - 3, Number(minute));
-  const parsed = new Date(timestamp);
-  if (parsed.getUTCFullYear() !== Number(year) || parsed.getUTCMonth() !== Number(month) - 1 || parsed.getUTCDate() !== Number(day)) return null;
-  return parsed.toISOString();
+  const localTimestamp = Date.UTC(Number(year), Number(month) - 1, Number(day), Number(hour), Number(minute));
+  const localDate = new Date(localTimestamp);
+  if (localDate.getUTCFullYear() !== Number(year) || localDate.getUTCMonth() !== Number(month) - 1 || localDate.getUTCDate() !== Number(day)) return null;
+  // Validate the displayed Moscow date before converting it to UTC; subtracting
+  // the offset can legitimately move midnight to the previous UTC calendar day.
+  return new Date(localTimestamp - 3 * 60 * 60 * 1000).toISOString();
 }
 
-export function parseFreelanceRuTasks(html: string): MarketplaceListing[] {
+export function parseFreelanceRuTasks(html: string, now = Date.now()): MarketplaceListing[] {
   const listings: MarketplaceListing[] = [];
   for (const match of html.matchAll(/<article\b[^>]*class=["'][^"']*\btask-card\b[^"']*["'][^>]*>([\s\S]*?)<\/article\s*>/gi)) {
     const card = match[1];
@@ -729,7 +731,7 @@ export function parseFreelanceRuTasks(html: string): MarketplaceListing[] {
     const titleLink = /<a\b[^>]*class=["'][^"']*\btask-card__title-link\b[^"']*["'][^>]*href=["']\/task\/view\/(\d+)["'][^>]*>([\s\S]*?)<\/a>/i.exec(card);
     const descriptionMatch = /<p\b[^>]*class=["'][^"']*\btask-card__desc\b[^"']*["'][^>]*>([\s\S]*?)<\/p>/i.exec(card);
     const publishedAt = freelanceRuPublishedAt(card);
-    if (!titleLink || !publishedAt || !isRecentListing(publishedAt)) continue;
+    if (!titleLink || !publishedAt || !isRecentListing(publishedAt, now)) continue;
     const title = decodeHtml(titleLink[2]).slice(0, 180);
     const description = decodeHtml(descriptionMatch?.[1] ?? "").slice(0, 12000);
     const categoryMatches = [...card.matchAll(/<span\b[^>]*class=["'][^"']*\btask-chip--(?:cat|skill)\b[^"']*["'][^>]*>([\s\S]*?)<\/span>/gi)];
