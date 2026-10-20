@@ -1246,7 +1246,7 @@ test("proposal drafting creates language-matched, profile-grounded drafts", asyn
   }
 });
 
-test("proposal drafting refuses to save a draft after two language-rule violations", async () => {
+test("proposal drafting falls back safely after two language-rule violations", async () => {
   const originalFetch = globalThis.fetch;
   let calls = 0;
   const db = fakeDb({
@@ -1264,10 +1264,14 @@ test("proposal drafting refuses to save a draft after two language-rule violatio
     const response = await worker.fetch(new Request("https://api.example/applications/21/draft", {
       method: "POST", headers: { Cookie: "fh_session=test-session-token", "CF-Connecting-IP": "198.51.100.83" }
     }), { DB: db, AI_API_KEY: "test-key", AI_API_BASE_URL: "https://provider.example/v1", AI_MODEL: "test-model" });
-    assert.equal(response.status, 502);
-    assert.match((await response.json()).detail, /No draft was saved/);
+    assert.equal(response.status, 201);
+    const result = await response.json();
+    assert.equal(result.status, "draft");
+    assert.match(result.draft_text, /Вітаю/);
+    assert.match(result.draft_text, /строк.*бюджету/s);
     assert.equal(calls, 2);
-    assert.equal(db.applicationRecord, null);
+    assert.equal(db.applicationRecord.status, "draft");
+    assert.equal(db.applicationRecord.draft_text, result.draft_text);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -1944,4 +1948,5 @@ test("Groq GPT-OSS proposal requests disable exposed reasoning and use low effor
     globalThis.fetch = originalFetch;
   }
 });
+
 
