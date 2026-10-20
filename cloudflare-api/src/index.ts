@@ -2015,11 +2015,16 @@ async function handle(request: Request, env: Env): Promise<Response> {
   if (submitApplicationMatch && method === "POST") {
     const id = Number(submitApplicationMatch[1]);
     const input = await body(request);
-    const application = await env.DB.prepare("SELECT a.id,a.project_id,a.status,a.draft_text,p.source,p.source_project_id,p.url FROM applications a JOIN projects p ON p.id=a.project_id AND p.user_id=a.user_id WHERE a.id=? AND a.user_id=?")
+    const application = await env.DB.prepare("SELECT a.id,a.project_id,a.status,a.draft_text,p.source,p.source_project_id,p.url,p.title,p.description FROM applications a JOIN projects p ON p.id=a.project_id AND p.user_id=a.user_id WHERE a.id=? AND a.user_id=?")
       .bind(id, uid).first<any>();
     if (!application) return response(request, { detail: "Application not found." }, 404);
     if (String(application.source) !== "freelancehunt") return response(request, { detail: "Submission is only enabled for verified Freelancehunt API integrations." }, 400);
     if (String(application.status) !== "awaiting_confirmation") return response(request, { detail: "Prepare and confirm the proposal before submitting it." }, 409);
+    const profile = await env.DB.prepare("SELECT skills FROM profiles WHERE user_id=?").bind(uid).first<any>() ?? {};
+    const validationIssue = proposalSubmissionValidationIssue(application.draft_text, application.title, application.description, safeJson(profile.skills, []));
+    if (validationIssue) {
+      return response(request, { detail: "This proposal contains claims that are not supported by the project description or your profile. Edit or regenerate it before submitting." }, 422);
+    }
     if (!env.INTEGRATION_ENCRYPTION_KEY || env.INTEGRATION_ENCRYPTION_KEY.trim().length < 32) {
       return response(request, { detail: "Secure credential storage is not configured." }, 503);
     }
