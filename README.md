@@ -46,4 +46,3 @@ Prerequisites: Docker Compose, Python 3.12+, Node.js 20+.
 4. Run tests with `cd backend && python -m pytest`.
 
 See [the roadmap](docs/ROADMAP.md), [architecture](docs/ARCHITECTURE.md), [acceptance checklist](docs/ACCEPTANCE.md), [local development](docs/LOCAL_DEVELOPMENT.md), [operations and recovery](docs/OPERATIONS.md), [case study](docs/CASE_STUDY.md), [Telegram setup](docs/TELEGRAM_SETUP.md), [public Telegram sources](docs/TELEGRAM_SOURCES.md), and [integration notes](docs/INTEGRATIONS.md).
-
