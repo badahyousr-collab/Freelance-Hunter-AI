@@ -22,16 +22,49 @@ const bonds: [number, number][] = [
   [5,7],[5,8],[6,7],[6,9],[6,10],[7,8],[7,10],[8,11],[8,15],[9,10],[9,12],
   [9,16],[10,11],[10,12],[11,12],[11,13],[11,14],[12,14],[13,15],[14,15],[12,16],[2,17]
 ];
+const atomSpriteCache = new Map<string, HTMLCanvasElement>();
 
-function project(atom: Atom, rx: number, ry: number): ProjectedAtom {
+function atomSprite(atom: Atom): HTMLCanvasElement | null {
+  const key = `${atom.r}:${atom.kind ?? "light"}`;
+  const cached = atomSpriteCache.get(key);
+  if (cached) return cached;
+  if (typeof document === "undefined") return null;
+  const padding = Math.ceil(atom.r * 2.1 + 3);
+  const sprite = document.createElement("canvas");
+  sprite.width = padding * 2;
+  sprite.height = padding * 2;
+  const context = sprite.getContext("2d");
+  if (!context) return null;
+  context.translate(padding, padding);
+  const radius = atom.r;
+  const halo = context.createRadialGradient(0, 0, 0, 0, 0, radius * 2.1);
+  halo.addColorStop(0, "rgba(216, 229, 212, .20)");
+  halo.addColorStop(1, "rgba(201, 209, 201, 0)");
+  context.beginPath(); context.arc(0, 0, radius * 2.1, 0, Math.PI * 2); context.fillStyle = halo; context.fill();
+  context.beginPath(); context.arc(0, 0, radius + 1.5, 0, Math.PI * 2); context.fillStyle = "rgba(8, 10, 8, .8)"; context.fill();
+  const gradient = context.createRadialGradient(-radius * .3, -radius * .35, Math.max(1, radius * .08), 0, 0, radius);
+  if (atom.kind === "core") {
+    gradient.addColorStop(0, "#ffffff"); gradient.addColorStop(.35, "#dce5d8"); gradient.addColorStop(1, "#697568");
+  } else {
+    gradient.addColorStop(0, atom.kind === "dark" ? "#c5cdc2" : "#f1f4ec");
+    gradient.addColorStop(.3, atom.kind === "dark" ? "#7c867a" : "#aeb8aa");
+    gradient.addColorStop(.68, "#596258"); gradient.addColorStop(1, "#151916");
+  }
+  context.beginPath(); context.arc(0, 0, radius, 0, Math.PI * 2); context.fillStyle = gradient; context.fill();
+  context.lineWidth = 1.1; context.strokeStyle = atom.kind === "core" ? "rgba(255,255,255,.8)" : "rgba(203,210,199,.72)"; context.stroke();
+  context.beginPath(); context.ellipse(-radius * .27, -radius * .34, Math.max(1.5, radius * .35), Math.max(1, radius * .2), -.35, 0, Math.PI * 2);
+  context.fillStyle = "rgba(255,255,255,.46)"; context.fill();
+  atomSpriteCache.set(key, sprite);
+  return sprite;
+}
+
+function project(atom: Atom, sinX: number, cosX: number, sinY: number, cosY: number): ProjectedAtom {
   const x = atom.x - 260;
   const y = atom.y - 390;
-  const ax = rx * Math.PI / 180;
-  const ay = ry * Math.PI / 180;
-  const x1 = x * Math.cos(ay) + atom.z * Math.sin(ay);
-  const z1 = -x * Math.sin(ay) + atom.z * Math.cos(ay);
-  const y2 = y * Math.cos(ax) - z1 * Math.sin(ax);
-  const z2 = y * Math.sin(ax) + z1 * Math.cos(ax);
+  const x1 = x * cosY + atom.z * sinY;
+  const z1 = -x * sinY + atom.z * cosY;
+  const y2 = y * cosX - z1 * sinX;
+  const z2 = y * sinX + z1 * cosX;
   const scale = 1000 / (1000 + z2);
   return { ...atom, sx: 260 + x1 * scale, sy: 390 + y2 * scale, depth: z2, scale };
 }
@@ -39,7 +72,8 @@ function project(atom: Atom, rx: number, ry: number): ProjectedAtom {
 function drawMolecule(canvas: HTMLCanvasElement, rx: number, ry: number) {
   const bounds = canvas.getBoundingClientRect();
   if (!bounds.width || !bounds.height) return;
-  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  // The decorative canvas does not need a full device-pixel backing store.
+  const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
   const width = Math.round(bounds.width * dpr);
   const height = Math.round(bounds.height * dpr);
   if (canvas.width !== width || canvas.height !== height) {
@@ -73,15 +107,14 @@ function drawMolecule(canvas: HTMLCanvasElement, rx: number, ry: number) {
   }
   context.restore();
 
-  const projected = atoms.map(atom => project(atom, rx, ry));
+  const ax = rx * Math.PI / 180;
+  const ay = ry * Math.PI / 180;
+  const projected = atoms.map(atom => project(atom, Math.sin(ax), Math.cos(ax), Math.sin(ay), Math.cos(ay)));
   for (let index = 0; index < bonds.length; index += 1) {
     const [a, b] = bonds[index];
     const start = projected[a];
     const end = projected[b];
     if (!start || !end) continue;
-    const gradient = context.createLinearGradient(start.sx, start.sy, end.sx, end.sy);
-    gradient.addColorStop(0, "rgba(238, 244, 233, .85)");
-    gradient.addColorStop(1, "rgba(125, 137, 123, .22)");
     context.globalAlpha = Math.max(.25, Math.min(.9, 1 - (start.depth + end.depth) / 3200));
     context.beginPath();
     context.moveTo(start.sx, start.sy);
@@ -90,67 +123,34 @@ function drawMolecule(canvas: HTMLCanvasElement, rx: number, ry: number) {
     context.strokeStyle = "rgba(9, 11, 9, .75)";
     context.lineWidth = index % 5 === 0 ? 5.2 : 3.8;
     context.stroke();
-    context.strokeStyle = gradient;
+    context.strokeStyle = index % 5 === 0 ? "rgba(225, 233, 219, .78)" : "rgba(169, 183, 165, .62)";
     context.lineWidth = index % 5 === 0 ? 2.5 : 1.6;
     context.stroke();
   }
   context.globalAlpha = 1;
 
   for (const atom of projected.sort((a, b) => a.depth - b.depth)) {
-    const radius = atom.r * atom.scale;
-    const halo = context.createRadialGradient(atom.sx, atom.sy, 0, atom.sx, atom.sy, radius * 3.8);
-    halo.addColorStop(0, "rgba(216, 229, 212, .20)");
-    halo.addColorStop(1, "rgba(201, 209, 201, 0)");
-    context.beginPath(); context.arc(atom.sx, atom.sy, radius * 3.8, 0, Math.PI * 2); context.fillStyle = halo; context.fill();
-    context.beginPath(); context.arc(atom.sx, atom.sy, radius + 1.5, 0, Math.PI * 2); context.fillStyle = "rgba(8, 10, 8, .8)"; context.fill();
-    const gradient = context.createRadialGradient(atom.sx - radius * .3, atom.sy - radius * .35, Math.max(1, radius * .08), atom.sx, atom.sy, radius);
-    if (atom.kind === "core") {
-      gradient.addColorStop(0, "#ffffff"); gradient.addColorStop(.35, "#dce5d8"); gradient.addColorStop(1, "#697568");
-    } else {
-      gradient.addColorStop(0, atom.kind === "dark" ? "#c5cdc2" : "#f1f4ec");
-      gradient.addColorStop(.3, atom.kind === "dark" ? "#7c867a" : "#aeb8aa");
-      gradient.addColorStop(.68, "#596258"); gradient.addColorStop(1, "#151916");
-    }
-    context.beginPath(); context.arc(atom.sx, atom.sy, radius, 0, Math.PI * 2); context.fillStyle = gradient; context.fill();
-    context.lineWidth = 1.1; context.strokeStyle = atom.kind === "core" ? "rgba(255,255,255,.8)" : "rgba(203,210,199,.72)"; context.stroke();
-    context.beginPath(); context.ellipse(atom.sx - radius * .27, atom.sy - radius * .34, Math.max(1.5, radius * .35), Math.max(1, radius * .2), -.35, 0, Math.PI * 2);
-    context.fillStyle = "rgba(255,255,255,.46)"; context.fill();
+    const sprite = atomSprite(atom);
+    if (!sprite) continue;
+    const size = atom.r * 4.2 * atom.scale + 6;
+    context.drawImage(sprite, atom.sx - size / 2, atom.sy - size / 2, size, size);
   }
 }
 
 export default function AuthMolecule() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const rotation = useRef({ x: -9, y: 14 });
+  const rotation = useRef({ x: 0, y: 0 });
   const drag = useRef<{ x: number; y: number; rx: number; ry: number } | null>(null);
 
   useEffect(() => {
     const canvas = canvasRef.current;
     const container = canvas?.parentElement;
     if (!canvas || !container) return;
-    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
-    let frame = 0;
-    let previousTime = 0;
-    const render = (time: number) => {
-      frame = 0;
-      if (previousTime && !drag.current && !reducedMotion.matches) {
-        rotation.current.y = (rotation.current.y + (time - previousTime) * .0045) % 360;
-      }
-      previousTime = time;
-      drawMolecule(canvas, rotation.current.x, rotation.current.y);
-      if (!reducedMotion.matches) frame = window.requestAnimationFrame(render);
-    };
-    const scheduleRender = () => {
-      if (!frame) frame = window.requestAnimationFrame(time => { frame = 0; render(time); });
-    };
-    frame = window.requestAnimationFrame(render);
-    const observer = new ResizeObserver(scheduleRender);
+    drawMolecule(canvas, rotation.current.x, rotation.current.y);
+    const observer = new ResizeObserver(() => drawMolecule(canvas, rotation.current.x, rotation.current.y));
     observer.observe(container);
-    const onMotionChange = () => scheduleRender();
-    reducedMotion.addEventListener("change", onMotionChange);
     return () => {
-      window.cancelAnimationFrame(frame);
       observer.disconnect();
-      reducedMotion.removeEventListener("change", onMotionChange);
     };
   }, []);
 
@@ -162,10 +162,12 @@ export default function AuthMolecule() {
     if (!drag.current) return;
     rotation.current.x = Math.max(-55, Math.min(55, drag.current.rx - (event.clientY - drag.current.y) * .35));
     rotation.current.y = drag.current.ry + (event.clientX - drag.current.x) * .4;
-    const canvas = canvasRef.current;
-    if (canvas) drawMolecule(canvas, rotation.current.x, rotation.current.y);
+    event.currentTarget.style.setProperty("--molecule-rotate-x", `${rotation.current.x}deg`);
+    event.currentTarget.style.setProperty("--molecule-rotate-y", `${rotation.current.y}deg`);
   }
-  function stop() { drag.current = null; }
+  function stop() {
+    drag.current = null;
+  }
 
   return (
     <aside className="auth-molecule-stage" aria-label="Интерактивная трёхмерная молекула Freelance Hunter">
