@@ -1759,7 +1759,7 @@ async function handle(request: Request, env: Env): Promise<Response> {
       ((SELECT COUNT(*) FROM integrations WHERE user_id=? AND provider='freelancehunt' AND status='connected') +
        (SELECT COUNT(DISTINCT source) FROM sources WHERE user_id=? AND source IN ('fl_ru','freelance_ru') AND is_enabled=1)) AS marketplace_sources_enabled,
       (SELECT COUNT(*) FROM telegram_links WHERE user_id=? AND telegram_user_id IS NOT NULL) AS telegram_bots_connected,
-      (SELECT COALESCE(MAX(is_enabled),0) FROM agent_settings WHERE user_id=?) AS agent_enabled`.bind(uid,uid,uid,uid,uid,uid,uid,uid,uid,uid,uid).first<any>();
+      (SELECT COALESCE(MAX(is_enabled),0) FROM agent_settings WHERE user_id=?) AS agent_enabled`).bind(uid,uid,uid,uid,uid,uid,uid,uid,uid,uid,uid).first<any>();
     const activityResult = await env.DB.prepare(`SELECT date(discovered_at) AS day,COUNT(*) AS projects_found
       FROM projects WHERE user_id=? AND discovered_at >= datetime('now','-6 days')
       GROUP BY date(discovered_at) ORDER BY day`).bind(uid).all<any>();
