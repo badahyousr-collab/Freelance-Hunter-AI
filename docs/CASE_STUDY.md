@@ -37,7 +37,7 @@ Freelance requests are scattered across channels and platforms. Manually reviewi
 
 ## Constraints and remaining acceptance work
 
-- The user-provided project plan asks for email registration, email verification, password recovery, and email sessions. The repository and deployed product intentionally use Telegram-only sign-in and disable email/password routes. This requirements conflict remains unresolved; implementing real email verification also requires an approved production mail provider.
+- Telegram-only sign-in is the accepted identity flow. Email/password registration and recovery were explicitly removed from product scope.
 - Production Telegram-Web is not authenticated on the acceptance PC, so a real /stats command and notification delivery have not been verified. No OTP or QR login was attempted.
 - Live two-account data isolation and session-expiry behavior have not been exercised with two real production accounts. Automated tests cover owner-scoped endpoints and expired-session rejection.
 - English proposal quality has not been demonstrated on a safe, clearly English skills-aligned listing. Russian generation was verified as described above.
