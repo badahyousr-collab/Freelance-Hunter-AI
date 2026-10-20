@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import worker, { bidDurationDays, detectProjectLanguage, detectProjectTimeline, detectedBudget, evaluateProjectMatch, findTelegramEmployerUsername, freelancehuntAutoBidTerms, parseFlRuRss, parseFreelanceRuTasks, proposalValidationIssue } from "../.test-dist/src/index.js";
+import worker, { bidDurationDays, capitalizeFormalAddress, detectProjectLanguage, detectProjectTimeline, detectedBudget, evaluateProjectMatch, findTelegramEmployerUsername, freelancehuntAutoBidTerms, parseFlRuRss, parseFreelanceRuTasks, proposalSubmissionValidationIssue, proposalValidationIssue } from "../.test-dist/src/index.js";
 
 test("listing language detection distinguishes Russian, Ukrainian, and English", () => {
   assert.equal(detectProjectLanguage("Нужно разработать Telegram-бота для заявок"), "ru");
@@ -14,6 +14,45 @@ test("listing language detection distinguishes Russian, Ukrainian, and English",
   assert.equal(proposalValidationIssue("Здравствуйте! Какой срок Вы рассматриваете?", "uk"), "language");
   assert.equal(proposalValidationIssue("Мой опыт работы с Simpla CMS поможет выполнить задачу.", "ru"), "unsupported_experience");
 });
+test("formal Russian and Ukrainian address is capitalized before validation", () => {
+  const russian = capitalizeFormalAddress("Здравствуйте, вы можете уточнить бюджет, который вам подходит?", "ru");
+  const ukrainian = capitalizeFormalAddress("Підкажіть, будь ласка, який бюджет ви розглядаєте?", "uk");
+  assert.equal(russian, "Здравствуйте, Вы можете уточнить бюджет, который Вам подходит?");
+  assert.equal(ukrainian, "Підкажіть, будь ласка, який бюджет Ви розглядаєте?");
+  assert.equal(proposalValidationIssue(russian, "ru"), null);
+  assert.equal(proposalValidationIssue(ukrainian, "uk"), null);
+});
+
+test("automatic marketplace submission rejects stale drafts with unsupported claims", () => {
+  const oldDraft = "Здравствуйте! Я уже создал PHP-магазин на Simpla, поэтому выполню задачу.";
+  assert.notEqual(proposalSubmissionValidationIssue(oldDraft, "Нужно обновить лендинг на Simpla", "Нужен разработчик PHP", ["HTML", "CSS"]), null);
+  assert.equal(proposalSubmissionValidationIssue("Здравствуйте! Могу обсудить Ваш проект. Какой срок Вы рассматриваете?", "Доработка сайта на Python", "Нужно улучшить Django-проект", ["Python", "Django"]), null);
+});
+
+test("AI readiness check reserves enough completion tokens for visible text", async () => {
+  const originalFetch = globalThis.fetch;
+  let sentBody;
+  globalThis.fetch = async (input, init) => {
+    if (String(input) === "https://api.groq.com/openai/v1/chat/completions") {
+      sentBody = JSON.parse(init.body);
+      return Response.json({ choices: [{ message: { content: "OK" } }] });
+    }
+    return originalFetch(input, init);
+  };
+  try {
+    const response = await worker.fetch(new Request("https://api.example/agent/test-ai", {
+      method: "POST",
+      headers: { Cookie: "fh_session=test-session-token" }
+    }), { DB: fakeDb(), AI_API_KEY: "test-ai-key", AI_API_BASE_URL: "https://api.groq.com/openai/v1", AI_MODEL: "openai/gpt-oss-20b" });
+    assert.equal(response.status, 200);
+    assert.equal((await response.json()).ok, true);
+    assert.equal(sentBody.max_completion_tokens, 64);
+    assert.equal("max_tokens" in sentBody, false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 
 function fakeDb({ scan = false, freelancehuntScan = false, marketplaceSource = null, skills = ["python", "telegram"], telegramAuth = null, telegramCode = null, linkedAccount = null, application = null, fallbackApplication = null, telegramProjects = [], telegramLinkedUserId = null, project = null, recentProjects = [], profile = null, integration = null, notificationTarget = null, agentSettings = null, pendingDraftProjects = [], sourceCount = 0, insertChanges = 1, projectInserts = [], telegramIdentitySchema = true, notificationsSchema = true, submissionSchema = true, providerStatusSchema = true, applicationUpdateNotificationsSchema = true, autoSubmissionSchema = true } = {}) {
   const profileRecalculations = [];
@@ -303,7 +342,7 @@ test("scheduled scan saves AI drafts and sends a fallback Telegram card when no 
   globalThis.fetch = async (input, init) => {
     const url = String(input);
     if (url.startsWith("https://t.me/s/python_jobs")) return new Response(html, { status: 200, headers: { "Content-Type": "text/html" } });
-    if (url.includes("/chat/completions")) return Response.json({ choices: [{ message: { content: "Здравствуйте! Могу помочь с разработкой Telegram-бота на Python. Предлагаю сначала согласовать требования и объём работ." } }] });
+    if (url.includes("/chat/completions")) return Response.json({ choices: [{ message: { content: "Hello! I can help build the Telegram bot in Python. What delivery timeframe do you have in mind?" } }] });
     if (url.includes("api.telegram.org/botTEST_TOKEN/sendMessage")) { telegramPayloads.push(JSON.parse(init?.body ?? "{}")); return Response.json({ ok: true, result: { message_id: 77 } }); }
     return originalFetch(input, init);
   };
@@ -318,7 +357,7 @@ test("scheduled scan saves AI drafts and sends a fallback Telegram card when no 
         agentSettings: { is_enabled: 1, auto_draft: 1, min_match_score: 60 },
         pendingDraftProjects: [{ id: 301, source: "telegram", url: "https://t.me/python_jobs/203", title: "Python developer", description: "Telegram bot project", language: "en", budget_min: 500, budget_max: 500, currency: "USD", payment_method: null }],
         telegramLinkedUserId: "12345",
-        fallbackApplication: { id: 42, status: "draft", source: "telegram", source_project_id: "python_jobs:203", url: "https://t.me/python_jobs/203", title: "Python developer", description: "Build a Python Telegram bot. Contact @client_person", budget_min: 500, budget_max: 500, currency: "USD", match_score: 84, draft_text: "Здравствуйте! Могу помочь с ботом. Подскажите, пожалуйста, какой срок вы ожидаете?" }
+        fallbackApplication: { id: 42, status: "draft", source: "telegram", source_project_id: "python_jobs:203", url: "https://t.me/python_jobs/203", title: "Python developer", description: "Build a Python Telegram bot. Contact @client_person", budget_min: 500, budget_max: 500, currency: "USD", match_score: 84, draft_text: "Hello! I can help with the bot. What delivery timeframe do you have in mind?" }
       }),
       AI_API_KEY: "test-key",
       AI_MODEL: "test-model",
@@ -332,7 +371,7 @@ test("scheduled scan saves AI drafts and sends a fallback Telegram card when no 
     assert.match(telegramPayloads[0].text, /<blockquote>/);
     assert.match(telegramPayloads[0].text, /500 USD/);
     assert.match(telegramPayloads[0].text, /По договорённости/);
-    assert.match(telegramPayloads[0].text, /Здравствуйте! Могу помочь с ботом/);
+    assert.match(telegramPayloads[0].text, /Hello! I can help with the bot/);
     assert.equal(telegramPayloads[0].reply_markup.inline_keyboard[0][0].url, "https://t.me/client_person");
   } finally {
     globalThis.fetch = originalFetch;
