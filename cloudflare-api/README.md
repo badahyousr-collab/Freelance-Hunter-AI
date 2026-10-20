@@ -13,9 +13,9 @@ This directory contains the first Cloudflare-native API implementation for Freel
 
 ## Important limitations
 
-- Email/password authentication and email delivery are disabled. Account creation and login use the Telegram bot only. Apply migrations `0007_telegram_only_identity.sql`, `0008_new_project_notifications.sql`, and `0009_provider_submission_tracking.sql` to the deployed D1 database before relying on Telegram-only identity, notifications, or provider submissions.
+- Email/password authentication and email delivery are disabled. Account creation and login use the Telegram bot only. Apply all checked-in D1 migrations through `0012_auto_submission.sql` before relying on the latest identity, notifications, or provider-submission behavior.
 - Public Telegram channel previews and Freelancehunt projects are collected only when a publication date is known and no more than 72 hours old. Enabling the AI agent starts a scan; a 15-minute Cron Trigger continues while it is enabled. Telegram scanning reads public previews only.
-- Freelancehunt discovery and bid submission use its official API, a user API token, and `INTEGRATION_ENCRYPTION_KEY`. Automatic sending is available only for fresh, matched Freelancehunt projects when the user has enabled it; a daily cap applies, and only a provider-confirmed bid ID marks an application sent. Telegram posts and other marketplaces are not submitted as bids. Kwork, Upwork, and FL.ru are not exposed as supported connections. Profile-grounded AI drafting requires a configured AI provider. Message-thread reply synchronization is not implemented. The Telegram bot runs as a Cloudflare Worker webhook, so a separate always-on bot host is not required.
+- Supported discovery adapters are Freelancehunt's official API, FL.ru's public RSS feed, Freelance.ru tasks marked visible to everyone, and public Telegram channel previews. FL.ru and Freelance.ru are read-only discovery sources; review and submit their saved drafts manually. Freelancehunt bid submission uses its official API and a user API token. Automatic sending is available only for fresh, matched listings with a listed supported budget and a clearly parsed deadline, when enabled by the user and under the daily cap. Only a provider-confirmed bid ID marks an application sent. Telegram posts and other marketplaces are never submitted as bids. Kwork, Upwork, Fiverr, Freelancer.com, and other unimplemented providers are not supported connections. Profile-grounded AI drafting requires a configured AI provider. Message-thread reply synchronization is not implemented. The Telegram bot runs as a Cloudflare Worker webhook, so a separate always-on bot host is not required.
 - Freelancehunt API tokens are validated and encrypted before storage; unsupported provider secrets are rejected. Never add credentials to source files or commit them.
 - D1 has free-plan quotas; it is not unlimited.
 
@@ -28,7 +28,7 @@ Create a separate Worker build project connected to this same GitHub repository.
 - Deploy command: `npx wrangler deploy`
 - The Cloudflare API token used by the build needs permission to edit Workers and D1 databases for the selected account.
 
-The `wrangler.toml` already names the D1 database `freelance-hunter-db` and includes the database ID provided during setup. Check that the ID matches the D1 database in your account before deploying. Apply all checked-in migrations, including `0007_telegram_only_identity.sql`, `0008_new_project_notifications.sql`, and `0009_provider_submission_tracking.sql`, before enabling the updated bot and submission workflow.
+The `wrangler.toml` already names the D1 database `freelance-hunter-db` and includes the database ID provided during setup. Check that the ID matches the D1 database in your account before deploying. Apply all checked-in migrations through `0012_auto_submission.sql` before enabling the updated bot and submission workflow.
 
 After deployment, open the Worker URL and append `/health`. A successful response should report `"status":"ok"` and `"database":"connected"`.
 
@@ -46,7 +46,7 @@ The website creates a single-use 9-digit Telegram code with a 10-minute expiry. 
 
 ## Marketplace credentials
 
-Freelancehunt is the only marketplace credential adapter currently enabled. Set `INTEGRATION_ENCRYPTION_KEY` as a Cloudflare Worker secret before connecting a token. It must contain at least 32 characters. Generate a strong random value with `python -c "import secrets; print(secrets.token_urlsafe(48))"`. Tokens are validated against the official API and encrypted with AES-GCM before they are stored. Losing the key makes saved tokens unrecoverable. Never put the token or encryption key in frontend variables or Git.
+Freelancehunt is the only marketplace credential adapter currently enabled. FL.ru and Freelance.ru need no credentials for their public discovery feeds. Set `INTEGRATION_ENCRYPTION_KEY` as a Cloudflare Worker secret before connecting a Freelancehunt token. It must contain at least 32 characters. Generate a strong random value with `python -c "import secrets; print(secrets.token_urlsafe(48))"`. Tokens are validated against the official API and encrypted with AES-GCM before they are stored. Losing the key makes saved tokens unrecoverable. Never put the token or encryption key in frontend variables or Git.
 
 ## AI proposal drafting
 
@@ -66,3 +66,4 @@ For the Cloudflare-native webhook bot, configure these as **Worker secrets** (no
 The website registration/login flow creates a one-time 9-digit code. Open the bot, press Start, then send the code as a normal message - no `/link` command is needed for authentication. The website provides a copy-code button and lets the user refresh an expired or rejected code. Registration detects an already-linked Telegram account and shows an error on both the bot and website; use the login page for an existing account. The bot exposes `/stats`, `/projects`, `/pause`, `/resume`, and `/help`. It provides a short summary of recent orders and application counts. Proposal drafts can be edited and prepared for submission or closed. Freelancehunt applications are marked sent only after the provider returns a bid ID. Client attempts to set `sent` or `replied` directly are rejected. Add public Telegram sources in the Sources page; scans run when the agent starts and every 15 minutes while it is enabled.
 
 If a bot token has been pasted into chat, a ticket, or source control, revoke it in `@BotFather` and use a newly issued token only as a deployment secret.
+
