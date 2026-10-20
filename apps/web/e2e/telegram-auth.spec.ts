@@ -256,7 +256,7 @@ test("dashboard shows the Telegram profile name without an email fallback", asyn
   });
 
   await page.goto("/dashboard");
-  await expect(page.getByRole("heading", { name: /Welcome back/i })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /С возвращением/i })).toBeVisible();
   await expect(page.locator(".profile-text strong")).toHaveText("Dev");
   await expect(page.getByText("Email", { exact: true })).toHaveCount(0);
   await expect(page.locator(".profile-text")).toContainText("Telegram подключён");
