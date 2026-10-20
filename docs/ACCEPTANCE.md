@@ -19,6 +19,8 @@
 - [x] Deployed `/health` reports a connected D1 database and ready schema, including required migration `0012_auto_submission.sql`.
 - [ ] Verify Telegram sign-in, session expiry, logout, and cross-account data isolation against the deployed environment.
 
+> Requirements conflict: the user-provided nine-stage plan requires email registration, verification, recovery, and sessions, while the implemented product intentionally disables email/password auth in favor of Telegram-only sign-in. The product plan must be reconciled before this identity stage can be accepted.
+
 ## Source ingestion
 - [x] Telegram posts normalize to the common project model.
 - [x] Duplicate Telegram posts are deduplicated per user and channel.
@@ -27,7 +29,7 @@
 - [x] Excluded-keyword filtering and basic detected-budget filtering are implemented in the Cloudflare scanner.
 - [x] Authenticated scans run against the current user's enabled public Telegram sources; agent startup also triggers an initial scan.
 - [x] Curated public Telegram job-channel catalog is populated with public URLs and category/language labels.
-- [ ] Verify a real public channel scan and scheduled Cron execution against the deployed Worker.
+- [x] Verify a real public Telegram channel scan and scheduled Cron execution against the deployed Worker (20 Oct 2026, 03:00:36 UTC).
 - [x] Freelancehunt official API token validation, project ingestion, automatic bid submission controls, provider-confirmed bid status sync, and optional Telegram reply notifications have mocked regression tests. Live account verification remains pending. Other marketplace adapters and message-thread reply sync remain pending.
 
 ## AI and proposals
@@ -55,7 +57,7 @@
 - [x] Optional Telegram operations alerts are implemented and covered by a mocked scheduled-scan failure test.
 - [ ] Configure `WORKER_ALERT_CHAT_ID` and verify delivery against the deployed bot.
 - [x] Run the local PostgreSQL-backed Docker Compose startup and `/health` smoke test in CI.
-- [ ] Run a D1 backup/restore drill against a separate non-production database.
+- [x] Run a synthetic local D1 export/restore drill into a separately initialized non-production database. Production backup/restore remains unverified.
 - [ ] Complete the deployed smoke-test checklist and full user-scoped authorization coverage.
 
 ## Mobile and authorization regression coverage
@@ -66,6 +68,6 @@
 
 ## Verification record
 - CI verifies backend tests/migrations, frontend lint/build, Playwright smoke tests, and Cloudflare Worker typecheck/tests. CodeQL and weekly Dependabot checks are configured.
-- [x] Document D1 export, migration, and test-database restore commands in [Operations and recovery](OPERATIONS.md). The backup/restore drill itself remains unverified.
-- Live health checks confirm the Worker and D1 schema are ready. Telegram channel scans, bot commands, AI provider quality, Freelancehunt submission, and reply notifications still need end-to-end verification.
-- Known limitations: Freelancehunt API discovery/submission/status sync and optional Telegram reply notifications are implemented with mocked tests but need a real user token test, the Worker encryption secret, migrations, and live Telegram verification. Message-thread synchronization and other marketplace adapters are not implemented. Telegram ingestion currently reads public channel previews only.
+- [x] Document D1 export, migration, and test-database restore commands in [Operations and recovery](OPERATIONS.md). A synthetic local restore passed; production backup and recovery remain unverified.
+- Live checks on 20 Oct 2026 confirm API health (D1 connected, schema ready), API Worker version ce8b2a98 at 100% traffic, and an automatic scan completed at 03:00:36 UTC. The production dashboard showed 451 projects, 12 profile matches, 3 marketplace discovery sources (1 API-connected and 2 public-search), 10 Telegram channels, 1 linked bot, 0 provider-confirmed bids, and 0 tracked replies. Two observed Telegram listings displayed 2 500 UAH and remained in the Найден state. Russian AI generation produced a saved draft without sending it. English generation quality, real Telegram bot command/notification delivery, two-account production isolation, production-data restore, and an employer-facing bid E2E remain unverified.
+- Known limitations: Freelancehunt API discovery/submission/status sync and optional Telegram reply notifications need further safe live verification. Telegram Web was signed out on the acceptance PC; no OTP login or message was attempted. Email registration, verification, recovery, and sessions in the user's project plan conflict with the repository's intentional Telegram-only sign-in. Message-thread synchronization and other marketplace adapters are not implemented. Telegram ingestion currently reads public channel previews only.

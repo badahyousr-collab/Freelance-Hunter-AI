@@ -13,7 +13,7 @@ Freelance requests are scattered across channels and platforms. Manually reviewi
 - Telegram-only sign-in with a short-lived one-time code and HTTP-only session cookie.
 - User-scoped workspace data for projects, source subscriptions, profiles, agent settings, integrations, and applications.
 - Public Telegram preview ingestion with normalized listing records, duplicate prevention, source health fields, and a scheduled scan trigger.
-- A curated list of nine public Telegram channels for developer work, no-code, IT freelance, and broader freelance listings. A listed channel is not considered verified until a real scan succeeds.
+- A curated list of ten public Telegram channels for developer work, no-code, IT freelance, and broader freelance listings. The production scan verified @FreelancehuntProjects; each other channel still needs its own scan evidence.
 - Explainable matching scores with language, budget, excluded-keyword, unpaid-work, risk, and complexity signals.
 - RU/EN proposal drafting through an OpenAI-compatible endpoint. Prompts treat listing text as untrusted and instruct the model not to invent experience or credentials.
 - Editable proposal drafts and an awaiting-confirmation workflow. The application is never marked as sent without a verified provider result.
@@ -27,14 +27,24 @@ Freelance requests are scattered across channels and platforms. Manually reviewi
 - **Telegram companion:** Python/aiogram codebase and Worker webhook integration.
 - **Local/backend track:** FastAPI, SQLAlchemy/Alembic, PostgreSQL for local and separately hosted deployments.
 
-## Constraints and honest status
+## Production verification snapshot (20 October 2026)
 
-- Production D1 migrations, the `INTEGRATION_ENCRYPTION_KEY` Worker secret, and Telegram secrets still require verification in the target Cloudflare account.
-- Live Telegram and Freelancehunt scans have not been confirmed by CI; CI uses mocked network responses.
-- Real AI-provider quality testing needs an intentionally configured provider key and representative anonymized listings. A real provider may charge for API usage.
-- Marketplace discovery includes Freelancehunt's official API, FL.ru's public RSS, and public Freelance.ru tasks. Automatic bid submission is available only through Freelancehunt's verified API; the other two sources are read-only and require manual proposal submission. Live Freelancehunt account verification still requires a real user-owned token. Kwork, Upwork, Fiverr, Freelancer.com, and unsupported sources remain unavailable. Client message-thread synchronization is not implemented.
-- No real production throughput, latency, success-rate, or cost measurements are claimed here.
-- Screenshots and a demo recording must be captured from the configured live app before publishing a final visual portfolio case.
+- The API Worker is healthy (status ok, D1 connected, schema ready). Cloudflare shows version ce8b2a98, built from merge commit de98e0f, Ready at 100% production traffic.
+- The production dashboard reported 451 discovered projects, 12 profile matches, 3 marketplace discovery sources (1 API-connected and 2 public-search), 10 Telegram channels, 1 linked bot, 0 provider-confirmed bids, and 0 tracked replies.
+- A scheduled scan completed at 03:00:36 UTC. Two existing public Telegram listings that include 2500 UAH display as 2 500 UAH in the project list. These listings remain in the Найден state; no bid or employer message was sent during acceptance.
+- The configured AI provider accepted a real generation request for a Russian skills-aligned listing. It produced a saved draft; no proposal was submitted.
+- The PR for UAH parsing/backfill passed CI #668 (backend, Worker tests and migrations, frontend lint/Playwright/build, Compose smoke) and CodeQL #247 before merge.
+
+## Constraints and remaining acceptance work
+
+- The user-provided project plan asks for email registration, email verification, password recovery, and email sessions. The repository and deployed product intentionally use Telegram-only sign-in and disable email/password routes. This requirements conflict remains unresolved; implementing real email verification also requires an approved production mail provider.
+- Production Telegram-Web is not authenticated on the acceptance PC, so a real /stats command and notification delivery have not been verified. No OTP or QR login was attempted.
+- Live two-account data isolation and session-expiry behavior have not been exercised with two real production accounts. Automated tests cover owner-scoped endpoints and expired-session rejection.
+- English proposal quality has not been demonstrated on a safe, clearly English skills-aligned listing. Russian generation was verified as described above.
+- Automated bid submission is available only through Freelancehunt's verified API; FL.ru and Freelance.ru are discovery-only and require manual submission. A real employer-facing bid was not sent as an acceptance test.
+- A synthetic local D1 export/import drill passed, but no production backup artifact or production-data restore has been tested.
+- User-specific project counts are a snapshot, not a throughput or success-rate claim. No production latency, cost, or conversion metrics are claimed.
+- Screenshots and a demo recording are not yet captured. This document is a verified engineering snapshot, not a finished visual portfolio case.
 
 ## Verification
 
