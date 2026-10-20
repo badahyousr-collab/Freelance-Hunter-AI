@@ -1713,7 +1713,7 @@ async function handle(request: Request, env: Env): Promise<Response> {
       const upstream = await fetch(endpoint, {
         method: "POST",
         headers: { "Authorization": "Bearer " + env.AI_API_KEY, "Content-Type": "application/json" },
-        body: JSON.stringify({ model: env.AI_MODEL, ...aiCompletionCompatibilityOptions(apiBase, env.AI_MODEL), temperature: 0, max_tokens: 8, messages: [{ role: "user", content: "Reply with OK only." }] }),
+        body: JSON.stringify({ model: env.AI_MODEL, ...aiCompletionCompatibilityOptions(apiBase, env.AI_MODEL), temperature: 0, max_completion_tokens: 64, messages: [{ role: "user", content: "Reply with OK only." }] }),
         signal: AbortSignal.timeout(15000)
       });
       if (!upstream.ok) return response(request, { ok: false, detail: aiProviderErrorDetail(upstream.status) }, 502);
