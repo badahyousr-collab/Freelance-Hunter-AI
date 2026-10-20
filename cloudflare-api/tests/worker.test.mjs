@@ -531,7 +531,6 @@ test("automatic Freelancehunt bids require an explicit deadline and listed suppo
   assert.equal(freelancehuntAutoBidTerms({ description: "Срок 5 дней", budget_min: 5000, budget_max: null, currency: "" }, now), null);
   assert.deepEqual(freelancehuntAutoBidTerms({ description: "Срок выполнения 2 недели", budget_min: 4500, budget_max: 5000, currency: "RUB" }, now), { days: 14, amount: 4500, currency: "RUB" });
 });
-
 test("Telegram employer contact extraction ignores the source channel and accepts explicit usernames", () => {
   assert.equal(findTelegramEmployerUsername("Канал @python_jobs. Контакт: @client_person", "python_jobs:45"), "client_person");
   assert.equal(findTelegramEmployerUsername("Ищем разработчика, пишите https://t.me/client_person", "python_jobs:45"), "client_person");
@@ -1767,4 +1766,3 @@ test("Groq GPT-OSS proposal requests disable exposed reasoning and use low effor
     globalThis.fetch = originalFetch;
   }
 });
-
