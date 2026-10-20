@@ -145,7 +145,7 @@ export default function SourcesPage() {
 
     <section className="content-card">
       <details className="source-group-accordion">
-        <summary className="source-group-summary"><span><strong>Фриланс-биржи</strong><small>{connectedMarketplaceCount} из {marketplaceSources.length + 1} подключено · настройки и подключение</small></span><ChevronDown className="source-chevron" size={16} aria-hidden="true"/></summary>
+        <summary className="source-group-summary"><span><strong>Фриланс-биржи</strong><small>{marketplaceChecking ? "Проверяем подключения…" : `${connectedMarketplaceCount} из ${marketplaceSources.length + 1} подключено · настройки и подключение`}</small></span><ChevronDown className="source-chevron" size={16} aria-hidden="true"/></summary>
         <div className="source-group-content">
       <div className="panel-heading"><div><h2>Фриланс-биржи</h2><p>FL.ru и Freelance.ru ищутся по публичным объявлениям без регистрации. Чтобы отправить подготовленный AI черновик, войди в свой аккаунт на бирже.</p></div><Workflow size={18}/></div>
       <div className="sub-list">
