@@ -221,11 +221,13 @@ test("settings save action sits below the payment fields and persists preference
   expect(saveBox).not.toBeNull();
   expect(saveBox!.y).toBeGreaterThan(paymentBox!.y + paymentBox!.height);
   await page.getByLabel("Криптовалюта").check();
+  await page.getByLabel("Валюта бюджета").selectOption("UAH");
   await page.getByLabel("Навыки и специализация").fill("Python, FastAPI");
   await saveButton.click();
   await expect(page.getByText(/Настройки сохранены/i)).toBeVisible();
   expect(savedProfile.skills).toEqual(["Python", "FastAPI"]);
   expect(savedProfile.payment_preferences).toEqual(["crypto"]);
+  expect(savedProfile.currency).toBe("UAH");
 });
 
 
