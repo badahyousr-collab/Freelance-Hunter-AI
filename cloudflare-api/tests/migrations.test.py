@@ -31,6 +31,9 @@ def main() -> None:
 
     db.executescript(identity_migration.read_text(encoding="utf-8"))
 
+    # Represent an existing opted-in agent before later migrations are applied.
+    db.execute("INSERT INTO agent_settings (user_id,is_enabled,auto_draft) VALUES ('user-1',1,1)")
+
     user_columns = {row[1] for row in db.execute("PRAGMA table_info(users)")}
     assert {"id", "telegram_identity", "telegram_verified", "identity_provider", "created_at"} <= user_columns
     assert not {"email", "password_hash", "is_verified", "auth_method", "verification_token_hash", "verification_expires_at", "password_reset_token_hash", "password_reset_expires_at"} & user_columns
@@ -49,18 +52,23 @@ def main() -> None:
         db.executescript(migration.read_text(encoding="utf-8"))
 
     settings_columns = {row[1] for row in db.execute("PRAGMA table_info(agent_settings)")}
-    assert {"notify_new_projects", "auto_submit", "daily_submission_limit"} <= settings_columns
+    assert {"notify_new_projects", "auto_submit", "auto_reply", "daily_submission_limit"} <= settings_columns
     application_columns = {row[1] for row in db.execute("PRAGMA table_info(applications)")}
     assert {"provider_submission_id", "submission_error"} <= application_columns
     application_indexes = {row[1] for row in db.execute("PRAGMA index_list(applications)")}
     assert "idx_applications_provider_submission_id" in application_indexes
+    thread_state_columns = {row[1] for row in db.execute("PRAGMA table_info(freelancehunt_thread_state)")}
+    assert {"user_id", "thread_id", "last_message_id", "reply_status", "last_error"} <= thread_state_columns
+    thread_state_indexes = {row[1] for row in db.execute("PRAGMA index_list(freelancehunt_thread_state)")}
+    assert "idx_freelancehunt_thread_state_user_updated" in thread_state_indexes
+    assert db.execute("SELECT auto_reply FROM agent_settings WHERE user_id='user-1'").fetchone() == (1,)
     db.execute(
         "INSERT INTO users (id,telegram_identity,telegram_verified,identity_provider) VALUES (?,?,1,'telegram')",
         ("user-3", "tg:67890"),
     )
     db.execute("INSERT INTO profiles (user_id) VALUES ('user-3')")
     db.execute("INSERT INTO agent_settings (user_id) VALUES ('user-3')")
-    assert db.execute("SELECT notify_new_projects,auto_submit,daily_submission_limit FROM agent_settings WHERE user_id='user-3'").fetchone() == (1, 1, 10)
+    assert db.execute("SELECT notify_new_projects,auto_submit,auto_reply,daily_submission_limit FROM agent_settings WHERE user_id='user-3'").fetchone() == (1, 1, 0, 10)
 
     try:
         db.execute("INSERT INTO telegram_links (user_id,telegram_user_id) VALUES (?,?)", ("user-3", "12345"))
@@ -79,7 +87,7 @@ def main() -> None:
     )
     assert db.execute("SELECT user_id FROM telegram_auth_codes WHERE code_hash='auth-code-hash'").fetchone()[0] == "user-3"
 
-    print(f"Validated {len(MIGRATIONS)} D1 migrations, Telegram-only identity, notification defaults, auto-submission defaults, provider submission tracking, auth codes, uniqueness, and cascading session deletion.")
+    print(f"Validated {len(MIGRATIONS)} D1 migrations, Telegram-only identity, notification and auto-reply defaults, provider submission tracking, auth codes, uniqueness, and cascading session deletion.")
 
 
 if __name__ == "__main__":

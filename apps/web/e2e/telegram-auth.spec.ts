@@ -329,15 +329,17 @@ test("AI agent starts a first scan and application reply notifications persist",
   await mockAuthenticatedAccount(page);
   let enabled = false;
   let notifyApplicationUpdates = true;
+  let autoReply = false;
   await page.route("**/api/backend/agent/settings", async route => {
     if (route.request().method() === "PATCH") {
-      const payload = route.request().postDataJSON() as { enabled?: boolean; notify_application_updates?: boolean };
+      const payload = route.request().postDataJSON() as { enabled?: boolean; notify_application_updates?: boolean; auto_reply?: boolean };
       if (payload.enabled !== undefined) enabled = payload.enabled;
       if (payload.notify_application_updates !== undefined) notifyApplicationUpdates = payload.notify_application_updates;
-      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ enabled, auto_draft: true, auto_submit: false, daily_submission_limit: 10, notify_application_updates: notifyApplicationUpdates, telegram_linked: true }) });
+      if (payload.auto_reply !== undefined) autoReply = payload.auto_reply;
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ enabled, auto_draft: true, auto_submit: false, auto_reply: autoReply, daily_submission_limit: 10, notify_application_updates: notifyApplicationUpdates, telegram_linked: true }) });
       return;
     }
-    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ enabled, auto_draft: true, auto_submit: false, daily_submission_limit: 10, notify_application_updates: notifyApplicationUpdates, telegram_linked: true }) });
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ enabled, auto_draft: true, auto_submit: false, auto_reply: autoReply, daily_submission_limit: 10, notify_application_updates: notifyApplicationUpdates, telegram_linked: true }) });
   });
   await page.route("**/api/backend/agent/scan", async route => {
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ scannedSources: 1, newProjects: 2, draftedApplications: 1, errors: [] }) });
@@ -353,6 +355,11 @@ test("AI agent starts a first scan and application reply notifications persist",
   await page.getByRole("button", { name: "Включить агента" }).click();
   await expect(page.getByText(/Агент включён\. Первый проход завершён: новых проектов 2, подготовлено откликов 1/i)).toBeVisible();
   await expect(page.getByRole("button", { name: "Приостановить агента" })).toBeVisible();
+  const autoReplies = page.locator("label").filter({ hasText: "Отвечать на новые сообщения Freelancehunt" }).locator("input");
+  await expect(autoReplies).toBeEnabled();
+  await autoReplies.click();
+  await expect(autoReplies).toBeChecked();
+  expect(autoReply).toBe(true);
 });
 
 test("AI agent settings stay neutral until the saved state has loaded", async ({ page }) => {

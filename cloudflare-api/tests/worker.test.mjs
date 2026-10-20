@@ -1,6 +1,21 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import worker, { bidDurationDays, capitalizeFormalAddress, detectProjectLanguage, detectProjectTimeline, detectedBudget, evaluateProjectMatch, findTelegramEmployerUsername, freelancehuntAutoBidTerms, parseFlRuRss, parseFreelanceRuTasks, proposalSubmissionValidationIssue, proposalValidationIssue } from "../.test-dist/src/index.js";
+import worker, { bidDurationDays, capitalizeFormalAddress, detectProjectLanguage, detectProjectTimeline, detectedBudget, evaluateProjectMatch, findTelegramEmployerUsername, freelancehuntAutoBidTerms, freelancehuntReplyValidationIssue, matchesFreelancehuntProjectThread, parseFlRuRss, parseFreelanceRuTasks, proposalSubmissionValidationIssue, proposalValidationIssue } from "../.test-dist/src/index.js";
+
+test("Freelancehunt reply matching requires the exact project workspace subject", () => {
+  assert.equal(matchesFreelancehuntProjectThread("Workspace for project High-budget project", "High-budget project"), true);
+  assert.equal(matchesFreelancehuntProjectThread("Workspace for project High-budget project", "high-budget project"), true);
+  assert.equal(matchesFreelancehuntProjectThread("Workspace for project High-budget project (copy)", "High-budget project"), false);
+  assert.equal(matchesFreelancehuntProjectThread("Support request", "High-budget project"), false);
+  assert.equal(matchesFreelancehuntProjectThread("Workspace for project High-budget project", ""), false);
+});
+
+test("Freelancehunt reply validation rejects signatures and unsupported claims", () => {
+  assert.equal(freelancehuntReplyValidationIssue("Здравствуйте! Подскажите, какой срок Вы рассматриваете?", "ru"), null);
+  assert.equal(freelancehuntReplyValidationIssue("Здравствуйте! Какой срок Вы рассматриваете? С уважением, pipiskin", "ru"), "signature");
+  assert.equal(freelancehuntReplyValidationIssue("I have extensive experience with React.", "en", ["React"]), "unsupported_experience");
+  assert.equal(freelancehuntReplyValidationIssue("", "ru"), "length");
+});
 
 test("listing language detection distinguishes Russian, Ukrainian, and English", () => {
   assert.equal(detectProjectLanguage("Нужно разработать Telegram-бота для заявок"), "ru");
@@ -64,7 +79,7 @@ test("AI readiness check reserves enough completion tokens for visible text", as
 });
 
 
-function fakeDb({ scan = false, telegramChannel = "@python_jobs", existingProject = null, budgetBackfills = [], freelancehuntScan = false, marketplaceSource = null, skills = ["python", "telegram"], telegramAuth = null, telegramCode = null, linkedAccount = null, application = null, fallbackApplication = null, telegramProjects = [], telegramLinkedUserId = null, project = null, recentProjects = [], profile = null, integration = null, notificationTarget = null, agentSettings = null, pendingDraftProjects = [], sourceCount = 0, insertChanges = 1, projectInserts = [], telegramIdentitySchema = true, notificationsSchema = true, submissionSchema = true, providerStatusSchema = true, applicationUpdateNotificationsSchema = true, autoSubmissionSchema = true } = {}) {
+function fakeDb({ scan = false, telegramChannel = "@python_jobs", existingProject = null, budgetBackfills = [], freelancehuntScan = false, marketplaceSource = null, skills = ["python", "telegram"], telegramAuth = null, telegramCode = null, linkedAccount = null, application = null, fallbackApplication = null, telegramProjects = [], telegramLinkedUserId = null, project = null, recentProjects = [], profile = null, integration = null, notificationTarget = null, agentSettings = null, pendingDraftProjects = [], sourceCount = 0, insertChanges = 1, projectInserts = [], telegramIdentitySchema = true, notificationsSchema = true, submissionSchema = true, providerStatusSchema = true, applicationUpdateNotificationsSchema = true, autoSubmissionSchema = true, threadReplySchema = true } = {}) {
   const profileRecalculations = [];
   const createdSources = [];
   return {
@@ -155,6 +170,7 @@ function fakeDb({ scan = false, telegramChannel = "@python_jobs", existingProjec
           if (sql.includes("SELECT provider_status FROM applications LIMIT 0") && !providerStatusSchema) throw new Error("no such column: provider_status");
           if (sql.includes("SELECT notify_application_updates FROM agent_settings LIMIT 0") && !applicationUpdateNotificationsSchema) throw new Error("no such column: notify_application_updates");
           if (sql.includes("SELECT auto_submit,daily_submission_limit FROM agent_settings LIMIT 0") && !autoSubmissionSchema) throw new Error("no such column: auto_submit");
+          if ((sql.includes("SELECT auto_reply FROM agent_settings LIMIT 0") || sql.includes("SELECT thread_id,last_message_id FROM freelancehunt_thread_state LIMIT 0")) && !threadReplySchema) throw new Error("no such column: auto_reply");
           if (sql.includes("sqlite_master") && sql.includes("auth_rate_limits")) {
             return { results: ["users", "sessions", "telegram_auth_codes", "auth_rate_limits", "profiles", "agent_settings", "sources", "projects", "applications", "integrations", "telegram_links"].map(name => ({ name })) };
           }
@@ -179,13 +195,13 @@ test("health endpoint confirms a reachable D1 binding and required schema", asyn
   assert.deepEqual(await response.json(), { status: "ok", database: "connected", schema: "ready", service: "freelance-hunter-api" });
 });
 
-test("health endpoint reports missing Telegram identity and notification migrations", async () => {
-  const response = await worker.fetch(new Request("https://api.example/health"), { DB: fakeDb({ telegramIdentitySchema: false, notificationsSchema: false, submissionSchema: false, providerStatusSchema: false, applicationUpdateNotificationsSchema: false, autoSubmissionSchema: false }) });
+test("health endpoint reports missing Telegram identity, notifications, and thread reply migrations", async () => {
+  const response = await worker.fetch(new Request("https://api.example/health"), { DB: fakeDb({ telegramIdentitySchema: false, notificationsSchema: false, submissionSchema: false, providerStatusSchema: false, applicationUpdateNotificationsSchema: false, autoSubmissionSchema: false, threadReplySchema: false }) });
   assert.equal(response.status, 200);
   const data = await response.json();
   assert.equal(data.status, "degraded");
   assert.equal(data.schema, "incomplete");
-  assert.deepEqual(data.missing_migrations, ["0007_telegram_only_identity.sql", "0008_new_project_notifications.sql", "0009_provider_submission_tracking.sql", "0010_freelancehunt_status_sync.sql", "0011_application_update_notifications.sql", "0012_auto_submission.sql"]);
+  assert.deepEqual(data.missing_migrations, ["0007_telegram_only_identity.sql", "0008_new_project_notifications.sql", "0009_provider_submission_tracking.sql", "0010_freelancehunt_status_sync.sql", "0011_application_update_notifications.sql", "0012_auto_submission.sql", "0013_freelancehunt_thread_replies.sql"]);
 });
 
 test("Telegram webhook rejects requests when webhook secrets are not configured", async () => {
@@ -1658,8 +1674,8 @@ test("agent settings can opt out of client response notifications", async () => 
   const update = writes.find(item => item.sql.includes("UPDATE agent_settings SET is_enabled=?"));
   assert.ok(update);
   assert.match(update.sql, /notify_application_updates=\?/);
-  assert.equal(update.values[6], 0);
-  assert.equal(update.values[7], "user-1");
+  assert.equal(update.values[7], 0);
+  assert.equal(update.values[8], "user-1");
 });
 
 
