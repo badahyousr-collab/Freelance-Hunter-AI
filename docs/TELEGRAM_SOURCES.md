@@ -14,7 +14,7 @@ The site includes a curated starting set of public Telegram channels that publis
 | Вакансии для фрилансеров | Remote work and freelance orders | RU | https://t.me/s/kadrof_work | Public listing describes daily remote vacancies and freelance orders. |
 | Фриланс, удалённая работа | Orders and vacancies in IT, design, marketing and other areas | RU | https://t.me/s/frwork3 | Public channel listing describes freelance orders and regular activity. |
 | DIGITAL Tender / freelance | Проекты и вакансии в digital, IT и смежных направлениях | RU | https://t.me/s/digitaltender | Публичный просмотр содержит публикации с задачами и описанием условий; качество потока нужно проверить сканированием. |
-| Проєкти Freelancehunt | Freelance projects, including development | UA/RU | https://t.me/s/FreelancehuntProjects | Existing catalog entry; verify recent posts and parsing in the deployed scanner before treating as reliable. |
+| Проєкти Freelancehunt | Freelance projects, including development | UA/RU | https://t.me/s/FreelancehuntProjects | Production scan completed at 2026-10-20 03:00:36 UTC; observed posts were parsed and existing budget records showed 2,500 UAH in the site. Continued useful-source quality still needs review. |
 | IT freelance and remote | IT projects, leads and collaboration | EN/RU | https://t.me/s/itfreelancers | Existing catalog entry; verify recent posts and parsing in the deployed scanner before treating as reliable. |
 
 ## Verification states
@@ -30,6 +30,6 @@ Only the last two states prove that ingestion works. A channel may contain ordin
 
 - The scanner reads public Telegram web previews; it does not read private channels.
 - The current Worker scanner extracts text posts, scores skill relevance, checks language, budget minimum, excluded keywords, explicit unpaid-work signals, and risk/complexity indicators, and stores reasons for the score. It does not guarantee every post is paid work or relevant. Notifications are sent only for newly inserted rows and can be disabled in agent settings.
-- Telegram API credentials/user sessions are not required for public web previews, but live scans in the deployed Worker still need to be verified.
+- Telegram API credentials/user sessions are not required for public web previews. One production scan for @FreelancehuntProjects is verified; the other configured channels still need per-channel scan checks, and repeated scans are needed to assess whether each source is useful.
 - A source catalog entry does not implement a marketplace adapter or guarantee that a platform supports automated applications.
 - Keep channel additions data-driven and verify them with a real scan before claiming a source is working.
