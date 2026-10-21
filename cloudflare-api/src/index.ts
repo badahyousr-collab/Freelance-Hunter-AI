@@ -1551,21 +1551,22 @@ async function notifyUserAboutFallbackDrafts(env: Env, userId: string, applicati
   return sent;
 }
 
-async function scanUserSources(env: Env, userId: string, scheduledSourceBatch = false): Promise<{ scannedSources: number; newProjects: number; errors: string[]; draftedApplications: number; notifiedApplications: number; repliedThreads: number }> {
+async function scanUserSources(env: Env, userId: string, batchMode: "scheduled" | "manual" = "manual"): Promise<{ scannedSources: number; totalSources: number; newProjects: number; errors: string[]; draftedApplications: number; notifiedApplications: number; repliedThreads: number }> {
   const rows = await env.DB.prepare("SELECT * FROM sources WHERE user_id=? AND is_enabled=1 AND source IN ('telegram','freelancehunt','fl_ru','freelance_ru') ORDER BY created_at ASC").bind(userId).all<any>();
   let newProjects = 0;
   const errors: string[] = [];
   const allSources = rows.results ?? [];
-  // A scheduled invocation has a strict CPU budget. Rotate a bounded batch of
-  // sources each Cron tick so one account cannot spend the whole invocation on
-  // every adapter. The manual scan endpoint still scans all enabled sources.
-  const sources = scheduledSourceBatch && allSources.length > 3
+  // Keep each live invocation within the Worker CPU budget. Both scheduled
+  // and manual scans rotate through bounded batches instead of scanning every
+  // enabled adapter in one request.
+  const shouldRotate = allSources.length > 3;
+  const batchSize = 3;
+  const batchCount = Math.max(1, Math.ceil(allSources.length / batchSize));
+  const batchIndex = shouldRotate ? Math.floor(Date.now() / (15 * 60 * 1000)) % batchCount : 0;
+  const sources = shouldRotate
     ? (() => {
-      const batchSize = 3;
-      const batchCount = Math.ceil(allSources.length / batchSize);
-      const batchIndex = Math.floor(Date.now() / (15 * 60 * 1000)) % batchCount;
       const selected = allSources.slice(batchIndex * batchSize, batchIndex * batchSize + batchSize);
-      console.info("scheduled_source_batch_selected", { userId, totalSources: allSources.length, batchIndex, batchCount, sourceIds: selected.map((source: any) => source.id) });
+      console.info("source_batch_selected", { userId, trigger: batchMode, totalSources: allSources.length, batchIndex, batchCount, sourceIds: selected.map((source: any) => source.id) });
       return selected;
     })()
     : allSources;
@@ -1613,7 +1614,7 @@ async function scanUserSources(env: Env, userId: string, scheduledSourceBatch = 
   stageStartedAt = Date.now();
   const notifiedApplications = await notifyUserAboutFallbackDrafts(env, userId, drafts.applicationIds);
   console.info("user_fallback_notifications_completed", { userId, notifiedApplications, durationMs: Date.now() - stageStartedAt });
-  return { scannedSources: sources.length, newProjects, errors, draftedApplications: drafts.count, notifiedApplications, repliedThreads };
+  return { scannedSources: sources.length, totalSources: allSources.length, newProjects, errors, draftedApplications: drafts.count, notifiedApplications, repliedThreads };
 }
 
 async function runScheduledScan(env: Env): Promise<void> {
@@ -1635,7 +1636,7 @@ async function runScheduledScan(env: Env): Promise<void> {
   for (const row of users) {
     const userId = String(row.user_id);
     try {
-      const result = await scanUserSources(env, userId, true);
+      const result = await scanUserSources(env, userId, "scheduled");
       scannedSources += result.scannedSources;
       newProjects += result.newProjects;
       if (result.errors.length) {
@@ -2357,8 +2358,8 @@ async function handle(request: Request, env: Env): Promise<Response> {
   if (path === "/agent/scan" && method === "POST") {
     const recentScan = await env.DB.prepare("SELECT COUNT(*) AS total FROM sources WHERE user_id=? AND is_enabled=1 AND last_scan_at > datetime('now','-1 minute')").bind(uid).first<any>();
     if (Number(recentScan?.total ?? 0) > 0) return response(request, { detail: "A source was scanned recently. Wait one minute before scanning again." }, 429);
-    const result = await scanUserSources(env, uid);
-    return response(request, { ...result, message: result.scannedSources ? "Scan completed." : "Enable at least one supported source before scanning." });
+    const result = await scanUserSources(env, uid, "manual");
+    return response(request, { ...result, message: result.scannedSources ? "Scan batch completed." : "Enable at least one supported source before scanning." });
   }
 
 

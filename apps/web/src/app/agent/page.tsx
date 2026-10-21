@@ -52,8 +52,10 @@ export default function AgentPage() {
         const scanData = await scanResponse.json();
         if (!scanResponse.ok) {
           setMessage("Агент включён, но первый запуск сканирования не удался: " + (scanData.detail ?? "проверь источники и настройки"));
+        } else if (!Number(scanData.totalSources ?? scanData.scannedSources ?? 0)) {
+          setMessage("Агент включён, но источники не подключены. Добавь их на вкладке «Источники».");
         } else {
-          setMessage("Агент включён. Первый проход завершён: новых проектов " + Number(scanData.newProjects ?? 0) + ", подготовлено откликов " + Number(scanData.draftedApplications ?? 0) + ". Дальше он работает по расписанию.");
+          setMessage("Агент включён. Первый пакет проверен: " + Number(scanData.scannedSources ?? 0) + " из " + Number(scanData.totalSources ?? scanData.scannedSources ?? 0) + " источников; новых проектов " + Number(scanData.newProjects ?? 0) + ", подготовлено откликов " + Number(scanData.draftedApplications ?? 0) + ". Полный обход продолжится по расписанию.");
           if (Array.isArray(scanData.errors) && scanData.errors.length) setError(scanData.errors.join("; "));
         }
       } else {

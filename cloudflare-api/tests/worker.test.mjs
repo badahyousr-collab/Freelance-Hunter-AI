@@ -102,7 +102,7 @@ test("AI readiness check reserves enough completion tokens for visible text", as
 });
 
 
-function fakeDb({ scan = false, telegramChannel = "@python_jobs", existingProject = null, budgetBackfills = [], freelancehuntScan = false, marketplaceSource = null, skills = ["python", "telegram"], telegramAuth = null, telegramCode = null, linkedAccount = null, application = null, fallbackApplication = null, telegramProjects = [], telegramLinkedUserId = null, project = null, recentProjects = [], profile = null, integration = null, notificationTarget = null, agentSettings = null, pendingDraftProjects = [], sourceCount = 0, insertChanges = 1, projectInserts = [], telegramIdentitySchema = true, notificationsSchema = true, submissionSchema = true, providerStatusSchema = true, applicationUpdateNotificationsSchema = true, autoSubmissionSchema = true, threadReplySchema = true, profilePortfolioSchema = true } = {}) {
+function fakeDb({ scan = false, sourceRows = null, telegramChannel = "@python_jobs", existingProject = null, budgetBackfills = [], freelancehuntScan = false, marketplaceSource = null, skills = ["python", "telegram"], telegramAuth = null, telegramCode = null, linkedAccount = null, application = null, fallbackApplication = null, telegramProjects = [], telegramLinkedUserId = null, project = null, recentProjects = [], profile = null, integration = null, notificationTarget = null, agentSettings = null, pendingDraftProjects = [], sourceCount = 0, insertChanges = 1, projectInserts = [], telegramIdentitySchema = true, notificationsSchema = true, submissionSchema = true, providerStatusSchema = true, applicationUpdateNotificationsSchema = true, autoSubmissionSchema = true, threadReplySchema = true, profilePortfolioSchema = true } = {}) {
   const profileRecalculations = [];
   const profileRecalculationQueries = [];
   const createdSources = [];
@@ -204,6 +204,7 @@ function fakeDb({ scan = false, telegramChannel = "@python_jobs", existingProjec
           }
           if (sql.includes("LEFT JOIN applications a ON a.user_id=p.user_id AND a.project_id=p.id") && sql.includes("AND a.id IS NULL")) return { results: pendingDraftProjects };
           if (sql.includes("SELECT * FROM sources WHERE user_id=? AND is_enabled=1")) {
+            if (sourceRows) return { results: sourceRows };
             if (marketplaceSource) return { results: [{ id: 9, user_id: "user-1", identifier: marketplaceSource === "fl_ru" ? "all" : "public", is_enabled: 1, source: marketplaceSource }] };
             if (freelancehuntScan) return { results: [{ id: 8, user_id: "user-1", source: "freelancehunt", identifier: "", is_enabled: 1 }] };
             if (scan) return { results: [{ id: 7, user_id: "user-1", source: "telegram", identifier: telegramChannel, is_enabled: 1 }] };
@@ -219,6 +220,37 @@ function fakeDb({ scan = false, telegramChannel = "@python_jobs", existingProjec
     }
   };
 }
+
+test("manual agent scan rotates through a bounded batch when many sources are enabled", async () => {
+  const originalFetch = globalThis.fetch;
+  const fetchedChannels = [];
+  globalThis.fetch = async input => {
+    const url = String(input);
+    if (url.startsWith("https://t.me/s/channel")) {
+      fetchedChannels.push(url);
+      return new Response("<html><body></body></html>", { status: 200 });
+    }
+    return originalFetch(input);
+  };
+  const sourceRows = Array.from({ length: 8 }, (_, index) => ({
+    id: index + 1, user_id: "user-1", source: "telegram", identifier: `@channel${index + 1}`, is_enabled: 1
+  }));
+  try {
+    const response = await worker.fetch(new Request("https://api.example/agent/scan", {
+      method: "POST",
+      headers: { Cookie: "fh_session=test-session-token", "Content-Type": "application/json" },
+      body: "{}"
+    }), { DB: fakeDb({ sourceRows }) });
+    assert.equal(response.status, 200);
+    const result = await response.json();
+    assert.equal(result.totalSources, 8);
+    assert.ok(result.scannedSources > 0 && result.scannedSources <= 3);
+    assert.equal(fetchedChannels.length, result.scannedSources);
+    assert.deepEqual(result.errors, []);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
 
 test("health endpoint confirms a reachable D1 binding and required schema", async () => {
   const response = await worker.fetch(new Request("https://api.example/health"), { DB: fakeDb() });
