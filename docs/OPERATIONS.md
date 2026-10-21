@@ -1,6 +1,6 @@
 # Operations and recovery
 
-This guide documents the free-plan-compatible operational steps for the Cloudflare Worker and D1 deployment. Production health checks, migration application, and Worker deployment have been verified. A production database export and restore drill have not been performed; recovery is not verified until those are tested against a separate database.
+This guide documents the free-plan-compatible operational steps for the Cloudflare Worker and D1 deployment. Production health checks, migration application, and Worker deployment have been verified. A synthetic export/import drill passed against separate local Wrangler D1 databases. A production database export and restore to a separate remote test database have not been performed, so recovery of a production backup is not yet verified.
 
 ## Before changing production
 
@@ -80,7 +80,7 @@ Do not experiment with restore commands against production. Create or choose a s
 npx wrangler d1 execute <test-database-name> --remote --file=backups/freelance-hunter-before-change.sql
 ```
 
-After import, check table counts and run a test Worker against that database before considering the restore verified. A production recovery must follow a separately reviewed plan because restoring an old snapshot can discard newer user data.
+The repository has passed a synthetic local export/import check: 14 migrations, all 16 tables, and a synthetic probe row were restored into a second local D1 database. The remote test-database procedure above has not yet been run with an export of production data. After a remote import, check table counts and run a test Worker against that database before considering production-backup recovery verified. A production recovery must follow a separately reviewed plan because restoring an old snapshot can discard newer user data.
 
 Cloudflare also documents D1 Time Travel and point-in-time restore: https://developers.cloudflare.com/d1/reference/time-travel/. Check the database's available recovery window in the account before relying on it.
 
