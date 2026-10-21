@@ -91,7 +91,7 @@ test("AI readiness check reserves enough completion tokens for visible text", as
     const response = await worker.fetch(new Request("https://api.example/agent/test-ai", {
       method: "POST",
       headers: { Cookie: "fh_session=test-session-token" }
-    }), { DB: fakeDb(), AI_API_KEY: "test-ai-key", AI_API_BASE_URL: "https://api.groq.com/openai/v1", AI_MODEL: "openai/gpt-oss-20b" });
+    }), { DB: fakeDb(), AI_API_KEY: "test-ai-key", AI_API_BASE_URL: "https://api.groq.com/openai/v1////", AI_MODEL: "openai/gpt-oss-20b" });
     assert.equal(response.status, 200);
     assert.equal((await response.json()).ok, true);
     assert.equal(sentBody.max_completion_tokens, 64);
