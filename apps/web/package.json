@@ -13,7 +13,7 @@
     "deploy:worker": "opennextjs-cloudflare build && opennextjs-cloudflare deploy"
   },
   "dependencies": {
-    "next": "^15.1.0",
+    "next": "^16.4.2",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "lucide-react": "^0.468.0"
@@ -24,10 +24,15 @@
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "eslint": "^9.0.0",
-    "eslint-config-next": "^15.1.0",
+    "eslint-config-next": "^16.4.2",
     "typescript": "^5.7.0",
-    "@eslint/eslintrc": "^3.2.0",
     "@opennextjs/cloudflare": "latest",
     "wrangler": "latest"
+  },
+  "overrides": {
+    "postcss": "^8.5.31",
+    "@node-minify/core": {
+      "glob": "^10.5.0"
+    }
   }
 }

@@ -9,7 +9,11 @@ test("login molecule spins smoothly and supports pointer rotation", async ({ pag
   await expect(canvas).toBeVisible();
   await expect(canvas).toHaveCSS("animation-name", "molecule-spin");
 
-  const initialSize = await canvas.evaluate(element => ({ width: element.width, height: element.height }));
+  const getCanvasSize = () => canvas.evaluate(element => {
+    const canvasElement = element as HTMLCanvasElement;
+    return { width: canvasElement.width, height: canvasElement.height };
+  });
+  const initialSize = await getCanvasSize();
   const box = await interaction.boundingBox();
   if (!box) throw new Error("Molecule interaction region is not visible");
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
@@ -19,7 +23,7 @@ test("login molecule spins smoothly and supports pointer rotation", async ({ pag
   await page.mouse.up();
   await expect(interaction).toHaveCSS("--molecule-rotate-y", "32deg");
 
-  await expect.poll(() => canvas.evaluate(element => ({ width: element.width, height: element.height }))).toEqual(initialSize);
+  await expect.poll(getCanvasSize).toEqual(initialSize);
 });
 
 test("login molecule respects reduced-motion preference", async ({ page }) => {
