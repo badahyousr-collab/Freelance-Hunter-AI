@@ -34,6 +34,10 @@ Freelancehunt API docs: https://apidocs.freelancehunt.com/
 
 The public discovery adapters run on the existing 15-minute schedule when the AI agent is enabled. Their source status and recent scan errors appear on **Источники**. Both sources are discovery and draft only; only Freelancehunt has a verified proposal-submission API in this project.
 
+## Profile and portfolio link
+
+In **Настройки**, add your actual skills and, optionally, a public HTTPS link to your portfolio. The link is saved with your profile and supplied to AI proposal drafting. AI may include that exact link when relevant; it must not claim what the link contains or invent projects, clients, results, or skills. ByteCraft does not fetch or verify portfolio pages. Keep private or client-confidential work off public links.
+
 ## Platforms that are not enabled
 
 - **Upwork:** a public API exists, but key requests are reviewed, and commercial API access is limited to selected partners with prior written permission. This project does not have that approval or credentials. See https://www.upwork.com/developer/documentation/graphql/api/docs/index.html and https://support.upwork.com/hc/en-us/sections/17976982721555-Upwork-API.

@@ -50,6 +50,7 @@
 - [x] Deterministic hard filters for unsupported languages, minimum budget when currencies match, excluded keywords, and explicit unpaid-work signals; currency mismatches are not compared without an exchange rate.
 - [x] Explainable baseline score and reasons.
 - [x] OpenAI-compatible proposal drafting endpoint with profile-grounded, prompt-injection-aware instructions.
+- [x] Save an optional public portfolio URL in the profile and pass the exact link to AI drafting; reject any other URL and prohibit inferred portfolio claims.
 - [x] Mocked provider-contract tests for Russian and English drafts, payload facts, safety instructions, missing configuration, and upstream failures.
 - [ ] Configure and test an AI provider in the deployment environment.
 - [x] Improve multilingual budget and currency parsing with regression tests for RU/EN currency formats, thousands separators, and `k`/`тыс.` multipliers.

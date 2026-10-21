@@ -28,6 +28,7 @@ class UserProfile(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), unique=True, index=True)
     display_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    portfolio_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     skills: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
     languages: Mapped[list] = mapped_column(JSON, default=lambda: ["ru", "en"], nullable=False)
     min_budget: Mapped[float | None] = mapped_column(Float, nullable=True)

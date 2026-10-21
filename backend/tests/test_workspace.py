@@ -63,6 +63,7 @@ def test_profile_update_is_persisted_and_normalized(client: TestClient) -> None:
     create_telegram_user(client)
     saved = client.put("/profile", json={
         "display_name": "Developer",
+        "portfolio_url": "https://portfolio.example/work",
         "skills": [" Python ", "Telegram bots", "Python"],
         "languages": ["RU", "en", "ru"],
         "min_budget": 100,
@@ -77,6 +78,13 @@ def test_profile_update_is_persisted_and_normalized(client: TestClient) -> None:
     assert body["payment_preferences"] == ["crypto", "bank"]
     assert body["excluded_keywords"] == ["free"]
     assert client.get("/profile").json()["display_name"] == "Developer"
+    assert client.get("/profile").json()["portfolio_url"] == "https://portfolio.example/work"
+
+
+def test_profile_rejects_non_public_or_non_https_portfolio_links(client: TestClient) -> None:
+    create_telegram_user(client)
+    response = client.put("/profile", json={"portfolio_url": "http://localhost/private"})
+    assert response.status_code == 422
 
 
 def test_dashboard_counts_are_real_and_empty_initially(client: TestClient) -> None:
