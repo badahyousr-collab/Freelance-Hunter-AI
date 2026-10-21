@@ -49,6 +49,7 @@ jobs:
           path: apps/web/.open-next
           if-no-files-found: error
           retention-days: 3
+          include-hidden-files: true
 
   cloudflare-api:
     runs-on: ubuntu-latest
