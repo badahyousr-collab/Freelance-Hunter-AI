@@ -20,6 +20,12 @@ test("proposal drafts ask about project requirements instead of the client's exp
   assert.equal(proposalValidationIssue("Could you clarify the required EMR integrations and project priorities?", "en"), null);
 });
 
+test("proposal drafts limit clarification to three concise questions", () => {
+  assert.equal(proposalValidationIssue("Вітаю! Які модулі потрібні? Який строк? Який бюджет? Які інтеграції? Які навантаження?", "uk"), "too_many_clarifying_questions");
+  assert.equal(proposalValidationIssue("Could you share the required integrations, timeline, and budget?", "en"), null);
+  assert.equal(proposalValidationIssue("¿Podría indicar el plazo y el presupuesto?", "es"), null);
+});
+
 test("proposal drafts cannot claim technologies missing from the user's profile", () => {
   assert.equal(proposalValidationIssue("Я можу інтегрувати PHP-код у цей сайт.", "uk", ["HTML", "CSS", "JavaScript"]), "unsupported_skill");
   assert.equal(proposalValidationIssue("I can build this with PHP.", "en", ["PHP", "JavaScript"]), null);
