@@ -1530,21 +1530,51 @@ async function scanUserSources(env: Env, userId: string): Promise<{ scannedSourc
   const rows = await env.DB.prepare("SELECT * FROM sources WHERE user_id=? AND is_enabled=1 AND source IN ('telegram','freelancehunt','fl_ru','freelance_ru') ORDER BY created_at ASC").bind(userId).all<any>();
   let newProjects = 0;
   const errors: string[] = [];
-  for (const source of rows.results ?? []) {
-    const result = source.source === "telegram"
-      ? await scanTelegramSource(env, userId, source)
-      : source.source === "freelancehunt"
-        ? await scanFreelancehuntSource(env, userId, source)
-        : source.source === "fl_ru"
-          ? await scanFlRuSource(env, userId, source)
-          : await scanFreelanceRuSource(env, userId, source);
-    newProjects += result.added;
-    if (result.error) errors.push(`${source.identifier || source.source}: ${result.error}`);
+  const sources = rows.results ?? [];
+  const sourceScanStartedAt = Date.now();
+  const scanSource = async (source: any): Promise<{ added: number; error?: string }> => {
+    const startedAt = Date.now();
+    try {
+      const result = source.source === "telegram"
+        ? await scanTelegramSource(env, userId, source)
+        : source.source === "freelancehunt"
+          ? await scanFreelancehuntSource(env, userId, source)
+          : source.source === "fl_ru"
+            ? await scanFlRuSource(env, userId, source)
+            : await scanFreelanceRuSource(env, userId, source);
+      console.info("source_scan_stage_completed", { userId, sourceId: source.id, source: source.source, durationMs: Date.now() - startedAt });
+      return result;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown source scan error";
+      console.error("source_scan_stage_failed", { userId, sourceId: source.id, source: source.source, durationMs: Date.now() - startedAt, error: message });
+      return { added: 0, error: message };
+    }
+  };
+  // Keep a small concurrency limit to shorten the serial network wait while
+  // avoiding a burst against public source sites and Telegram previews.
+  for (let offset = 0; offset < sources.length; offset += 3) {
+    const batch = sources.slice(offset, offset + 3);
+    const results = await Promise.all(batch.map(scanSource));
+    for (let index = 0; index < results.length; index += 1) {
+      const result = results[index];
+      const source = batch[index];
+      newProjects += result.added;
+      if (result.error) errors.push(`${source.identifier || source.source}: ${result.error}`);
+    }
   }
+  console.info("user_source_scans_completed", { userId, sourceCount: sources.length, newProjects, durationMs: Date.now() - sourceScanStartedAt });
+  let stageStartedAt = Date.now();
   const drafts = await autoDraftPendingProjects(env, userId);
+  console.info("user_automatic_drafts_completed", { userId, draftedApplications: drafts.count, durationMs: Date.now() - stageStartedAt });
+  stageStartedAt = Date.now();
   await autoSubmitPendingFreelancehuntDrafts(env, userId);
+  console.info("user_automatic_submissions_completed", { userId, durationMs: Date.now() - stageStartedAt });
+  stageStartedAt = Date.now();
   const repliedThreads = await syncFreelancehuntMessages(env, userId);
+  console.info("user_reply_sync_completed", { userId, repliedThreads, durationMs: Date.now() - stageStartedAt });
+  stageStartedAt = Date.now();
   const notifiedApplications = await notifyUserAboutFallbackDrafts(env, userId, drafts.applicationIds);
+  console.info("user_fallback_notifications_completed", { userId, notifiedApplications, durationMs: Date.now() - stageStartedAt });
   return { scannedSources: (rows.results ?? []).length, newProjects, errors, draftedApplications: drafts.count, notifiedApplications, repliedThreads };
 }
 
