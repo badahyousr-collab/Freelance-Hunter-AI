@@ -391,6 +391,7 @@ test("AI agent settings stay neutral until the saved state has loaded", async ({
   await expect(page.getByText("Включён", { exact: true })).toBeVisible();
   await expect(autoSubmit).toBeChecked();
   await expect(dailyLimit).toHaveValue("50");
+  await expect(page.getByText(/За один проход агент обрабатывает до 10 заказов.*следующей проверке через 15 минут/i)).toBeVisible();
 });
 test("integrations page offers only the verified Freelancehunt connection", async ({ page }) => {
   await mockAuthenticatedAccount(page);
