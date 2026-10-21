@@ -48,6 +48,15 @@ test("formal Russian and Ukrainian address is capitalized before validation", ()
   assert.equal(proposalValidationIssue(ukrainian, "uk"), null);
 });
 
+test("proposal drafts must ask about missing delivery time before missing budget", () => {
+  const missingBoth = { timeline: true, budget: true };
+  assert.equal(proposalValidationIssue("Вітаю! Які функції потрібні на першому етапі? Який у Вас досвід?", "uk", [], null, missingBoth), "irrelevant_client_qualification_question");
+  assert.equal(proposalValidationIssue("Вітаю! Які функції потрібні на першому етапі? Який бюджет Ви плануєте?", "uk", [], null, missingBoth), "missing_timeline_question");
+  assert.equal(proposalValidationIssue("Вітаю! Який бюджет Ви плануєте? Який термін завершення Ви розглядаєте?", "uk", [], null, missingBoth), "budget_before_timeline_question");
+  assert.equal(proposalValidationIssue("Вітаю! Який термін завершення Ви розглядаєте? Який бюджет Ви плануєте?", "uk", [], null, missingBoth), null);
+  assert.equal(proposalValidationIssue("مرحباً، ما الموعد المتوقع للتسليم؟ وما الميزانية المناسبة؟", "ar", [], null, missingBoth), null);
+});
+
 test("automatic marketplace submission rejects stale drafts with unsupported claims", () => {
   const oldDraft = "Здравствуйте! Я уже создал PHP-магазин на Simpla, поэтому выполню задачу.";
   assert.notEqual(proposalSubmissionValidationIssue(oldDraft, "Нужно обновить лендинг на Simpla", "Нужен разработчик PHP", ["HTML", "CSS"]), null);
@@ -1360,17 +1369,17 @@ test("proposal drafting creates language-matched, profile-grounded drafts", asyn
     {
       language: "ru",
       project: { id: 17, source: "telegram", url: "https://t.me/example/17", title: "Нужен Telegram-бот на Python", description: "Нужно разработать Telegram-бота для обработки заявок. Бюджет 15 000 RUB.", language: "ru", budget_min: 15000, budget_max: 15000, currency: "RUB", payment_method: "fixed" },
-      draft: "Здравствуйте! Могу помочь разработать Telegram-бота на Python для обработки заявок. Предлагаю сначала согласовать сценарии и структуру данных, затем реализовать и проверить основные функции."
+      draft: "Здравствуйте! Могу помочь разработать Telegram-бота на Python для обработки заявок. Предлагаю сначала согласовать сценарии и структуру данных, затем реализовать и проверить основные функции. Какой срок завершения Вы рассматриваете?"
     },
     {
       language: "en",
       project: { id: 18, source: "telegram", url: "https://t.me/example/18", title: "Build a Python Telegram bot", description: "Build a bot to collect project applications. Budget: $300.", language: "en", budget_min: 300, budget_max: 300, currency: "USD", payment_method: "fixed" },
-      draft: "Hi! I can help build a Python Telegram bot to collect project applications. I would start by confirming the user flow and data structure, then implement and test the core features."
+      draft: "Hi! I can help build a Python Telegram bot to collect project applications. I would start by confirming the user flow and data structure, then implement and test the core features. What delivery timeframe do you have in mind?"
     },
     {
       language: "uk",
       project: { id: 20, source: "telegram", url: "https://t.me/example/20", title: "Потрібно створити Telegram-бота", description: "Потрібно розробити бота для прийому заявок.", language: "ru", budget_min: null, budget_max: null, currency: null, payment_method: null },
-      draft: "Вітаю! Я можу допомогти зі створенням Telegram-бота для прийому заявок. Який термін виконання Ви розглядаєте?"
+      draft: "Вітаю! Я можу допомогти зі створенням Telegram-бота для прийому заявок. Який термін завершення Ви розглядаєте? Який бюджет Ви плануєте?"
     }
   ];
   const requests = [];

@@ -404,7 +404,7 @@ function normalizePortfolioUrl(value: unknown): string | null {
   }
 }
 
-export function proposalValidationIssue(value: unknown, language: string, profileSkills: unknown = [], portfolioUrl: unknown = null): string | null {
+export function proposalValidationIssue(value: unknown, language: string, profileSkills: unknown = [], portfolioUrl: unknown = null, requiredClarifications?: { timeline?: boolean; budget?: boolean }): string | null {
   const text = String(value ?? "").trim();
   if (!text) return "empty";
   const normalized = text.toLocaleLowerCase();
@@ -456,8 +456,14 @@ export function proposalValidationIssue(value: unknown, language: string, profil
     /\b(?:hai\s+(?:esperienza|un\s+team)|quale\s+è\s+la\s+tua)\b[^.!?\n]{0,120}\b(?:esperienza|team)\b/iu
   ];
   if (clientQualificationQuestionPatterns.some(pattern => pattern.test(text))) return "irrelevant_client_qualification_question";
-  const clarifyingQuestionCount = (text.replace(/¿/gu, "").match(/[?？]/gu) ?? []).length;
+  const clarifyingQuestionCount = (text.replace(/¿/gu, "").match(/[?？؟]/gu) ?? []).length;
   if (clarifyingQuestionCount > 3) return "too_many_clarifying_questions";
+  const questions = text.match(/[^?？؟]*[?？؟]/gu) ?? [];
+  const timelineQuestionIndex = questions.findIndex(question => /срок|дата|когда|врем(?:я|ени)|термін|строк|коли|час(?:у|ом)?|дедлайн|deadline|timeframe|timeline|delivery|when|plazo|fecha|cuándo|délai|échéance|frist|zeitraum|termin|wann|prazo|tempistiche|scadenza|期限|納期|予定|기한|일정|납기|موعد|مدة|تسليم|समय|तिथि|अवधि/iu.test(question));
+  const budgetQuestionIndex = questions.findIndex(question => /бюджет|оплат|ціна|вартіст|сума|price|rate|budget|payment|amount|presupuesto|precio|tarifa|prix|tarif|paiement|kosten|honorar|orçamento|preço|valor|pagamento|compenso|prezzo|costo|预算|費用|料金|予算|예산|비용|금액|ميزانية|سعر|تكلفة|बजट|कीमत|भुगतान/iu.test(question));
+  if (requiredClarifications?.timeline && timelineQuestionIndex < 0) return "missing_timeline_question";
+  if (requiredClarifications?.budget && budgetQuestionIndex < 0) return "missing_budget_question";
+  if (requiredClarifications?.timeline && requiredClarifications?.budget && budgetQuestionIndex >= 0 && timelineQuestionIndex > budgetQuestionIndex) return "budget_before_timeline_question";
   const suppliedPortfolioUrl = typeof portfolioUrl === "string" ? portfolioUrl.trim() : "";
   const urls = text.match(/https?:\/\/[^\s<>"')\]]+/giu) ?? [];
   const stripUrlPunctuation = (url: string): string => {
@@ -1308,7 +1314,11 @@ async function autoDraftPendingProjects(env: Env, userId: string): Promise<{ cou
       const data = await upstream.json<any>();
       let draftText = capitalizeFormalAddress(String(data?.choices?.[0]?.message?.content ?? "").trim(), listingLanguage);
       if (!draftText) throw new Error("AI provider returned an empty proposal");
-      const validationIssue = proposalValidationIssue(draftText, listingLanguage, profileFacts.skills, profileFacts.portfolio_url);
+      const requiredClarifications = {
+        timeline: timeline === "По договорённости",
+        budget: project.budget_min == null && project.budget_max == null
+      };
+      const validationIssue = proposalValidationIssue(draftText, listingLanguage, profileFacts.skills, profileFacts.portfolio_url, requiredClarifications);
       if (validationIssue) {
         const fallback = safeFallbackProposal(
           listingLanguage,
@@ -1319,7 +1329,7 @@ async function autoDraftPendingProjects(env: Env, userId: string): Promise<{ cou
           ? capitalizeFormalAddress(fallback, listingLanguage)
           : "";
         const fallbackIssue = validatedFallback
-          ? proposalValidationIssue(validatedFallback, listingLanguage, profileFacts.skills, profileFacts.portfolio_url)
+          ? proposalValidationIssue(validatedFallback, listingLanguage, profileFacts.skills, profileFacts.portfolio_url, requiredClarifications)
           : "language";
         if (fallbackIssue) throw new Error(`AI proposal failed validation: ${validationIssue}; safe fallback unavailable: ${fallbackIssue}`);
         draftText = validatedFallback;
@@ -2405,7 +2415,11 @@ async function handle(request: Request, env: Env): Promise<Response> {
         const data = await upstream.json<any>();
         if (!upstream.ok) return response(request, { detail: aiProviderErrorDetail(upstream.status) }, 502);
         draftText = capitalizeFormalAddress(String(data?.choices?.[0]?.message?.content ?? "").trim(), listingLanguage);
-        validationIssue = proposalValidationIssue(draftText, listingLanguage, profileFacts.skills, profileFacts.portfolio_url);
+        const requiredClarifications = {
+          timeline: timeline === "По договорённости",
+          budget: !projectFacts.budget_provided
+        };
+        validationIssue = proposalValidationIssue(draftText, listingLanguage, profileFacts.skills, profileFacts.portfolio_url, requiredClarifications);
         if (!validationIssue) break;
         if (attempt === 0) {
           messages.push(
@@ -2416,7 +2430,10 @@ async function handle(request: Request, env: Env): Promise<Response> {
       }
       if (validationIssue) {
         const fallback = safeFallbackProposal(listingLanguage, timeline === "По договорённости", !projectFacts.budget_provided);
-        const fallbackIssue = fallback ? proposalValidationIssue(fallback, listingLanguage, profileFacts.skills, profileFacts.portfolio_url) : "language";
+        const fallbackIssue = fallback ? proposalValidationIssue(fallback, listingLanguage, profileFacts.skills, profileFacts.portfolio_url, {
+          timeline: timeline === "По договорённости",
+          budget: !projectFacts.budget_provided
+        }) : "language";
         if (fallback && !fallbackIssue) {
           draftText = fallback;
           validationIssue = null;
