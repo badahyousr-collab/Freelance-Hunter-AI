@@ -196,7 +196,7 @@ export default function SourcesPage() {
 
     <section className="content-card">
       <details className="source-group-accordion">
-        <summary className="source-group-summary"><span><strong>Подборка Telegram-каналов</strong><small>10 публичных каналов · агент проверяет новые публикации каждые 15 минут, если включён</small></span><ChevronDown className="source-chevron" size={16} aria-hidden="true"/></summary>
+        <summary className="source-group-summary"><span><strong>Подборка Telegram-каналов</strong><small>10 публичных каналов · агент проверяет источники частями каждые 15 минут; время полного обхода зависит от их количества</small></span><ChevronDown className="source-chevron" size={16} aria-hidden="true"/></summary>
         <div className="source-group-content">
       <div className="sub-list">
         {recommendedChannels.map(channel => {
