@@ -30,7 +30,7 @@
 - [x] Add Playwright mobile-width overflow checks for integrations, agent settings, applications, and sources.
 - [x] Add regression checks for expired sessions and Telegram-linked data isolation.
 - [ ] Verify empty states and every visible control in the deployed app.
-- [ ] Verify the deployed website against the latest API Worker.
+- [x] Verify key deployed website/API flows against the latest API Worker: authenticated project search, AI draft generation, and applications history were exercised in production on 21 Oct 2026; API health is HTTP 200 with D1 connected and schema ready. This does not close the full control audit.
 
 ## Phase 4 - Source ingestion
 - [x] Normalized source adapter contract.
@@ -52,10 +52,10 @@
 - [x] OpenAI-compatible proposal drafting endpoint with profile-grounded, prompt-injection-aware instructions.
 - [x] Save an optional public portfolio URL in the profile and pass the exact link to AI drafting; reject any other URL and prohibit inferred portfolio claims.
 - [x] Mocked provider-contract tests for Russian and English drafts, payload facts, safety instructions, missing configuration, and upstream failures.
-- [x] Configure and verify the production AI provider. A real provider response created a saved draft; acceptance then found unsupported past-experience claims, fixed the server-side grounding checks, and deployed those checks. Do not use the old draft as a quality example; it remains unsent and unchanged.
+- [x] Configure and verify the production AI provider. A real provider response created a saved draft; acceptance then found unsupported past-experience claims, fixed and deployed server-side grounding checks, and regenerated the affected draft on 21 Oct 2026. The replacement remains an unsent clarification question.
 - [x] Improve multilingual budget and currency parsing with regression tests for RU/EN currency formats, thousands separators, and `k`/`тыс.` multipliers.
 - [x] Add a labeled RU/EN matching evaluation set covering relevant and unrelated listings, budget thresholds, excluded keywords, unpaid work, language filters, risk signals, and complexity scoring.
-- [ ] Test proposal drafts in Russian and English against real anonymized listings and confirm no fabricated profile claims.
+- [x] Smoke-test Russian and English generation against real production listings and confirm the resulting drafts remain profile-grounded. On 21 Oct, an invalid legacy English draft was regenerated to a safe clarification question; a Russian FL.ru draft was also regenerated. Both remain unsent. This is focused coverage, not an exhaustive quality assessment.
 
 ## Phase 6 - Marketplace integrations and application tracking
 - [x] Per-user integration records with encrypted-credential design and API responses that do not expose secrets.
@@ -65,14 +65,16 @@
 - [x] Add editable proposal drafts and an awaiting-confirmation/closed review workflow that cannot falsely mark a proposal as sent.
 - [x] Prevent duplicate Freelancehunt submissions with a status claim and require a provider bid ID before marking an application sent.
 - [x] Synchronize Freelancehunt bid status when the provider confirms rejection or winner selection.
-- [ ] Implement and verify message-thread reply synchronization.
+- [x] Implement automatic message-thread replies for matched existing Freelancehunt bids; tests cover exact thread matching, language/formality, unsupported claims, no-signoff, daily cap, and no retry after uncertain send outcomes.
+- [ ] Verify live employer-message reply delivery. No eligible provider-confirmed bid/thread currently exists; no message was sent during acceptance.
 - [x] Show draft, awaiting confirmation, submitting, sent, failed, and submission-unknown states for Freelancehunt; other providers remain unavailable until verified adapters exist.
 
 ## Phase 7 - Telegram companion
 - [x] One-time expiring website-to-Telegram account linking.
 - [x] Statistics, project listing, pause/resume, and help commands.
 - [x] Cloudflare Worker webhook mode and server-side secret checks.
-- [ ] Configure and verify the deployed bot token/webhook secrets and real Telegram messages.
+- [x] Configure production Telegram bot/webhook prerequisites; the authenticated readiness endpoint reports the bot, provider, Worker, Cron, and D1 schema configured.
+- [ ] Verify real Telegram bot commands and message delivery. The user explicitly deferred this until completing Telegram Web QR sign-in.
 - [x] Provide a compact Telegram project summary and count statistics without sending a separate message for every new listing.
 - [x] Send optional Telegram notifications when the Freelancehunt status sync confirms a rejection or winner selection; user can disable these in agent settings.
 - [ ] Verify that site and bot show the same persisted state.
@@ -99,7 +101,7 @@
 - [x] README, architecture, roadmap, acceptance checklist, setup guides, operations runbook, and code-verified case study.
 - [ ] Capture real screenshots and a demo recording after the app is configured.
 - [x] Publish a code-verified case study with explicit deployment limitations.
-- [ ] Add verified runtime measurements after a live deployment test.
+- [x] Record focused post-deploy performance/runtime checks: production API health and scheduled-source scans, plus the login molecule headless-browser sample (42.2 FPS, 83 ms max frame gap, zero long tasks). These environment-specific measurements are not a production SLO or physical-device guarantee.
 
 ## Working rules
 
