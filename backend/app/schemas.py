@@ -1,5 +1,5 @@
 from datetime import datetime
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class UserResponse(BaseModel):
@@ -11,12 +11,28 @@ class UserResponse(BaseModel):
 
 class ProfileUpdate(BaseModel):
     display_name: str | None = Field(default=None, max_length=100)
+    portfolio_url: str | None = Field(default=None, max_length=500)
     skills: list[str] = Field(default_factory=list, max_length=100)
     languages: list[str] = Field(default_factory=lambda: ["ru", "en"], max_length=10)
     min_budget: float | None = Field(default=None, ge=0, le=1_000_000_000)
     currency: str = Field(default="USD", min_length=3, max_length=8)
     payment_preferences: list[str] = Field(default_factory=list, max_length=10)
     excluded_keywords: list[str] = Field(default_factory=list, max_length=100)
+
+    @field_validator("portfolio_url")
+    @classmethod
+    def validate_portfolio_url(cls, value: str | None) -> str | None:
+        if value is None or not value.strip():
+            return None
+        from urllib.parse import urlsplit
+
+        value = value.strip()
+        parsed = urlsplit(value)
+        if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password:
+            raise ValueError("Portfolio link must be a public HTTPS URL")
+        if parsed.hostname.lower() in {"localhost", "localhost.localdomain"} or "." not in parsed.hostname:
+            raise ValueError("Portfolio link must use a public hostname")
+        return value
 
 
 class ProfileResponse(ProfileUpdate):

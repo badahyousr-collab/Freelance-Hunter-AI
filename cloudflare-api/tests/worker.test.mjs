@@ -2,6 +2,15 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import worker, { bidDurationDays, capitalizeFormalAddress, detectProjectLanguage, detectProjectTimeline, detectedBudget, evaluateProjectMatch, findTelegramEmployerUsername, freelancehuntAutoBidTerms, freelancehuntReplyValidationIssue, matchesFreelancehuntProjectThread, parseFlRuRss, parseFreelanceRuTasks, proposalSubmissionValidationIssue, proposalValidationIssue } from "../.test-dist/src/index.js";
 
+test("proposal may use only the exact portfolio URL saved in the profile", () => {
+  const portfolio = "https://portfolio.example/work";
+  assert.equal(proposalValidationIssue("Могу помочь с задачей. Портфолио: https://portfolio.example/work", "ru", [], portfolio), null);
+  assert.equal(proposalValidationIssue("Могу помочь с задачей. Портфолио: https://portfolio.example/work!!!!!!!!!!", "ru", [], portfolio), null);
+  assert.equal(proposalValidationIssue("Могу помочь с задачей. Портфолио: https://other.example/work", "ru", [], portfolio), "unverified_url");
+  assert.equal(proposalValidationIssue("Могу помочь с задачей. Портфолио: https://portfolio.example/work", "ru"), "unverified_url");
+  assert.equal(proposalSubmissionValidationIssue("Могу помочь с задачей. Портфолио: https://portfolio.example/work", "Нужен специалист", "Здравствуйте", [], portfolio), null);
+});
+
 test("Freelancehunt reply matching requires the exact project workspace subject", () => {
   assert.equal(matchesFreelancehuntProjectThread("Workspace for project High-budget project", "High-budget project"), true);
   assert.equal(matchesFreelancehuntProjectThread("Workspace for project High-budget project", "high-budget project"), true);
@@ -79,7 +88,7 @@ test("AI readiness check reserves enough completion tokens for visible text", as
 });
 
 
-function fakeDb({ scan = false, telegramChannel = "@python_jobs", existingProject = null, budgetBackfills = [], freelancehuntScan = false, marketplaceSource = null, skills = ["python", "telegram"], telegramAuth = null, telegramCode = null, linkedAccount = null, application = null, fallbackApplication = null, telegramProjects = [], telegramLinkedUserId = null, project = null, recentProjects = [], profile = null, integration = null, notificationTarget = null, agentSettings = null, pendingDraftProjects = [], sourceCount = 0, insertChanges = 1, projectInserts = [], telegramIdentitySchema = true, notificationsSchema = true, submissionSchema = true, providerStatusSchema = true, applicationUpdateNotificationsSchema = true, autoSubmissionSchema = true, threadReplySchema = true } = {}) {
+function fakeDb({ scan = false, telegramChannel = "@python_jobs", existingProject = null, budgetBackfills = [], freelancehuntScan = false, marketplaceSource = null, skills = ["python", "telegram"], telegramAuth = null, telegramCode = null, linkedAccount = null, application = null, fallbackApplication = null, telegramProjects = [], telegramLinkedUserId = null, project = null, recentProjects = [], profile = null, integration = null, notificationTarget = null, agentSettings = null, pendingDraftProjects = [], sourceCount = 0, insertChanges = 1, projectInserts = [], telegramIdentitySchema = true, notificationsSchema = true, submissionSchema = true, providerStatusSchema = true, applicationUpdateNotificationsSchema = true, autoSubmissionSchema = true, threadReplySchema = true, profilePortfolioSchema = true } = {}) {
   const profileRecalculations = [];
   const createdSources = [];
   return {
@@ -148,7 +157,7 @@ function fakeDb({ scan = false, telegramChannel = "@python_jobs", existingProjec
           if (sql.includes("SELECT id,project_id,status,draft_text,created_at,submitted_at,replied_at FROM applications WHERE id=? AND user_id=?")) return application;
           if (sql.includes("SELECT id,project_id,status,draft_text,created_at,submitted_at,replied_at FROM applications WHERE user_id=? AND project_id=?")) return application;
           if (sql.includes("SELECT id,source,url,title,description,language,budget_min,budget_max,currency,payment_method FROM projects WHERE id=? AND user_id=?")) return project;
-          if (sql.includes("SELECT display_name,skills,languages,payment_preferences,min_budget,currency FROM profiles WHERE user_id=?")) return profile;
+          if (sql.includes("SELECT display_name,portfolio_url,skills,languages,payment_preferences,min_budget,currency FROM profiles WHERE user_id=?")) return profile;
           if (sql.includes("SELECT attempts FROM auth_rate_limits")) return { attempts: 1 };
           if (sql.includes("SELECT user_id,authenticated_at,session_issued_at,error_message FROM telegram_auth_codes")) return telegramAuth;
           if (sql.includes("SELECT code_hash,auth_mode FROM telegram_auth_codes")) return telegramCode;
@@ -171,6 +180,7 @@ function fakeDb({ scan = false, telegramChannel = "@python_jobs", existingProjec
           if (sql.includes("SELECT notify_application_updates FROM agent_settings LIMIT 0") && !applicationUpdateNotificationsSchema) throw new Error("no such column: notify_application_updates");
           if (sql.includes("SELECT auto_submit,daily_submission_limit FROM agent_settings LIMIT 0") && !autoSubmissionSchema) throw new Error("no such column: auto_submit");
           if ((sql.includes("SELECT auto_reply FROM agent_settings LIMIT 0") || sql.includes("SELECT thread_id,last_message_id FROM freelancehunt_thread_state LIMIT 0")) && !threadReplySchema) throw new Error("no such column: auto_reply");
+          if (sql.includes("SELECT portfolio_url FROM profiles LIMIT 0") && !profilePortfolioSchema) throw new Error("no such column: portfolio_url");
           if (sql.includes("sqlite_master") && sql.includes("auth_rate_limits")) {
             return { results: ["users", "sessions", "telegram_auth_codes", "auth_rate_limits", "profiles", "agent_settings", "sources", "projects", "applications", "integrations", "telegram_links"].map(name => ({ name })) };
           }
@@ -195,13 +205,26 @@ test("health endpoint confirms a reachable D1 binding and required schema", asyn
   assert.deepEqual(await response.json(), { status: "ok", database: "connected", schema: "ready", service: "freelance-hunter-api" });
 });
 
-test("health endpoint reports missing Telegram identity, notifications, and thread reply migrations", async () => {
-  const response = await worker.fetch(new Request("https://api.example/health"), { DB: fakeDb({ telegramIdentitySchema: false, notificationsSchema: false, submissionSchema: false, providerStatusSchema: false, applicationUpdateNotificationsSchema: false, autoSubmissionSchema: false, threadReplySchema: false }) });
+test("health endpoint reports missing Telegram identity, notifications, thread reply, and portfolio migrations", async () => {
+  const response = await worker.fetch(new Request("https://api.example/health"), { DB: fakeDb({ telegramIdentitySchema: false, notificationsSchema: false, submissionSchema: false, providerStatusSchema: false, applicationUpdateNotificationsSchema: false, autoSubmissionSchema: false, threadReplySchema: false, profilePortfolioSchema: false }) });
   assert.equal(response.status, 200);
   const data = await response.json();
   assert.equal(data.status, "degraded");
   assert.equal(data.schema, "incomplete");
-  assert.deepEqual(data.missing_migrations, ["0007_telegram_only_identity.sql", "0008_new_project_notifications.sql", "0009_provider_submission_tracking.sql", "0010_freelancehunt_status_sync.sql", "0011_application_update_notifications.sql", "0012_auto_submission.sql", "0013_freelancehunt_thread_replies.sql"]);
+  assert.deepEqual(data.missing_migrations, ["0007_telegram_only_identity.sql", "0008_new_project_notifications.sql", "0009_provider_submission_tracking.sql", "0010_freelancehunt_status_sync.sql", "0011_application_update_notifications.sql", "0012_auto_submission.sql", "0013_freelancehunt_thread_replies.sql", "0014_profile_portfolio_url.sql"]);
+});
+
+test("profile stores a validated public HTTPS portfolio URL and rejects unsafe URLs", async () => {
+  const db = fakeDb();
+  const request = portfolio_url => new Request("https://api.example/profile", {
+    method: "PUT", headers: { Cookie: "fh_session=test-session-token", "Content-Type": "application/json" },
+    body: JSON.stringify({ portfolio_url })
+  });
+  const good = await worker.fetch(request("https://portfolio.example/work"), { DB: db });
+  assert.equal(good.status, 200);
+  assert.equal((await good.json()).portfolio_url, "https://portfolio.example/work");
+  const bad = await worker.fetch(request("http://localhost/private"), { DB: db });
+  assert.equal(bad.status, 400);
 });
 
 test("Telegram webhook rejects requests when webhook secrets are not configured", async () => {

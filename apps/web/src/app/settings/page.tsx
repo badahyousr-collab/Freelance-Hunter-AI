@@ -10,10 +10,10 @@ const paymentOptions = [
   { id: "crypto", label: "Криптовалюта" },
 ] as const;
 
-type Profile = { display_name: string | null; skills: string[]; languages: string[]; min_budget: number | null; currency: string; payment_preferences: string[]; excluded_keywords: string[] };
+type Profile = { display_name: string | null; portfolio_url: string | null; skills: string[]; languages: string[]; min_budget: number | null; currency: string; payment_preferences: string[]; excluded_keywords: string[] };
 
 export default function SettingsPage() {
-  const [profile, setProfile] = useState<Profile>({ display_name: "", skills: [], languages: ["ru", "en"], min_budget: null, currency: "USD", payment_preferences: [], excluded_keywords: [] });
+  const [profile, setProfile] = useState<Profile>({ display_name: "", portfolio_url: null, skills: [], languages: ["ru", "en"], min_budget: null, currency: "USD", payment_preferences: [], excluded_keywords: [] });
   const [skills, setSkills] = useState("");
   const [languages, setLanguages] = useState("ru, en");
   const [payments, setPayments] = useState<string[]>([]);
@@ -21,6 +21,7 @@ export default function SettingsPage() {
   const [budget, setBudget] = useState("");
   const [currency, setCurrency] = useState("USD");
   const [name, setName] = useState("");
+  const [portfolioUrl, setPortfolioUrl] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
@@ -37,6 +38,7 @@ export default function SettingsPage() {
       if (!active || !data) return;
       setProfile(data);
       setName(data.display_name ?? "");
+      setPortfolioUrl(data.portfolio_url ?? "");
       setSkills((data.skills ?? []).join(", "));
       setLanguages((data.languages ?? ["ru", "en"]).join(", "));
       setPayments((data.payment_preferences ?? []).filter((value: string) => paymentOptions.some(option => option.id === value)));
@@ -58,8 +60,9 @@ export default function SettingsPage() {
     const parse = (value: string) => value.split(",").map(item => item.trim()).filter(Boolean);
     const minBudget = budget.trim() ? Number(budget) : null;
     if (minBudget !== null && (!Number.isFinite(minBudget) || minBudget < 0)) { setError("Минимальный бюджет должен быть числом не меньше нуля."); setSaving(false); return; }
+    if (portfolioUrl.trim() && (!/^https:\/\//iu.test(portfolioUrl.trim()) || !/^https:\/\/[^\s/]+\.[^\s/]+/iu.test(portfolioUrl.trim()))) { setError("Укажи публичную ссылку на портфолио, начинающуюся с https://."); setSaving(false); return; }
     try {
-      const payload = { display_name: name.trim() || null, skills: parse(skills), languages: parse(languages).map(item => item.toLowerCase()), min_budget: minBudget, currency, payment_preferences: payments, excluded_keywords: parse(excluded).map(item => item.toLowerCase()) };
+      const payload = { display_name: name.trim() || null, portfolio_url: portfolioUrl.trim() || null, skills: parse(skills), languages: parse(languages).map(item => item.toLowerCase()), min_budget: minBudget, currency, payment_preferences: payments, excluded_keywords: parse(excluded).map(item => item.toLowerCase()) };
       const response = await fetch(API + "/profile", { method: "PUT", headers: { "Content-Type": "application/json" }, credentials: "include", body: JSON.stringify(payload) });
       const data = await response.json();
       if (!response.ok) throw new Error(data.detail ?? "Не удалось сохранить профиль");
@@ -80,6 +83,7 @@ export default function SettingsPage() {
         <div className="sub-form">
           <div className="sub-form-field"><label htmlFor="display-name">Имя для откликов (необязательно)</label><input id="display-name" className="sub-input" value={name} onChange={event => setName(event.target.value)} placeholder="Как к тебе обращаться" /></div>
           <div className="sub-form-field"><label htmlFor="skills">Навыки и специализация</label><textarea id="skills" className="sub-textarea" value={skills} onChange={event => setSkills(event.target.value)} placeholder="Python, Telegram-боты, Mini Apps, REST API" /><span className="sub-muted">Перечисли через запятую. Популярные сокращения и варианты написания, например JavaScript и JS, распознаются автоматически.</span></div>
+          <div className="sub-form-field"><label htmlFor="portfolio-url">Ссылка на портфолио (необязательно)</label><input id="portfolio-url" className="sub-input" type="url" inputMode="url" value={portfolioUrl} onChange={event => setPortfolioUrl(event.target.value)} placeholder="https://example.com/portfolio" /><span className="sub-muted">Добавь публичную ссылку на свои реальные работы. AI может приложить только эту ссылку, если она подходит к заказу; содержимое ссылок не проверяется, поэтому он не будет приписывать тебе опыт или результаты.</span></div>
           <div className="sub-form-field"><label htmlFor="languages">Языки объявлений</label><input id="languages" className="sub-input" value={languages} onChange={event => setLanguages(event.target.value)} placeholder="ru, en" /><span className="sub-muted">Укажи коды языков через запятую, например ru, en.</span></div>
         </div>
       </section>

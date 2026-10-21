@@ -238,6 +238,7 @@ test("settings save action sits below the payment fields and persists preference
   await mockAuthenticatedAccount(page);
   const savedProfile: Record<string, unknown> = {
     display_name: "Dev",
+    portfolio_url: null,
     skills: ["Python"],
     languages: ["ru", "en"],
     min_budget: null,
@@ -271,9 +272,11 @@ test("settings save action sits below the payment fields and persists preference
   await page.getByLabel("Криптовалюта").check();
   await page.getByLabel("Валюта бюджета").selectOption("UAH");
   await page.getByLabel("Навыки и специализация").fill("Python, FastAPI");
+  await page.getByLabel("Ссылка на портфолио (необязательно)").fill("https://portfolio.example/work");
   await saveButton.click();
   await expect(page.getByText(/Настройки сохранены/i)).toBeVisible();
   expect(savedProfile.skills).toEqual(["Python", "FastAPI"]);
+  expect(savedProfile.portfolio_url).toBe("https://portfolio.example/work");
   expect(savedProfile.payment_preferences).toEqual(["crypto"]);
   expect(savedProfile.currency).toBe("UAH");
 });
