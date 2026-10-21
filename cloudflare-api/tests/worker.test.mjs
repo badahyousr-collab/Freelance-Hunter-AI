@@ -57,6 +57,11 @@ test("automatic marketplace submission rejects stale drafts with unsupported cla
 test("proposal validation rejects unsupported English experience and reliability claims", () => {
   const skills = ["React", "Next.js", "Node.js", "FastAPI", "Django"];
   assert.equal(proposalValidationIssue("I have extensive experience building full-stack applications with React, Next.js, Node.js, FastAPI, and Django.", "en", skills), "unsupported_experience");
+  const fabricatedBillingDraft = "I have integrated Stripe and Authorize.net in production. I designed a subscription engine for a SaaS product and I also built an installment payment module with EF Core. I resolved duplicate billing through transaction locks.";
+  assert.equal(proposalValidationIssue(fabricatedBillingDraft, "en", ["Python", "REST API", "SQL"]), "unsupported_experience");
+  assert.equal(proposalSubmissionValidationIssue(fabricatedBillingDraft, "Senior C# / .NET Backend Developer", "Payment Systems & Billing", ["Python", "REST API", "SQL"]), "unsupported_experience");
+  assert.equal(proposalValidationIssue("I can build the webhook flow with Python and REST APIs.", "en", ["Python", "REST API"]), null);
+  assert.equal(proposalValidationIssue("I would design the integration flow and verify retries with Python.", "en", ["Python"]), null);
   assert.equal(proposalValidationIssue("I routinely deliver projects on time.", "en", skills), "unsupported_experience");
   assert.equal(proposalValidationIssue("I can use React and Next.js to build the interface for your project.", "en", skills), null);
   assert.equal(proposalValidationIssue("Здравствуйте! Я обладаю более чем трёхлетним опытом тестирования мобильных приложений iOS и Android. Я готов присоединиться к команде в офисе Тбилиси и начать работу в ближайшее время.", "ru", ["Тестирование", "отладка", "CI/CD"]), "unsupported_experience");
@@ -1325,6 +1330,39 @@ test("proposal drafting falls back safely after two language-rule violations", a
     assert.equal(calls, 2);
     assert.equal(db.applicationRecord.status, "draft");
     assert.equal(db.applicationRecord.draft_text, result.draft_text);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("proposal drafting never saves fabricated employer-questionnaire experience after retries", async () => {
+  const originalFetch = globalThis.fetch;
+  const fabricated = "Which payment gateways have you integrated? I have integrated Stripe and Authorize.net in production. I designed and implemented the subscription engine for a SaaS product. I also built the installment module with EF Core.";
+  const project = { id: 24, source: "freelancehunt", url: "https://freelancehunt.com/project/example/1.html", title: "Senior C# / .NET Backend Developer", description: "We are looking for an experienced backend developer to build and maintain a payment processing system for our online SaaS product. Budget: $5,000.", language: "en", budget_min: 5000, budget_max: 5000, currency: "USD", payment_method: "fixed" };
+  const db = fakeDb({
+    project,
+    profile: { display_name: "Developer", skills: JSON.stringify(["Python", "REST API", "SQL"]), languages: JSON.stringify(["en"]), payment_preferences: "[]", min_budget: null, currency: "USD" }
+  });
+  let calls = 0;
+  globalThis.fetch = async input => {
+    if (String(input) === "https://provider.example/v1/chat/completions") {
+      calls += 1;
+      return Response.json({ choices: [{ message: { content: fabricated } }] });
+    }
+    return originalFetch(input);
+  };
+  try {
+    const response = await worker.fetch(new Request("https://api.example/applications/24/draft", {
+      method: "POST", headers: { Cookie: "fh_session=test-session-token", "CF-Connecting-IP": "198.51.100.84" }
+    }), { DB: db, AI_API_KEY: "test-key", AI_API_BASE_URL: "https://provider.example/v1", AI_MODEL: "test-model" });
+    assert.equal(response.status, 201);
+    const result = await response.json();
+    assert.equal(result.status, "draft");
+    assert.equal(calls, 2);
+    assert.match(result.draft_text, /what delivery date or timeframe do you have in mind/i);
+    assert.doesNotMatch(result.draft_text, /Stripe|Authorize\.net|SaaS|EF Core|integrated|designed|built/i);
+    assert.equal(db.applicationRecord.draft_text, result.draft_text);
+    assert.doesNotMatch(db.applicationRecord.draft_text, /Stripe|Authorize\.net|SaaS|EF Core/i);
   } finally {
     globalThis.fetch = originalFetch;
   }
