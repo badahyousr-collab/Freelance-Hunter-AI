@@ -5,6 +5,7 @@ import worker, { bidDurationDays, capitalizeFormalAddress, detectProjectLanguage
 test("proposal may use only the exact portfolio URL saved in the profile", () => {
   const portfolio = "https://portfolio.example/work";
   assert.equal(proposalValidationIssue("Могу помочь с задачей. Портфолио: https://portfolio.example/work", "ru", [], portfolio), null);
+  assert.equal(proposalValidationIssue("Могу помочь с задачей. Портфолио: https://portfolio.example/work!!!!!!!!!!", "ru", [], portfolio), null);
   assert.equal(proposalValidationIssue("Могу помочь с задачей. Портфолио: https://other.example/work", "ru", [], portfolio), "unverified_url");
   assert.equal(proposalValidationIssue("Могу помочь с задачей. Портфолио: https://portfolio.example/work", "ru"), "unverified_url");
   assert.equal(proposalSubmissionValidationIssue("Могу помочь с задачей. Портфолио: https://portfolio.example/work", "Нужен специалист", "Здравствуйте", [], portfolio), null);

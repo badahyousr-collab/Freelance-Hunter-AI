@@ -425,7 +425,12 @@ export function proposalValidationIssue(value: unknown, language: string, profil
   if (unsupportedPersonalClaimPatterns.some(pattern => pattern.test(text))) return "unsupported_experience";
   const suppliedPortfolioUrl = typeof portfolioUrl === "string" ? portfolioUrl.trim() : "";
   const urls = text.match(/https?:\/\/[^\s<>"')\]]+/giu) ?? [];
-  if (urls.some(url => url.replace(/[.,!?;:]+$/u, "") !== suppliedPortfolioUrl)) return "unverified_url";
+  const stripUrlPunctuation = (url: string): string => {
+    let end = url.length;
+    while (end > 0 && ".,!?;:".includes(url[end - 1])) end -= 1;
+    return url.slice(0, end);
+  };
+  if (urls.some(url => stripUrlPunctuation(url) !== suppliedPortfolioUrl)) return "unverified_url";
   const listedSkills = (Array.isArray(profileSkills) ? profileSkills : []).map((skill) => String(skill).toLocaleLowerCase());
   const skillClaims: Array<{ pattern: RegExp; accepted: string[] }> = [
     { pattern: /(^|[^a-z0-9])php([^a-z0-9]|$)/iu, accepted: ["php"] },
