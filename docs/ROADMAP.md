@@ -17,7 +17,7 @@
 - [x] Add a D1 migration to replace email/password identity fields with Telegram identity keys and anonymize legacy email-only identities.
 - [x] Remove email/password fields from the parallel FastAPI user model and add an Alembic migration.
 - [x] Verify the PostgreSQL identity migration through the Docker Compose startup smoke test in CI.
-- [ ] Apply pending D1 migrations in Cloudflare after a verified backup, then verify existing Telegram accounts can still sign in and `/health` reports a ready schema.
+- [x] Verify the deployed D1 schema through the Worker health endpoint; it reports `connected` and `ready`, with no missing required schema detected. No production migration was needed during this acceptance pass. The synthetic local export/restore drill is complete; restoring a production backup remains unverified.
 - [ ] Verify session expiry, account isolation, and Telegram sign-in against the deployed environment.
 
 ## Phase 3 - Web control panel
@@ -39,7 +39,7 @@
 - [x] Per-user source subscriptions and enabled-agent filtering.
 - [x] Authenticated user-scoped manual scan endpoint.
 - [x] Build a curated catalog of ten public Telegram job channels, with URLs, languages, and focus areas.
-- [ ] Configure and test a real scan against several public channels and verify newly stored projects.
+- [x] Verify scheduled production scans against the 10 configured public Telegram channels and three marketplace sources; read-only D1 aggregates confirmed enabled sources completing without errors and newly stored projects.
 - [x] Implement the Freelancehunt official API discovery adapter with token validation, encrypted storage, project normalization, and deduplication.
 - [ ] Implement and verify additional provider-specific marketplace discovery adapters where access is permitted.
 - [x] Add structured logs for per-source scan outcomes, durations, new-project counts, and scheduled scan failures.
@@ -52,7 +52,7 @@
 - [x] OpenAI-compatible proposal drafting endpoint with profile-grounded, prompt-injection-aware instructions.
 - [x] Save an optional public portfolio URL in the profile and pass the exact link to AI drafting; reject any other URL and prohibit inferred portfolio claims.
 - [x] Mocked provider-contract tests for Russian and English drafts, payload facts, safety instructions, missing configuration, and upstream failures.
-- [ ] Configure and test an AI provider in the deployment environment.
+- [x] Configure and verify the production AI provider. A real provider response created a saved draft; acceptance then found unsupported past-experience claims, fixed the server-side grounding checks, and deployed those checks. Do not use the old draft as a quality example; it remains unsent and unchanged.
 - [x] Improve multilingual budget and currency parsing with regression tests for RU/EN currency formats, thousands separators, and `k`/`тыс.` multipliers.
 - [x] Add a labeled RU/EN matching evaluation set covering relevant and unrelated listings, budget thresholds, excluded keywords, unpaid work, language filters, risk signals, and complexity scoring.
 - [ ] Test proposal drafts in Russian and English against real anonymized listings and confirm no fabricated profile claims.
@@ -83,7 +83,7 @@
 - [x] Frontend lint and production build in CI.
 - [x] Python syntax checks for bot and local setup scripts.
 - [x] Validate Docker Compose configuration, build the API/bot images, start PostgreSQL/Redis/FastAPI, and pass `/health` in CI.
-- [ ] Run the deployed smoke-test checklist.
+- [x] Run the deployed smoke checklist: production app routes rendered with the existing authenticated session; latest API Worker `/health` returned HTTP 200 with D1 connected and schema ready. No live application submission was attempted.
 - [x] Apply rate limits to Telegram auth, AI draft generation, and manual scans; persist source failure status.
 - [x] Add scheduled CodeQL analysis and weekly Dependabot checks for Python, Node, and GitHub Actions dependencies.
 - [x] Expand Worker health diagnostics to detect missing Telegram-only identity, notification, and provider-submission migrations.
