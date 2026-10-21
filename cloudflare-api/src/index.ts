@@ -2230,7 +2230,9 @@ async function handle(request: Request, env: Env): Promise<Response> {
     const currency = String(input.currency ?? existing.currency ?? "USD").slice(0,8);
     await env.DB.prepare("UPDATE profiles SET display_name=?,portfolio_url=?,skills=?,languages=?,payment_preferences=?,excluded_keywords=?,min_budget=?,currency=?,updated_at=datetime('now') WHERE user_id=?").bind(displayName,portfolioUrl,skills,languages,payments,excluded,budget,currency,uid).run();
     const currentProjects = await env.DB.prepare(`SELECT id,title,description,language,budget_min,budget_max,currency
-      FROM projects WHERE user_id=? AND julianday(published_at) BETWEEN julianday('now','-3 days') AND julianday('now','+5 minutes')`).bind(uid).all<any>();
+      FROM projects WHERE user_id=?
+        AND match_score>=COALESCE((SELECT min_match_score FROM agent_settings WHERE user_id=?),60)
+        AND julianday(published_at) BETWEEN julianday('now','-3 days') AND julianday('now','+5 minutes')`).bind(uid, uid).all<any>();
     const updates = (currentProjects.results ?? []).map((project: any) => {
       const amount = Number(project.budget_min ?? project.budget_max);
       const projectCurrency = String(project.currency ?? "").toUpperCase();

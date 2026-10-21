@@ -95,6 +95,7 @@ test("AI readiness check reserves enough completion tokens for visible text", as
 
 function fakeDb({ scan = false, telegramChannel = "@python_jobs", existingProject = null, budgetBackfills = [], freelancehuntScan = false, marketplaceSource = null, skills = ["python", "telegram"], telegramAuth = null, telegramCode = null, linkedAccount = null, application = null, fallbackApplication = null, telegramProjects = [], telegramLinkedUserId = null, project = null, recentProjects = [], profile = null, integration = null, notificationTarget = null, agentSettings = null, pendingDraftProjects = [], sourceCount = 0, insertChanges = 1, projectInserts = [], telegramIdentitySchema = true, notificationsSchema = true, submissionSchema = true, providerStatusSchema = true, applicationUpdateNotificationsSchema = true, autoSubmissionSchema = true, threadReplySchema = true, profilePortfolioSchema = true } = {}) {
   const profileRecalculations = [];
+  const profileRecalculationQueries = [];
   const createdSources = [];
   return {
     get storedIntegration() { return integration; },
@@ -103,6 +104,7 @@ function fakeDb({ scan = false, telegramChannel = "@python_jobs", existingProjec
     set applicationRecord(value) { application = value; },
     get insertedProjects() { return projectInserts; },
     get profileRecalculations() { return profileRecalculations; },
+    get profileRecalculationQueries() { return profileRecalculationQueries; },
     get createdSources() { return createdSources; },
     get backfilledProject() { return existingProject; },
     get budgetBackfillWrites() { return budgetBackfills; },
@@ -198,7 +200,10 @@ function fakeDb({ scan = false, telegramChannel = "@python_jobs", existingProjec
             if (scan) return { results: [{ id: 7, user_id: "user-1", source: "telegram", identifier: telegramChannel, is_enabled: 1 }] };
           }
           if (sql.includes("FROM projects p LEFT JOIN applications a ON a.user_id=p.user_id AND a.project_id=p.id") && sql.includes("p.match_score>=COALESCE")) return { results: telegramProjects };
-          if (sql.includes("FROM projects") && sql.includes("julianday(")) return { results: recentProjects };
+          if (sql.includes("FROM projects") && sql.includes("julianday(")) {
+            profileRecalculationQueries.push(sql);
+            return { results: recentProjects };
+          }
           return { results: [] };
         }
       };
@@ -690,6 +695,7 @@ test("updating profile skills immediately recalculates matches for recent projec
   }), { DB: db });
   assert.equal(response.status, 200);
   assert.deepEqual(db.profileRecalculations, [1]);
+  assert.match(db.profileRecalculationQueries[0], /match_score>=COALESCE\(\(SELECT min_match_score FROM agent_settings WHERE user_id=\?\),60\)/);
 });
 
 test("profile match recalculation batches large recent-project sets", async () => {
