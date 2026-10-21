@@ -1563,15 +1563,18 @@ async function scanUserSources(env: Env, userId: string): Promise<{ scannedSourc
     }
   }
   console.info("user_source_scans_completed", { userId, sourceCount: sources.length, newProjects, durationMs: Date.now() - sourceScanStartedAt });
-  const automationStartedAt = Date.now();
+  let stageStartedAt = Date.now();
   const drafts = await autoDraftPendingProjects(env, userId);
-  console.info("user_automatic_drafts_completed", { userId, draftedApplications: drafts.count, durationMs: Date.now() - automationStartedAt });
+  console.info("user_automatic_drafts_completed", { userId, draftedApplications: drafts.count, durationMs: Date.now() - stageStartedAt });
+  stageStartedAt = Date.now();
   await autoSubmitPendingFreelancehuntDrafts(env, userId);
-  console.info("user_automatic_submissions_completed", { userId, durationMs: Date.now() - automationStartedAt });
+  console.info("user_automatic_submissions_completed", { userId, durationMs: Date.now() - stageStartedAt });
+  stageStartedAt = Date.now();
   const repliedThreads = await syncFreelancehuntMessages(env, userId);
-  console.info("user_reply_sync_completed", { userId, repliedThreads, durationMs: Date.now() - automationStartedAt });
+  console.info("user_reply_sync_completed", { userId, repliedThreads, durationMs: Date.now() - stageStartedAt });
+  stageStartedAt = Date.now();
   const notifiedApplications = await notifyUserAboutFallbackDrafts(env, userId, drafts.applicationIds);
-  console.info("user_scan_automation_completed", { userId, draftedApplications: drafts.count, notifiedApplications, repliedThreads, durationMs: Date.now() - automationStartedAt });
+  console.info("user_fallback_notifications_completed", { userId, notifiedApplications, durationMs: Date.now() - stageStartedAt });
   return { scannedSources: (rows.results ?? []).length, newProjects, errors, draftedApplications: drafts.count, notifiedApplications, repliedThreads };
 }
 
