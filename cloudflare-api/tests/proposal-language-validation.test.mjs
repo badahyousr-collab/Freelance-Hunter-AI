@@ -13,6 +13,13 @@ test("Ukrainian proposals reject Russian phrases and lowercase formal address", 
   assert.equal(proposalValidationIssue("Будь ласка, повідомте, який термін ви розглядаєте?", "uk"), "formal_address");
 });
 
+test("proposal drafts ask about project requirements instead of the client's experience or team", () => {
+  assert.equal(proposalValidationIssue("Чи був у Вас досвід із медичними системами?", "uk"), "irrelevant_client_qualification_question");
+  assert.equal(proposalValidationIssue("У Вас є досвід та команда для цього проєкту?", "uk"), "irrelevant_client_qualification_question");
+  assert.equal(proposalValidationIssue("Do you have experience with EMR systems?", "en"), "irrelevant_client_qualification_question");
+  assert.equal(proposalValidationIssue("Could you clarify the required EMR integrations and project priorities?", "en"), null);
+});
+
 test("proposal drafts cannot claim technologies missing from the user's profile", () => {
   assert.equal(proposalValidationIssue("Я можу інтегрувати PHP-код у цей сайт.", "uk", ["HTML", "CSS", "JavaScript"]), "unsupported_skill");
   assert.equal(proposalValidationIssue("I can build this with PHP.", "en", ["PHP", "JavaScript"]), null);
