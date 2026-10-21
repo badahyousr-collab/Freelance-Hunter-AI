@@ -692,6 +692,27 @@ test("updating profile skills immediately recalculates matches for recent projec
   assert.deepEqual(db.profileRecalculations, [1]);
 });
 
+test("profile match recalculation batches large recent-project sets", async () => {
+  const db = fakeDb({
+    recentProjects: Array.from({ length: 462 }, (_, index) => ({
+      id: index + 1,
+      title: "Ищем JS-разработчика",
+      description: "Разработка интерфейса на React",
+      language: "ru",
+      budget_min: null,
+      budget_max: null,
+      currency: ""
+    }))
+  });
+  const response = await worker.fetch(new Request("https://api.example/profile", {
+    method: "PUT",
+    headers: { Cookie: "fh_session=test-session-token", "Content-Type": "application/json" },
+    body: JSON.stringify({ skills: ["JavaScript", "React"], languages: ["ru"] })
+  }), { DB: db });
+  assert.equal(response.status, 200);
+  assert.deepEqual(db.profileRecalculations, [50,50,50,50,50,50,50,50,50,12]);
+});
+
 test("project timeline parser reports agreed timing when absent and reads common Russian and English deadlines", () => {
   assert.equal(detectProjectTimeline("Нужен сайт на React"), "По договорённости");
   assert.equal(detectProjectTimeline("Срок выполнения: 2 недели"), "2 недели");
