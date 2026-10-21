@@ -494,6 +494,39 @@ test("scheduled scan saves AI drafts and sends a fallback Telegram card when no 
   }
 });
 
+test("automatic proposal drafting uses a language-matched safe fallback when AI claims unsupported experience", async () => {
+  const originalFetch = globalThis.fetch;
+  let aiCalls = 0;
+  const html = '<div class="tgme_widget_message_wrap" data-post="python_jobs/204"><div class="tgme_widget_message_text js-message_text" dir="auto">We need a developer for an iOS mobile app and web dashboard.</div><time datetime="' + new Date().toISOString() + '"></time></div>';
+  globalThis.fetch = async (input, init) => {
+    if (String(input).startsWith("https://t.me/s/python_jobs")) return new Response(html, { status: 200, headers: { "Content-Type": "text/html" } });
+    if (String(input).includes("/chat/completions")) { aiCalls += 1; return Response.json({ choices: [{ message: { content: "I have extensive experience building iOS apps with Swift and have shipped several products." } }] }); }
+    return originalFetch(input, init);
+  };
+  const db = fakeDb({
+    scan: true,
+    agentSettings: { is_enabled: 1, auto_draft: 1, min_match_score: 60 },
+    pendingDraftProjects: [{ id: 302, source: "freelancehunt", source_project_id: "299173", url: "https://freelancehunt.com/project/ios-mobile-app/299173.html", title: "Seeking a developer for an iOS mobile app", description: "Build a mobile application with a web dashboard.", language: "en", budget_min: null, budget_max: null, currency: null, payment_method: null }],
+    profile: { skills: '["python","javascript"]', languages: '["en"]', payment_preferences: "[]", portfolio_url: null }
+  });
+  try {
+    const response = await worker.fetch(new Request("https://api.example/agent/scan", {
+      method: "POST",
+      headers: { Cookie: "fh_session=test-session-token", "Content-Type": "application/json" },
+      body: "{}"
+    }), { DB: db, AI_API_KEY: "test-key", AI_MODEL: "test-model" });
+    assert.equal(response.status, 200);
+    const result = await response.json();
+    assert.equal(result.draftedApplications, 1, JSON.stringify({ result, aiCalls, application: db.applicationRecord }));
+    assert.equal(db.applicationRecord.status, "draft");
+    assert.match(db.applicationRecord.draft_text, /what delivery date or timeframe do you have in mind\?/i);
+    assert.match(db.applicationRecord.draft_text, /what budget range are you considering\?/i);
+    assert.doesNotMatch(db.applicationRecord.draft_text, /Swift|iOS|experience|shipped/i);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("manual scan ingests and normalizes a public Telegram listing", async () => {
   const originalFetch = globalThis.fetch;
   const html = `<div class="tgme_widget_message_wrap" data-post="python_jobs/123"><div class="tgme_widget_message_text js-message_text" dir="auto">We need a Python developer to build a Telegram bot for a freelance project. Budget 500 USD.</div><time datetime="${new Date().toISOString()}"></time></div>`;

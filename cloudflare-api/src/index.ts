@@ -1291,10 +1291,24 @@ async function autoDraftPendingProjects(env: Env, userId: string): Promise<{ cou
       });
       if (!upstream.ok) throw new Error(`AI provider returned HTTP ${upstream.status}`);
       const data = await upstream.json<any>();
-      const draftText = capitalizeFormalAddress(String(data?.choices?.[0]?.message?.content ?? "").trim(), listingLanguage);
+      let draftText = capitalizeFormalAddress(String(data?.choices?.[0]?.message?.content ?? "").trim(), listingLanguage);
       if (!draftText) throw new Error("AI provider returned an empty proposal");
       const validationIssue = proposalValidationIssue(draftText, listingLanguage, profileFacts.skills, profileFacts.portfolio_url);
-      if (validationIssue) throw new Error(`AI proposal failed validation: ${validationIssue}`);
+      if (validationIssue) {
+        const fallback = safeFallbackProposal(
+          listingLanguage,
+          timeline === "По договорённости",
+          project.budget_min == null && project.budget_max == null
+        );
+        const validatedFallback = fallback
+          ? capitalizeFormalAddress(fallback, listingLanguage)
+          : "";
+        const fallbackIssue = validatedFallback
+          ? proposalValidationIssue(validatedFallback, listingLanguage, profileFacts.skills, profileFacts.portfolio_url)
+          : "language";
+        if (fallbackIssue) throw new Error(`AI proposal failed validation: ${validationIssue}; safe fallback unavailable: ${fallbackIssue}`);
+        draftText = validatedFallback;
+      }
       const saved = await env.DB.prepare("INSERT INTO applications (user_id,project_id,status,draft_text) VALUES (?,?,'draft',?) ON CONFLICT(user_id,project_id) DO NOTHING")
         .bind(userId, project.id, draftText).run();
       if (Number(saved.meta.changes ?? 0) <= 0) return 0;
