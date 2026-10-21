@@ -1603,7 +1603,7 @@ async function scanUserSources(env: Env, userId: string, scheduledSourceBatch = 
   stageStartedAt = Date.now();
   const notifiedApplications = await notifyUserAboutFallbackDrafts(env, userId, drafts.applicationIds);
   console.info("user_fallback_notifications_completed", { userId, notifiedApplications, durationMs: Date.now() - stageStartedAt });
-  return { scannedSources: (rows.results ?? []).length, newProjects, errors, draftedApplications: drafts.count, notifiedApplications, repliedThreads };
+  return { scannedSources: sources.length, newProjects, errors, draftedApplications: drafts.count, notifiedApplications, repliedThreads };
 }
 
 async function runScheduledScan(env: Env): Promise<void> {
