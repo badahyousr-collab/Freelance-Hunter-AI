@@ -782,12 +782,14 @@ export function parseFlRuRss(xml: string): MarketplaceListing[] {
   const listings: MarketplaceListing[] = [];
   for (const match of xml.matchAll(/<item(?:\s[^>]*)?>([\s\S]*?)<\/item\s*>/gi)) {
     const item = match[1];
+    // Reject stale items before decoding and normalizing potentially large descriptions.
+    const publishedAt = xmlField(item, "pubDate");
+    if (!isRecentListing(publishedAt)) continue;
     const url = safeFlRuUrl(xmlField(item, "link"));
     const title = xmlField(item, "title").slice(0, 180);
     const description = xmlField(item, "description").slice(0, 12000);
-    const publishedAt = xmlField(item, "pubDate");
     const stableId = url ? new URL(url).pathname.replace(/\/$/, "") : "";
-    if (!url || !stableId || !title || !isRecentListing(publishedAt)) continue;
+    if (!url || !stableId || !title) continue;
     listings.push({ id: stableId, title, description, url, publishedAt: new Date(Date.parse(publishedAt)).toISOString() });
     if (listings.length >= 50) break;
   }
@@ -1539,11 +1541,24 @@ async function notifyUserAboutFallbackDrafts(env: Env, userId: string, applicati
   return sent;
 }
 
-async function scanUserSources(env: Env, userId: string): Promise<{ scannedSources: number; newProjects: number; errors: string[]; draftedApplications: number; notifiedApplications: number; repliedThreads: number }> {
+async function scanUserSources(env: Env, userId: string, scheduledSourceBatch = false): Promise<{ scannedSources: number; newProjects: number; errors: string[]; draftedApplications: number; notifiedApplications: number; repliedThreads: number }> {
   const rows = await env.DB.prepare("SELECT * FROM sources WHERE user_id=? AND is_enabled=1 AND source IN ('telegram','freelancehunt','fl_ru','freelance_ru') ORDER BY created_at ASC").bind(userId).all<any>();
   let newProjects = 0;
   const errors: string[] = [];
-  const sources = rows.results ?? [];
+  const allSources = rows.results ?? [];
+  // A scheduled invocation has a strict CPU budget. Rotate a bounded batch of
+  // sources each Cron tick so one account cannot spend the whole invocation on
+  // every adapter. The manual scan endpoint still scans all enabled sources.
+  const sources = scheduledSourceBatch && allSources.length > 3
+    ? (() => {
+      const batchSize = 3;
+      const batchCount = Math.ceil(allSources.length / batchSize);
+      const batchIndex = Math.floor(Date.now() / (15 * 60 * 1000)) % batchCount;
+      const selected = allSources.slice(batchIndex * batchSize, batchIndex * batchSize + batchSize);
+      console.info("scheduled_source_batch_selected", { userId, totalSources: allSources.length, batchIndex, batchCount, sourceIds: selected.map((source: any) => source.id) });
+      return selected;
+    })()
+    : allSources;
   const sourceScanStartedAt = Date.now();
   const scanSource = async (source: any): Promise<{ added: number; error?: string }> => {
     const startedAt = Date.now();
@@ -1610,7 +1625,7 @@ async function runScheduledScan(env: Env): Promise<void> {
   for (const row of users) {
     const userId = String(row.user_id);
     try {
-      const result = await scanUserSources(env, userId);
+      const result = await scanUserSources(env, userId, true);
       scannedSources += result.scannedSources;
       newProjects += result.newProjects;
       if (result.errors.length) {
