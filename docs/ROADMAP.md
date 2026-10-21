@@ -89,7 +89,7 @@
 - [x] Expand Worker health diagnostics to detect missing Telegram-only identity, notification, and provider-submission migrations.
 - [x] Add user-scope regression tests for core dashboard reads and proposal mutations.
 - [x] Document free-plan-compatible D1 export, migration, and separate-test-database restore procedures.
-- [ ] Execute and verify a D1 backup/restore drill against a non-production database.
+- [x] Execute and verify a synthetic D1 export/restore drill against separate local non-production databases (Wrangler local D1; 14 migrations and a probe record restored). A remote test-database restore from a production export remains unverified.
 - [x] Add optional Telegram operations alerts for scheduled scan and new-project notification failures, with a readiness indicator.
 - [ ] Configure the private alert chat and verify real alert delivery in the deployed Worker.
 - [x] Add owner-bound SQL tests for user-scoped reads/mutations and Telegram-linked bot summary, project, and agent-control actions.
