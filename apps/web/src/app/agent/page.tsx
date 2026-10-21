@@ -204,7 +204,7 @@ export default function AgentPage() {
         <span><strong>Отвечать на новые сообщения Freelancehunt</strong><br/><span className="sub-muted">AI ответит в переписке по подтверждённой заявке после нового сообщения заказчика. Старые переписки при первом подключении не затрагиваются. Для Telegram-каналов и остальных площадок отправка сообщений недоступна.</span></span>
       </label>
       <label style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 12 }}>
-        <span><strong>Лимит отправок в сутки</strong><br/><span className="sub-muted">Для подключённых бирж с поддержкой отправки.</span></span>
+        <span><strong>Лимит отправок в сутки</strong><br/><span className="sub-muted">Для подключённых бирж с поддержкой отправки. За один проход агент обрабатывает до 10 заказов; если очередь больше, продолжит при следующей проверке через 15 минут.</span></span>
         <select value={agent ? agent.daily_submission_limit ?? 10 : ""} disabled={busy || loading || !agent} onChange={e => void changeDailyLimit(Number(e.target.value))} style={{ marginLeft: "auto", minWidth: 90 }}>
           {!agent && <option value="">{loading ? "Загрузка…" : "Недоступно"}</option>}
           <option value={5}>5</option><option value={10}>10</option><option value={20}>20</option><option value={30}>30</option><option value={50}>50</option>
