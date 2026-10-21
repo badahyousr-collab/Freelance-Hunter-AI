@@ -17,6 +17,7 @@ Freelance requests are scattered across channels and platforms. Manually reviewi
 - Explainable matching scores with language, budget, excluded-keyword, unpaid-work, risk, and complexity signals.
 - RU/EN proposal drafting through an OpenAI-compatible endpoint. Prompts treat listing text as untrusted and instruct the model not to invent experience or credentials.
 - Editable proposal drafts and an optional automatic-submission mode for eligible Freelancehunt listings. The application is never marked as sent without a verified provider result. Other sources remain draft-only.
+- A separate automatic reply setting for new employer messages in matched Freelancehunt threads. It requires a confirmed bid, unique project-title match, valid AI output, and respects the daily send cap; live reply delivery awaits a suitable real thread.
 - Telegram account linking, statistics, recent project summaries, and pause/resume commands. Project counts and links are available through bot commands; separate messages for each new listing are disabled.
 - Automated CI for backend tests and migrations, frontend lint/build and Playwright smoke tests, Cloudflare Worker typecheck/tests, plus CodeQL and Dependabot configuration.
 
@@ -32,6 +33,7 @@ Freelance requests are scattered across channels and platforms. Manually reviewi
 - The API Worker health endpoint returns HTTP 200 with D1 connected and schema ready. The production website and authenticated dashboard also return and render successfully.
 - The dashboard aggregates source and application data. Its live snapshot reports zero provider-confirmed submissions and zero tracked replies; the agent's saved settings render after loading. Acceptance did not alter those settings, start a scan, or submit any application.
 - Scheduled scans previously verified public Telegram, FL.ru, and Freelance.ru sources. The current integration surface offers one official marketplace API (Freelancehunt) and two public-search sources. FL.ru and Freelance.ru are discovery-only.
+- After PR #95, the AI-agent page has a separate Freelancehunt reply control. Production migration 0013 and both Worker deployments were verified. The active account's new setting is on, but there are zero eligible sent bids and zero tracked threads, so real message delivery has not been tested.
 - Production AI generation was verified on Russian and English listings. The saved drafts used the listing language and profile-grounded information; no proposal was sent.
 - PR #89 fixed the agent settings first-paint and a Freelance.ru Moscow-midnight publication-time parser defect. CI/CodeQL passed before merge; API and web production health were checked after deployment.
 

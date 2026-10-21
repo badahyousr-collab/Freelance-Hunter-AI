@@ -1,6 +1,6 @@
 # Operations and recovery
 
-This guide documents the free-plan-compatible operational steps for the Cloudflare Worker and D1 deployment. These procedures have **not** yet been executed against the live account; run them before marking production recovery as verified.
+This guide documents the free-plan-compatible operational steps for the Cloudflare Worker and D1 deployment. Production health checks, migration application, and Worker deployment have been verified. A production database export and restore drill have not been performed; recovery is not verified until those are tested against a separate database.
 
 ## Before changing production
 
@@ -50,13 +50,13 @@ The Wrangler export command is documented by Cloudflare: https://developers.clou
 
 The compatibility Worker must be deployed before applying migrations so the auth handler can handle the old and Telegram-only schemas during the rollout.
 
-After a verified backup, apply pending migrations:
+After checking the migration list and taking a private backup for any schema/data change, apply pending migrations:
 
 ```bash
 npx wrangler d1 migrations apply freelance-hunter-db --remote --config cloudflare-api/wrangler.toml
 ```
 
-Then re-check the migration list and `/health`. Migration `0007_telegram_only_identity.sql` changes the identity columns and removes legacy password fields. Migration `0008_new_project_notifications.sql` adds the new-project notification preference. Migration `0009_provider_submission_tracking.sql` adds provider bid IDs and safe submission error fields. Migration `0010_freelancehunt_status_sync.sql` stores provider-confirmed bid status. Migration `0011_application_update_notifications.sql` adds the opt-out preference for Telegram notifications about provider-confirmed application replies. Apply all pending migrations only after a verified backup, then test Telegram sign-in and check `/health`.
+Then re-check the migration list and `/health`. Migration `0007_telegram_only_identity.sql` changes the identity columns and removes legacy password fields. Migration `0008_new_project_notifications.sql` adds the new-project notification preference. Migration `0009_provider_submission_tracking.sql` adds provider bid IDs and safe submission error fields. Migration `0010_freelancehunt_status_sync.sql` stores provider-confirmed bid status. Migration `0011_application_update_notifications.sql` adds the opt-out preference for Telegram notifications about provider-confirmed application replies. Migration `0013_freelancehunt_thread_replies.sql` adds separately controlled reply processing for new Freelancehunt employer messages and opts in existing enabled agents that already use auto-submit. After migrations, check Telegram sign-in and `/health`; verify any new automatic external action's saved setting before relying on it.
 
 ## Configure marketplace token encryption
 
@@ -97,6 +97,7 @@ Cloudflare also documents D1 Time Travel and point-in-time restore: https://deve
 - [ ] Generate a proposal only after an AI provider has been intentionally configured; verify the result remains a draft.
 - [ ] Connect a test Freelancehunt API token, scan a public project list, and verify duplicate suppression.
 - [ ] Prepare a bid, confirm it in the browser, and verify the returned provider bid ID on the application record. Do not test against a live project unless you intend to submit a real bid.
+- [ ] With a disposable Freelancehunt account and a test project, verify automatic reply delivery, duplicate prevention, and failure handling. Production currently has no eligible submitted bids, so this live delivery check remains pending.
 
 ## Incident diagnostics
 
