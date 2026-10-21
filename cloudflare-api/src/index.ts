@@ -2379,6 +2379,14 @@ async function handle(request: Request, env: Env): Promise<Response> {
     if (nextStatus === "awaiting_confirmation" && !String(draftText ?? "").trim()) {
       return response(request, { detail: "Add proposal text before preparing it for confirmation." }, 400);
     }
+    if (nextStatus === "awaiting_confirmation") {
+      const project = await env.DB.prepare("SELECT title,description FROM projects WHERE id=? AND user_id=?").bind(existing.project_id, uid).first<any>();
+      const profile = await env.DB.prepare("SELECT skills,portfolio_url FROM profiles WHERE user_id=?").bind(uid).first<any>() ?? {};
+      const validationIssue = proposalSubmissionValidationIssue(draftText, project?.title, project?.description, safeJson(profile.skills, []), profile.portfolio_url);
+      if (validationIssue) {
+        return response(request, { detail: "This proposal contains claims that are not supported by the project description or your profile. Edit or regenerate it before preparing it for confirmation." }, 422);
+      }
+    }
     await env.DB.prepare("UPDATE applications SET draft_text=?,status=? WHERE id=? AND user_id=? AND status IN ('draft','awaiting_confirmation','failed')").bind(draftText, nextStatus, id, uid).run();
     if (nextStatus === "draft" && currentStatus === "failed") {
       await env.DB.prepare("UPDATE applications SET submission_error=NULL WHERE id=? AND user_id=?").bind(id, uid).run();
