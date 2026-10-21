@@ -52,6 +52,12 @@ function aiProviderErrorDetail(status: number): string {
   return `AI provider returned HTTP ${status}. Check the model, key, base URL, and provider quota.`;
 }
 
+function stripTrailingSlashes(value: string): string {
+  let end = value.length;
+  while (end > 0 && value.charCodeAt(end - 1) === 47) end -= 1;
+  return value.slice(0, end);
+}
+
 function aiCompletionCompatibilityOptions(apiBase: string, model?: string): Record<string, unknown> {
   try {
     const hostname = new URL(apiBase).hostname.toLowerCase();
@@ -2193,7 +2199,7 @@ async function handle(request: Request, env: Env): Promise<Response> {
 
   if (path === "/agent/test-ai" && method === "POST") {
     if (!env.AI_API_KEY || !env.AI_MODEL) return response(request, { ok: false, detail: "Set AI_API_KEY and AI_MODEL in Worker settings first." }, 503);
-    const apiBase = (env.AI_API_BASE_URL || "https://api.openai.com/v1").replace(/\/+$/, "");
+    const apiBase = stripTrailingSlashes(env.AI_API_BASE_URL || "https://api.openai.com/v1");
     const endpoint = apiBase.endsWith("/chat/completions") ? apiBase : apiBase + "/chat/completions";
     try {
       const upstream = await fetch(endpoint, {
@@ -2397,7 +2403,7 @@ async function handle(request: Request, env: Env): Promise<Response> {
       expected_timeline: timeline, deadline_provided: timeline !== "По договорённости",
       budget_display: formatTelegramBudget(project), budget_provided: project.budget_min != null || project.budget_max != null
     };
-    const apiBase = (env.AI_API_BASE_URL || "https://api.openai.com/v1").replace(/\/+$/, "");
+    const apiBase = stripTrailingSlashes(env.AI_API_BASE_URL || "https://api.openai.com/v1");
     const endpoint = apiBase.endsWith("/chat/completions") ? apiBase : apiBase + "/chat/completions";
     let draftText = "";
     let validationIssue: string | null = null;
