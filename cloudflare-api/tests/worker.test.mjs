@@ -737,6 +737,37 @@ test("Telegram projects command sends a full match card with budget, timeline, A
   }
 });
 
+test("Telegram project card links to an explicit employer Telegram contact", async () => {
+  const originalFetch = globalThis.fetch;
+  const sent = [];
+  globalThis.fetch = async (input, init) => {
+    if (String(input).includes("api.telegram.org/botTEST_TOKEN/sendMessage")) {
+      sent.push(JSON.parse(init.body));
+      return Response.json({ ok: true, result: { message_id: sent.length } });
+    }
+    return originalFetch(input, init);
+  };
+  try {
+    const response = await worker.fetch(new Request("https://api.example/telegram/webhook", {
+      method: "POST",
+      headers: { "X-Telegram-Bot-Api-Secret-Token": "webhook-secret", "Content-Type": "application/json" },
+      body: JSON.stringify({ message: { chat: { id: 123, type: "private" }, from: { id: 123 }, text: "/projects" } })
+    }), {
+      DB: fakeDb({
+        linkedAccount: { user_id: "user-1" },
+        telegramProjects: [{ id: 9, title: "Python bot", description: "Нужен Telegram-бот на Python. Контакт в Telegram: @client_person", url: "https://t.me/python_jobs/45", source: "telegram", source_project_id: "python_jobs:45", budget_min: null, budget_max: null, currency: null, match_score: 80, draft_text: "Здравствуйте! Подскажите, пожалуйста, какие функции должен выполнять бот?" }]
+      }),
+      TELEGRAM_BOT_TOKEN: "TEST_TOKEN",
+      TELEGRAM_WEBHOOK_SECRET: "webhook-secret"
+    });
+    assert.equal(response.status, 200);
+    assert.equal(sent.length, 1);
+    assert.deepEqual(sent[0].reply_markup.inline_keyboard[0][0], { text: "Написать работодателю", url: "https://t.me/client_person" });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("budget parser handles Russian and international currency formats", () => {
   const cases = [
     ["Бюджет: 15 000 ₽", { amount: 15000, currency: "RUB" }],
