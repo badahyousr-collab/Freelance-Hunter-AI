@@ -39,7 +39,7 @@
 - [x] Per-user source subscriptions and enabled-agent filtering.
 - [x] Authenticated user-scoped manual scan endpoint.
 - [x] Build a curated catalog of ten public Telegram job channels, with URLs, languages, and focus areas.
-- [x] Verify scheduled production scans against the 10 configured public Telegram channels and three marketplace sources; read-only D1 aggregates confirmed enabled sources completing without errors and newly stored projects.
+- [x] Verify scheduled production scans against the 10 configured public Telegram channels and three marketplace sources. To stay within Worker CPU limits, Cron rotates up to three sources every 15 minutes; a 13-source pass takes about 75 minutes, while a manual scan covers all enabled sources. A complete production rotation on 21 Oct 2026 completed all five batches, including 8 new Freelancehunt, 8 FL.ru, and 1 Freelance.ru listings, with zero source errors. Read-only D1 verification wrote zero rows.
 - [x] Implement the Freelancehunt official API discovery adapter with token validation, encrypted storage, project normalization, and deduplication.
 - [ ] Implement and verify additional provider-specific marketplace discovery adapters where access is permitted.
 - [x] Add structured logs for per-source scan outcomes, durations, new-project counts, and scheduled scan failures.
