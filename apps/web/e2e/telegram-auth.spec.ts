@@ -87,7 +87,7 @@ test("source catalog can add a public Telegram job channel", async ({ page }) =>
     await route.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify({ scannedSources: 1, newProjects: 3, errors: [], message: "Scan completed." })
+      body: JSON.stringify({ scannedSources: 1, totalSources: 1, newProjects: 3, errors: [], message: "Scan batch completed." })
     });
   });
   let agentEnabled = false;
@@ -106,7 +106,7 @@ test("source catalog can add a public Telegram job channel", async ({ page }) =>
   await expect(page.locator(".sub-list-row").filter({ hasText: "@job_for_bots" }).getByText(/Добавлен|Включён/).first()).toBeVisible();
   await page.goto("/agent");
   await page.getByRole("button", { name: "Включить агента" }).click();
-  await expect(page.getByText(/Агент включён\. Первый проход завершён: новых проектов 3/i)).toBeVisible();
+  await expect(page.getByText(/Агент включён\. Первый пакет проверен: 1 из 1 источников; новых проектов 3/i)).toBeVisible();
 });
 
 
@@ -345,7 +345,7 @@ test("AI agent starts a first scan and application reply notifications persist",
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ enabled, auto_draft: true, auto_submit: false, auto_reply: autoReply, daily_submission_limit: 10, notify_application_updates: notifyApplicationUpdates, telegram_linked: true }) });
   });
   await page.route("**/api/backend/agent/scan", async route => {
-    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ scannedSources: 1, newProjects: 2, draftedApplications: 1, errors: [] }) });
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ scannedSources: 1, totalSources: 1, newProjects: 2, draftedApplications: 1, errors: [] }) });
   });
 
   await page.goto("/agent");
@@ -356,7 +356,7 @@ test("AI agent starts a first scan and application reply notifications persist",
   await expect(page.getByText(/Уведомления об ответах на отклики отключены/i)).toBeVisible();
   expect(notifyApplicationUpdates).toBe(false);
   await page.getByRole("button", { name: "Включить агента" }).click();
-  await expect(page.getByText(/Агент включён\. Первый проход завершён: новых проектов 2, подготовлено откликов 1/i)).toBeVisible();
+  await expect(page.getByText(/Агент включён\. Первый пакет проверен: 1 из 1 источников; новых проектов 2, подготовлено откликов 1/i)).toBeVisible();
   await expect(page.getByRole("button", { name: "Приостановить агента" })).toBeVisible();
   const autoReplies = page.locator("label").filter({ hasText: "Отвечать на новые сообщения Freelancehunt" }).locator("input");
   await expect(autoReplies).toBeEnabled();
