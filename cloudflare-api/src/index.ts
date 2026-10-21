@@ -269,6 +269,25 @@ const SKILL_SYNONYMS: Record<string, string[]> = {
   "technical documentation": ["technical documentation", "техническая документация", "документация api"]
 };
 
+const LOW_WEIGHT_SKILLS = new Set([
+  "backend development", "backend разработка", "бэкенд разработка", "бэкэнд разработка",
+  "frontend development", "frontend разработка", "фронтенд разработка", "фронтэнд разработка",
+  "web development", "веб разработка", "разработка сайтов", "разработка сайта",
+  "api integration", "интеграция api", "database design", "проектирование баз данных", "проектирование базы данных",
+  "ui ux", "responsive layout", "адаптивная верстка", "адаптивная вёрстка",
+  "automation", "automatisation", "автоматизация", "ai tools", "ai инструменты", "ии инструменты",
+  "bug fixing", "отладка", "исправление ошибок", "поиск ошибок",
+  "prompt engineering", "промпт инжиниринг", "промпт инженерия",
+  "technical documentation", "техническая документация", "requirements analysis", "анализ требований",
+  "system design", "системный дизайн", "mvp development", "разработка mvp",
+  "rest api", "restful api"
+]);
+
+const LANGUAGE_SKILLS = new Set([
+  "english", "английский", "russian", "русский", "ukrainian", "украинский",
+  "polish", "польский", "german", "немецкий", "french", "французский"
+]);
+
 function normalizedMatchText(value: unknown): string {
   return String(value ?? "")
     .toLocaleLowerCase()
@@ -873,11 +892,13 @@ export function evaluateProjectMatch(input: {
   const profileLanguages = (Array.isArray(profile.languages) ? profile.languages : ["ru", "en"])
     .map((value) => String(value).toLowerCase().trim()).filter(Boolean);
   const skills = (Array.isArray(profile.skills) ? profile.skills : [])
-    .map((value) => String(value).toLocaleLowerCase().trim()).filter((value) => value.length > 1);
+    .map((value) => String(value).toLocaleLowerCase().trim())
+    .filter((value) => value.length > 1 && !LANGUAGE_SKILLS.has(normalizedMatchText(value)));
   const excludedKeywords = (Array.isArray(profile.excluded_keywords) ? profile.excluded_keywords : [])
     .map((value) => String(value).toLocaleLowerCase().trim()).filter((value) => value.length > 0);
   const reasons: string[] = [];
   const matchedSkills = [...new Set(skills.filter(skill => skillAliases(skill).some(alias => containsSkillPhrase(normalizedText, alias))))];
+  const weightedSkillScore = matchedSkills.reduce((sum, skill) => sum + (LOW_WEIGHT_SKILLS.has(normalizedMatchText(skill)) ? 6 : 18), 0);
   let score = 15;
   let excluded = false;
 
@@ -892,8 +913,11 @@ export function evaluateProjectMatch(input: {
   }
 
   if (matchedSkills.length) {
-    score += Math.min(54, matchedSkills.length * 18);
+    score += Math.min(54, weightedSkillScore);
     reasons.push("Совпавшие навыки: " + matchedSkills.join(", "));
+    if (matchedSkills.some(skill => LOW_WEIGHT_SKILLS.has(normalizedMatchText(skill)))) {
+      reasons.push("Общие навыки учитываются с меньшим весом");
+    }
   } else {
     reasons.push("Совпадения с указанными навыками не найдены");
   }
