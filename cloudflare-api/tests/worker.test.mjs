@@ -662,6 +662,23 @@ test("skill matching recognizes common spelling, abbreviation, and Russian infle
   ]);
 });
 
+test("broad profile skills do not outweigh a missing marketplace stack", () => {
+  const result = evaluateProjectMatch({
+    title: "Senior C# / .NET Backend Developer | Payment Systems & Billing",
+    description: "We need an experienced C#/.NET backend developer. Work includes PostgreSQL, debugging, AI tools, and payment integrations.",
+    language: "ru",
+    budget: null,
+    profile: {
+      skills: ["PostgreSQL", "backend-разработка", "отладка", "AI-инструменты", "английский", "русский"],
+      languages: ["ru"],
+      currency: "USD"
+    }
+  });
+  assert.equal(result.score < 60, true);
+  assert.match(result.reasons.join(" "), /Общие навыки учитываются с меньшим весом/);
+  assert.doesNotMatch(result.reasons.join(" "), /английский|русский/);
+});
+
 test("updating profile skills immediately recalculates matches for recent projects", async () => {
   const db = fakeDb({
     recentProjects: [{ id: 71, title: "Ищем JS-разработчика", description: "Разработка интерфейса на React", language: "ru", budget_min: null, budget_max: null, currency: "" }]
