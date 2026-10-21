@@ -411,6 +411,8 @@ export function proposalValidationIssue(value: unknown, language: string, profil
     if (["es", "fr", "de", "pt", "it"].includes(language) && detectProjectLanguage(text) !== language) return "language";
   }
   if (/(^|[^\p{L}])(у меня есть опыт|мой опыт|опыт работы|я работал[а]?|в одном проекте|я разработал[а]?|я создал[а]?|я реализовал[а]?|я исправил[а]?|я написал[а]?|я настроил[а]?|я тестировал[а]?|маю досвід|мій досвід|досвід роботи|я працював|я працювала|в одному проєкті|я розробив|я створив|я виправив|я написав|я налаштував|я тестував|i have experience|i have (?:extensive|significant|substantial|proven) experience|(?:extensive|significant|substantial|proven) experience(?: (?:in|with|building|developing))?|i have \d+ years? of experience|i (?:routinely|regularly|consistently) (?:deliver|complete|finish|meet deadlines|communicate)|my experience|i worked|i have worked|in one project|i developed|i created|i implemented|i wrote|i built|i fixed|i configured|i tested)(?=$|[^\p{L}])/iu.test(text)) return "unsupported_experience";
+  // Do not let a generated proposal assert unverified past accomplishments, even when the model omits "experience" wording.
+  if (/\bi(?:['’]ve)?(?:\s+\w+){0,2}\s+(?:integrated|designed|implemented|built|resolved|created|developed|maintained|worked|led|handled|managed|wrote|fixed|configured|tested|deployed|delivered|architected|engineered|launched|migrated|optimized|automated|owned|operated|supported|shipped|scaled|secured|authored|installed|debugged|troubleshot|converted|upgraded|refactored)\b/iu.test(text)) return "unsupported_experience";
   const unsupportedPersonalClaimPatterns = [
     /(^|[^\p{L}])(?:тр[её]х|четыр[её]х|пят[иью]|шест[иью]|сем[иью]|восьм[иью]|девят[иью]|десят[иью]|[0-9]{1,2})летн(?:им|ий|его|ей|яя|ее|ые|ых|ую|ым)?\s+опыт(?:ом|а)?(?=$|[^\p{L}])/iu,
     /(^|[^\p{L}])[0-9]{1,2}(?:\+)?\s*(?:лет|года?)\s+(?:коммерческий\s+)?опыт(?:а|ом)?(?=$|[^\p{L}])/iu,
@@ -466,6 +468,16 @@ export function proposalValidationIssue(value: unknown, language: string, profil
     { pattern: /(^|[^a-z0-9])opencart([^a-z0-9]|$)/iu, accepted: ["opencart"] },
     { pattern: /(^|[^a-z0-9])uml([^a-z0-9]|$)/iu, accepted: ["uml"] },
     { pattern: /(^|[^a-z0-9])bpmn([^a-z0-9]|$)/iu, accepted: ["bpmn"] },
+    { pattern: /(^|[^a-z0-9])c\s*\+\s*\+([^a-z0-9]|$)/iu, accepted: ["c++"] },
+    { pattern: /(^|[^a-z0-9])c\s*#([^a-z0-9]|$)/iu, accepted: ["c#"] },
+    { pattern: /(^|[^a-z0-9])\.net([^a-z0-9]|$)/iu, accepted: [".net", "dotnet"] },
+    { pattern: /(^|[^a-z0-9])asp\.?net([^a-z0-9]|$)/iu, accepted: ["asp.net", "aspnet"] },
+    { pattern: /(^|[^a-z0-9])entity framework(?: core)?([^a-z0-9]|$)|(^|[^a-z0-9])ef core([^a-z0-9]|$)/iu, accepted: ["entity framework", "entity framework core", "ef core"] },
+    { pattern: /(^|[^a-z0-9])stripe([^a-z0-9]|$)/iu, accepted: ["stripe"] },
+    { pattern: /(^|[^a-z0-9])authorize\.?net([^a-z0-9]|$)/iu, accepted: ["authorize.net", "authorizenet"] },
+    { pattern: /(^|[^a-z0-9])paypal([^a-z0-9]|$)/iu, accepted: ["paypal"] },
+    { pattern: /(^|[^a-z0-9])braintree([^a-z0-9]|$)/iu, accepted: ["braintree"] },
+    { pattern: /(^|[^a-z0-9])adyen([^a-z0-9]|$)/iu, accepted: ["adyen"] },
     { pattern: /(^|[^a-z0-9])pytest([^a-z0-9]|$)/iu, accepted: ["pytest"] }
   ];
   if (skillClaims.some(({ pattern, accepted }) => pattern.test(text) && !accepted.some(skill => listedSkills.some(listed => listed.includes(skill))))) return "unsupported_skill";
