@@ -46,7 +46,7 @@ Freelance requests are scattered across channels and platforms. Manually reviewi
 - Automated bid submission is available only through Freelancehunt's verified API; FL.ru and Freelance.ru are discovery-only and require manual submission. A real employer-facing bid was not sent as an acceptance test.
 - Cloudflare D1 Time Travel is available for production recovery. A production restore has not been attempted because it overwrites live data; the synthetic local D1 export/import drill passed.
 - User-specific project counts are a snapshot, not a throughput or success-rate claim. No production latency, cost, or conversion metrics are claimed.
-- A production screenshot of the Telegram-only sign-in page and entry 3D molecule is captured below. An authenticated workspace screenshot, Telegram bot screenshot, and demo recording remain outstanding for a complete visual portfolio case.
+- Production sign-in and synthetic authenticated-workspace screenshots are included below. The workspace image uses mocked demonstration data and is not evidence of production counts. A Telegram bot screenshot and demo recording remain outstanding for a complete visual portfolio case.
 
 ## Production sign-in screenshot
 
@@ -55,3 +55,9 @@ Freelance requests are scattered across channels and platforms. Manually reviewi
 ## Verification
 
 CI is the source of truth for repository checks. Live deployment verification is separate and must include the smoke-test checklist in [Operations and recovery](OPERATIONS.md). Update this case study only when a feature has been tested and confirmed; do not turn planned integrations into completed achievements.
+
+## Synthetic authenticated workspace screenshot
+
+This dashboard image was captured from the built application with locally mocked demonstration data. It contains no production account data and does not verify those displayed counts.
+
+![ByteCraft workspace dashboard with synthetic demonstration data](screenshots/synthetic-workspace-dashboard-2026-10-21.png)
