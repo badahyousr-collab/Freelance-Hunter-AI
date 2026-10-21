@@ -287,6 +287,7 @@ const LANGUAGE_SKILLS = new Set([
   "english", "английский", "russian", "русский", "ukrainian", "украинский",
   "polish", "польский", "german", "немецкий", "french", "французский"
 ]);
+const PROFILE_MATCH_RECALC_BATCH_SIZE = 50;
 
 function normalizedMatchText(value: unknown): string {
   return String(value ?? "")
@@ -2244,7 +2245,9 @@ async function handle(request: Request, env: Env): Promise<Response> {
       return env.DB.prepare("UPDATE projects SET match_score=?,match_reasons=? WHERE id=? AND user_id=?")
         .bind(match.score, JSON.stringify(match.reasons), project.id, uid);
     });
-    if (updates.length) await env.DB.batch(updates);
+    for (let start = 0; start < updates.length; start += PROFILE_MATCH_RECALC_BATCH_SIZE) {
+      await env.DB.batch(updates.slice(start, start + PROFILE_MATCH_RECALC_BATCH_SIZE));
+    }
     return response(request, { ...existing, display_name: displayName, portfolio_url: portfolioUrl, skills: safeJson(skills,[]), languages: safeJson(languages,["ru","en"]), payment_preferences: safeJson(payments,[]), excluded_keywords: safeJson(excluded,[]), min_budget: budget, currency });
   }
 
