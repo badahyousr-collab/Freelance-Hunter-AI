@@ -153,6 +153,8 @@ function fakeDb({ scan = false, telegramChannel = "@python_jobs", existingProjec
           if (sql.includes("SELECT a.id,a.status,a.draft_text,p.source,p.source_project_id,p.url,p.title,p.description,p.budget_min,p.budget_max,p.currency,p.match_score")) return fallbackApplication;
           if (sql.includes("SELECT id FROM applications WHERE user_id=? AND project_id=?")) return application;
           if (sql.includes("SELECT * FROM profiles WHERE user_id=?")) return profile;
+          if (sql.includes("SELECT title,description FROM projects WHERE id=? AND user_id=?")) return project;
+          if (sql.includes("SELECT skills,portfolio_url FROM profiles WHERE user_id=?")) return profile;
           if (sql.includes("SELECT credentials_json FROM integrations WHERE user_id=? AND provider='freelancehunt'")) return integration?.status === "connected" ? integration : null;
           if (sql.includes("SELECT status FROM integrations WHERE user_id=? AND provider='freelancehunt'")) return integration ? { status: integration.status } : null;
           if (sql.includes("SELECT id,provider,label,status,created_at FROM integrations WHERE user_id=? AND provider=?")) return integration ? { id: integration.id, provider: integration.provider, label: integration.label, status: integration.status, created_at: integration.created_at } : null;
@@ -764,7 +766,7 @@ test("budget parser ignores missing currency, zero, and unreasonable values", ()
 
 
 test("application review can edit a draft and move it to awaiting confirmation", async () => {
-  const db = fakeDb({ application: { id: 4, project_id: 9, status: "draft", draft_text: "Initial draft", created_at: "2026-10-17 09:00:00", submitted_at: null, replied_at: null } });
+  const db = fakeDb({ application: { id: 4, project_id: 9, status: "draft", draft_text: "Initial draft", created_at: "2026-10-17 09:00:00", submitted_at: null, replied_at: null }, project: { id: 9, title: "Python bot", description: "Build a small Python bot." }, profile: { skills: JSON.stringify(["Python"]), portfolio_url: null } });
   const response = await worker.fetch(new Request("https://api.example/applications/4", {
     method: "PATCH",
     headers: { Cookie: "fh_session=test-session-token", "Content-Type": "application/json" },
@@ -774,6 +776,24 @@ test("application review can edit a draft and move it to awaiting confirmation",
   const result = await response.json();
   assert.equal(result.status, "awaiting_confirmation");
   assert.equal(result.draft_text, "Edited proposal");
+});
+
+test("application review cannot prepare an unsupported experience claim for confirmation", async () => {
+  const fabricated = "I have integrated Stripe and Authorize.net in production. I built a recurring billing system with EF Core.";
+  const db = fakeDb({
+    application: { id: 28, project_id: 24, status: "draft", draft_text: fabricated },
+    project: { id: 24, title: "Senior C# / .NET Backend Developer", description: "We need a backend developer to improve our SaaS payment platform." },
+    profile: { skills: JSON.stringify(["Python", "REST API"]), portfolio_url: null }
+  });
+  const response = await worker.fetch(new Request("https://api.example/applications/28", {
+    method: "PATCH",
+    headers: { Cookie: "fh_session=test-session-token", "Content-Type": "application/json" },
+    body: JSON.stringify({ status: "awaiting_confirmation" })
+  }), { DB: db });
+  assert.equal(response.status, 422);
+  assert.match((await response.json()).detail, /not supported by the project description or your profile/i);
+  assert.equal(db.applicationRecord.status, "draft");
+  assert.equal(db.applicationRecord.draft_text, fabricated);
 });
 
 test("application review cannot fake a provider-confirmed sent status", async () => {
