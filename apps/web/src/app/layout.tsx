@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "pipisso freelance hunter",
+  title: "ByteCraft | Freelance Hunter",
   description: "Поиск фриланс-заказов, подбор проектов по навыкам и управление откликами.",
   icons: {
     icon: "/icon.svg?v=4",
