@@ -13,6 +13,7 @@ async function mockAuthenticatedAccount(page: Page) {
 for (const path of ["/login", "/register"]) {
   test(`${path} uses Telegram only and has no email/password form`, async ({ page }) => {
     await page.goto(path);
+    await expect(page.locator(".auth-brand")).toContainText("Pipisso ByteCraft");
     await expect(page.getByRole("heading", { name: path === "/login" ? "Войди в аккаунт" : "Создай аккаунт" })).toBeVisible();
     await expect(page.getByRole("button", { name: /Продолжить через Telegram/ })).toBeVisible();
     await expect(page.locator('input[type="email"], input[type="password"]')).toHaveCount(0);
