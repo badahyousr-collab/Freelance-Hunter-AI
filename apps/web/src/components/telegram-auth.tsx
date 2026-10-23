@@ -122,7 +122,7 @@ export default function TelegramAuth({ mode }: Props) {
         <section className="auth-card">
           <Link href="/" className="auth-brand">
             <span className="brand-mark"><Code2 size={21} /></span>
-            <span>ByteCraft<small>САЙТЫ · БОТЫ · АВТОМАТИЗАЦИЯ</small></span>
+            <span>pipisso<small>freelance hunter</small></span>
           </Link>
           <div className="auth-eyebrow"><Send size={14} /> TELEGRAM AUTHENTICATION</div>
           <h1>{isRegister ? "Создай аккаунт" : "Войди в аккаунт"}</h1>
