@@ -104,7 +104,7 @@ export default function DashboardPage() {
   return (
     <main className="shell">
       <aside className="sidebar">
-        <Link className="brand" href="/dashboard"><span className="brand-mark"><Code2 size={21} /></span><span>ByteCraft<small>САЙТЫ · БОТЫ · АВТОМАТИЗАЦИЯ</small></span></Link>
+        <Link className="brand" href="/dashboard"><span className="brand-mark"><Code2 size={21} /></span><span>Pipisso ByteCraft<small>САЙТЫ · БОТЫ · АВТОМАТИЗАЦИЯ</small></span></Link>
         <div className="workspace-label">РАБОЧЕЕ ПРОСТРАНСТВО</div>
         <nav className="nav">
           <Link className="nav-item active" href="/dashboard"><LayoutDashboard size={18} />Обзор</Link>
