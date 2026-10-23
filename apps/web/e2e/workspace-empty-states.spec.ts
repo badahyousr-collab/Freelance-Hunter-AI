@@ -53,3 +53,26 @@ test("projects page keeps the search controls usable after an API error and show
   await expect(page.getByText("Подходящих заказов пока нет")).toBeVisible();
   expect(requestCount).toBeGreaterThanOrEqual(2);
 });
+
+
+test("main dashboard keeps the Pipisso prefix without removing ByteCraft", async ({ page }) => {
+  await page.context().addCookies([{
+    name: "fh_session",
+    value: "mock-session",
+    url: "http://127.0.0.1:3000"
+  }]);
+  await mockAuthenticatedAccount(page);
+  for (const [endpoint, response] of [
+    ["dashboard/summary", { projects_found: 0, matched_projects: 0, proposals_sent: 0, client_replies: 0, daily_activity: [] }],
+    ["projects?limit=5", []],
+    ["sources", []],
+    ["profile", { display_name: "Тест" }]
+  ] as const) {
+    await page.route("**/api/backend/" + endpoint, async route =>
+      route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(response) })
+    );
+  }
+  await page.goto("/dashboard");
+  await expect(page.locator(".sidebar .brand")).toContainText("Pipisso ByteCraft");
+  await expect(page.getByRole("heading", { name: /С возвращением/ })).toBeVisible();
+});
