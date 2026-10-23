@@ -22,6 +22,7 @@ test("projects empty state explains the next action and links to source setup", 
   });
 
   await page.goto("/projects");
+  await expect(page.locator(".sub-sidebar .brand")).toContainText("Pipisso ByteCraft");
 
   await expect(page.getByRole("heading", { name: "Найденные заказы" })).toBeVisible();
   await expect(page.getByText("Подходящих заказов пока нет")).toBeVisible();
