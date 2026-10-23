@@ -15,7 +15,7 @@ const sourceAtoms: Omit<Atom, "z">[] = [
 ];
 const atoms: Atom[] = sourceAtoms.map((atom, i) => ({
   ...atom,
-  z: Math.sin(i * 1.73) * 105 + Math.cos(i * 0.61) * 35,
+  z: Math.sin(i * 1.73) * 145 + Math.cos(i * 0.61) * 40,
 }));
 const bonds: [number, number][] = [
   [0,1],[0,2],[1,2],[1,3],[1,4],[2,4],[2,5],[3,4],[3,6],[4,5],[4,6],[4,7],
@@ -69,53 +69,72 @@ function project(atom: Atom, sinX: number, cosX: number, sinY: number, cosY: num
   return { ...atom, sx: 260 + x1 * scale, sy: 390 + y2 * scale, depth: z2, scale };
 }
 
-function drawMolecule(canvas: HTMLCanvasElement, rx: number, ry: number) {
-  const bounds = canvas.getBoundingClientRect();
-  if (!bounds.width || !bounds.height) return;
-  // The decorative canvas does not need a full device-pixel backing store.
-  const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
-  const width = Math.round(bounds.width * dpr);
-  const height = Math.round(bounds.height * dpr);
+function drawMolecule(canvas: HTMLCanvasElement, rx: number, ry: number, cssWidth: number, cssHeight: number) {
+  if (!cssWidth || !cssHeight) return;
+
+  // Keep the backing canvas reasonably small on high-DPI displays.
+  const dpr = Math.max(1, Math.min(window.devicePixelRatio || 1, 1.5, 1120 / cssHeight));
+  const width = Math.round(cssWidth * dpr);
+  const height = Math.round(cssHeight * dpr);
   if (canvas.width !== width || canvas.height !== height) {
     canvas.width = width;
     canvas.height = height;
   }
+
   const context = canvas.getContext("2d");
   if (!context) return;
-  const scale = Math.min(bounds.width / 520, bounds.height / 780);
-  const offsetX = (bounds.width - 520 * scale) / 2;
-  const offsetY = (bounds.height - 780 * scale) / 2;
-  context.setTransform(dpr * scale, 0, 0, dpr * scale, dpr * offsetX, dpr * offsetY);
-  context.clearRect(0, 0, 520, 780);
+  const scale = Math.min(cssWidth / 520, cssHeight / 780);
+  const offsetX = (cssWidth - 520 * scale) / 2;
+  const offsetY = (cssHeight - 780 * scale) / 2;
 
-  context.save();
-  context.strokeStyle = "rgba(174, 183, 172, .25)";
-  context.lineWidth = 1;
-  context.setLineDash([2, 7]);
-  for (const orbit of [
-    { rx: 170, ry: 330, angle: 22 + rx * .18 },
-    { rx: 135, ry: 300, angle: -31 + ry * .18 },
-    { rx: 205, ry: 220, angle: 63 + rx * .25 },
-  ]) {
-    context.save();
-    context.translate(260, 390);
-    context.rotate(orbit.angle * Math.PI / 180);
-    context.beginPath();
-    context.ellipse(0, 0, orbit.rx, orbit.ry, 0, 0, Math.PI * 2);
-    context.stroke();
-    context.restore();
-  }
-  context.restore();
+  // Clear the entire backing buffer before applying the perspective transform.
+  context.setTransform(1, 0, 0, 1, 0, 0);
+  context.clearRect(0, 0, width, height);
+  context.setTransform(dpr * scale, 0, 0, dpr * scale, dpr * offsetX, dpr * offsetY);
 
   const ax = rx * Math.PI / 180;
   const ay = ry * Math.PI / 180;
-  const projected = atoms.map(atom => project(atom, Math.sin(ax), Math.cos(ax), Math.sin(ay), Math.cos(ay)));
-  for (let index = 0; index < bonds.length; index += 1) {
-    const [a, b] = bonds[index];
-    const start = projected[a];
-    const end = projected[b];
-    if (!start || !end) continue;
-    context.globalAlpha = Math.max(.25, Math.min(.9, 1 - (start.depth + end.depth) / 3200));
+  const sinX = Math.sin(ax), cosX = Math.cos(ax);
+  const sinY = Math.sin(ay), cosY = Math.cos(ay);
+  const perspective = (atom: Atom) => project(atom, sinX, cosX, sinY, cosY);
+
+  // The three orbital guides are also projected in 3D. They no longer
+  // remain flat while the atoms rotate through space.
+  context.save();
+  context.strokeStyle = "rgba(174, 183, 172, .23)";
+  context.lineWidth = 1;
+  context.setLineDash([2, 7]);
+  for (const orbit of [
+    { major: 170, minor: 325, tilt: .42 },
+    { major: 145, minor: 290, tilt: -.67 },
+    { major: 205, minor: 225, tilt: .92 },
+  ]) {
+    context.beginPath();
+    for (let i = 0; i <= 96; i++) {
+      const t = i * Math.PI * 2 / 96;
+      const point = perspective({
+        x: 260 + orbit.major * Math.cos(t),
+        y: 390 + orbit.minor * Math.sin(t) * Math.cos(orbit.tilt),
+        z: orbit.minor * Math.sin(t) * Math.sin(orbit.tilt),
+        r: 0
+      });
+      if (i === 0) context.moveTo(point.sx, point.sy);
+      else context.lineTo(point.sx, point.sy);
+    }
+    context.stroke();
+  }
+  context.restore();
+
+  const projected = atoms.map(perspective);
+  // Back-to-front ordering is essential: faraway segments must not cover
+  // the nearer atoms and bonds.
+  const orderedBonds = bonds.map(([a, b], index) => ({
+    start: projected[a], end: projected[b], index,
+    depth: (projected[a].depth + projected[b].depth) / 2
+  })).sort((a, b) => b.depth - a.depth);
+
+  for (const { start, end, index, depth } of orderedBonds) {
+    context.globalAlpha = Math.max(.28, Math.min(.9, 1 - depth / 1200));
     context.beginPath();
     context.moveTo(start.sx, start.sy);
     context.lineTo(end.sx, end.sy);
@@ -129,7 +148,7 @@ function drawMolecule(canvas: HTMLCanvasElement, rx: number, ry: number) {
   }
   context.globalAlpha = 1;
 
-  for (const atom of projected.sort((a, b) => a.depth - b.depth)) {
+  for (const atom of projected.sort((a, b) => b.depth - a.depth)) {
     const sprite = atomSprite(atom);
     if (!sprite) continue;
     const size = atom.r * 4.2 * atom.scale + 6;
@@ -139,18 +158,66 @@ function drawMolecule(canvas: HTMLCanvasElement, rx: number, ry: number) {
 
 export default function AuthMolecule() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const rotation = useRef({ x: 0, y: 0 });
+  const rotation = useRef({ x: 12, y: -24 });
   const drag = useRef<{ x: number; y: number; rx: number; ry: number } | null>(null);
+  const redrawOnDrag = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     const canvas = canvasRef.current;
-    const container = canvas?.parentElement;
-    if (!canvas || !container) return;
-    drawMolecule(canvas, rotation.current.x, rotation.current.y);
-    const observer = new ResizeObserver(() => drawMolecule(canvas, rotation.current.x, rotation.current.y));
-    observer.observe(container);
+    if (!canvas) return;
+
+    const motion = window.matchMedia("(prefers-reduced-motion: reduce)");
+    let viewport = { width: 0, height: 0 };
+    let raf = 0;
+    let lastTime = 0;
+    let lastPaint = 0;
+
+    const paint = (time: number) => {
+      const tilt = motion.matches ? 0 : Math.sin(time / 8500) * 3;
+      drawMolecule(canvas, rotation.current.x + tilt, rotation.current.y, viewport.width, viewport.height);
+    };
+    const measure = () => {
+      const bounds = canvas.getBoundingClientRect();
+      viewport = { width: bounds.width, height: bounds.height };
+      paint(performance.now());
+    };
+    const tick = (time: number) => {
+      const elapsed = lastTime ? Math.min(time - lastTime, 64) : 0;
+      lastTime = time;
+      if (!drag.current) rotation.current.y += elapsed * .0036;
+      // 30 fps while idle, up to 60 fps while dragging. Geometry and sprites
+      // are cached; no React state updates or CSS transforms per frame.
+      if (time - lastPaint >= (drag.current ? 16 : 33)) {
+        paint(time);
+        lastPaint = time;
+      }
+      raf = requestAnimationFrame(tick);
+    };
+    const restart = () => {
+      cancelAnimationFrame(raf);
+      raf = 0;
+      lastTime = 0;
+      lastPaint = 0;
+      paint(performance.now());
+      if (!motion.matches && !document.hidden) raf = requestAnimationFrame(tick);
+    };
+    redrawOnDrag.current = () => {
+      // Even with reduced motion, direct manipulation stays interactive.
+      if (motion.matches && !document.hidden) paint(performance.now());
+    };
+
+    const observer = new ResizeObserver(measure);
+    observer.observe(canvas);
+    measure();
+    motion.addEventListener("change", restart);
+    document.addEventListener("visibilitychange", restart);
+    restart();
     return () => {
+      cancelAnimationFrame(raf);
       observer.disconnect();
+      motion.removeEventListener("change", restart);
+      document.removeEventListener("visibilitychange", restart);
+      redrawOnDrag.current = null;
     };
   }, []);
 
@@ -160,10 +227,9 @@ export default function AuthMolecule() {
   }
   function onPointerMove(event: PointerEvent<HTMLDivElement>) {
     if (!drag.current) return;
-    rotation.current.x = Math.max(-55, Math.min(55, drag.current.rx - (event.clientY - drag.current.y) * .35));
+    rotation.current.x = Math.max(-65, Math.min(65, drag.current.rx - (event.clientY - drag.current.y) * .35));
     rotation.current.y = drag.current.ry + (event.clientX - drag.current.x) * .4;
-    event.currentTarget.style.setProperty("--molecule-rotate-x", `${rotation.current.x}deg`);
-    event.currentTarget.style.setProperty("--molecule-rotate-y", `${rotation.current.y}deg`);
+    redrawOnDrag.current?.();
   }
   function stop() {
     drag.current = null;
