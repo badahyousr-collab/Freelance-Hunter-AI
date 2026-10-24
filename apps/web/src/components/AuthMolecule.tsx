@@ -38,20 +38,20 @@ function atomSprite(atom: Atom): HTMLCanvasElement | null {
   context.translate(padding, padding);
   const radius = atom.r;
   const halo = context.createRadialGradient(0, 0, 0, 0, 0, radius * 2.1);
-  halo.addColorStop(0, "rgba(216, 229, 212, .20)");
-  halo.addColorStop(1, "rgba(201, 209, 201, 0)");
+  halo.addColorStop(0, "rgba(225,225,225, .20)");
+  halo.addColorStop(1, "rgba(207,207,207, 0)");
   context.beginPath(); context.arc(0, 0, radius * 2.1, 0, Math.PI * 2); context.fillStyle = halo; context.fill();
-  context.beginPath(); context.arc(0, 0, radius + 1.5, 0, Math.PI * 2); context.fillStyle = "rgba(8, 10, 8, .8)"; context.fill();
+  context.beginPath(); context.arc(0, 0, radius + 1.5, 0, Math.PI * 2); context.fillStyle = "rgba(9,9,9, .8)"; context.fill();
   const gradient = context.createRadialGradient(-radius * .3, -radius * .35, Math.max(1, radius * .08), 0, 0, radius);
   if (atom.kind === "core") {
-    gradient.addColorStop(0, "#ffffff"); gradient.addColorStop(.35, "#dce5d8"); gradient.addColorStop(1, "#697568");
+    gradient.addColorStop(0, "#ffffff"); gradient.addColorStop(.35, "#e2e2e2"); gradient.addColorStop(1, "#727272");
   } else {
-    gradient.addColorStop(0, atom.kind === "dark" ? "#c5cdc2" : "#f1f4ec");
-    gradient.addColorStop(.3, atom.kind === "dark" ? "#7c867a" : "#aeb8aa");
-    gradient.addColorStop(.68, "#596258"); gradient.addColorStop(1, "#151916");
+    gradient.addColorStop(0, atom.kind === "dark" ? "#cbcbcb" : "#f3f3f3");
+    gradient.addColorStop(.3, atom.kind === "dark" ? "#838383" : "#b5b5b5");
+    gradient.addColorStop(.68, "#5f5f5f"); gradient.addColorStop(1, "#181818");
   }
   context.beginPath(); context.arc(0, 0, radius, 0, Math.PI * 2); context.fillStyle = gradient; context.fill();
-  context.lineWidth = 1.1; context.strokeStyle = atom.kind === "core" ? "rgba(255,255,255,.8)" : "rgba(203,210,199,.72)"; context.stroke();
+  context.lineWidth = 1.1; context.strokeStyle = atom.kind === "core" ? "rgba(255,255,255,.8)" : "rgba(208,208,208,.72)"; context.stroke();
   context.beginPath(); context.ellipse(-radius * .27, -radius * .34, Math.max(1.5, radius * .35), Math.max(1, radius * .2), -.35, 0, Math.PI * 2);
   context.fillStyle = "rgba(255,255,255,.46)"; context.fill();
   atomSpriteCache.set(key, sprite);
@@ -101,7 +101,7 @@ function drawMolecule(canvas: HTMLCanvasElement, rx: number, ry: number, cssWidt
   // The three orbital guides are also projected in 3D. They no longer
   // remain flat while the atoms rotate through space.
   context.save();
-  context.strokeStyle = "rgba(174, 183, 172, .23)";
+  context.strokeStyle = "rgba(180,180,180, .23)";
   context.lineWidth = 1;
   context.setLineDash([2, 7]);
   for (const orbit of [
@@ -139,10 +139,10 @@ function drawMolecule(canvas: HTMLCanvasElement, rx: number, ry: number, cssWidt
     context.moveTo(start.sx, start.sy);
     context.lineTo(end.sx, end.sy);
     context.lineCap = "round";
-    context.strokeStyle = "rgba(9, 11, 9, .75)";
+    context.strokeStyle = "rgba(10,10,10, .75)";
     context.lineWidth = index % 5 === 0 ? 5.2 : 3.8;
     context.stroke();
-    context.strokeStyle = index % 5 === 0 ? "rgba(225, 233, 219, .78)" : "rgba(169, 183, 165, .62)";
+    context.strokeStyle = index % 5 === 0 ? "rgba(230,230,230, .78)" : "rgba(179,179,179, .62)";
     context.lineWidth = index % 5 === 0 ? 2.5 : 1.6;
     context.stroke();
   }
