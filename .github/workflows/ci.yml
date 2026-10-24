@@ -43,7 +43,7 @@ jobs:
       - name: Build OpenNext Cloudflare Worker
         run: npm run build:worker
       - name: Upload OpenNext Cloudflare Worker bundle
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: web-worker-${{ github.sha }}
           path: apps/web/.open-next
