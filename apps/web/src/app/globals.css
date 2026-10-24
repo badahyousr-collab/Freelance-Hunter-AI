@@ -673,6 +673,37 @@ input:not([type="checkbox"]):not([type="radio"]), textarea, select {
 }
 .orb-spark { color: #b8b8b8; }
 
+/* Larger, calmer typography and breathing room without adding new UI. */
+.page-heading { padding-top: 35px; padding-bottom: 29px; }
+.page-heading h1, .sub-page-heading h1 { font-size: clamp(28px, 3vw, 35px); letter-spacing: -1.25px; }
+.page-heading p, .sub-page-heading p, .panel-heading p { font-size: 12px; line-height: 1.65; }
+.nav-item { font-size: 12px; min-height: 43px; }
+.metric-card { padding: 21px 20px 19px; }
+.metric-top { font-size: 11px; }
+.metric-value { font-size: 31px; letter-spacing: -1.3px; }
+.metric-change { font-size: 10px; }
+.panel, .content-card { padding: 23px; }
+.panel-heading h2, .content-card h2 { font-size: 15px; letter-spacing: -.2px; }
+.content-card > p, .auth-subtitle, .agent-description { font-size: 12px; }
+.sub-form label { font-size: 12px; }
+.sub-input, .sub-select, .sub-textarea { font-size: 12px; min-height: 42px; }
+.sub-list-main strong, .source-group-summary strong { font-size: 12px; }
+.sub-list-main span, .source-group-summary small, .sub-muted { font-size: 11px; }
+.primary-button, .secondary-button, .sub-button, .select-button { font-size: 12px; }
+.sub-badge, .status-pill, .live-status { font-size: 10px; }
+.sub-table td, table td { font-size: 11px; line-height: 1.5; }
+.sub-table th, table th { font-size: 9px; }
+.source-counts span { font-size: 10px; }
+.source-counts strong { font-size: 18px; letter-spacing: -.4px; }
+.source-counts small { font-size: 9px; line-height: 1.45; }
+.last-scan { font-size: 10px; }
+@media (max-width: 760px) {
+  .metric-card { padding: 16px; }
+  .panel, .content-card { padding: 18px; }
+  .page-heading { padding-top: 26px; padding-bottom: 21px; }
+  .source-counts strong { font-size: 16px; }
+}
+
 /* Gentle motion, scoped to page entry and real interactive controls. */
 .auth-card { animation: pipisso-enter .55s var(--ui-ease) both; }
 .metric-card, .content-card { animation: pipisso-enter .5s var(--ui-ease) both; }
@@ -682,8 +713,8 @@ input:not([type="checkbox"]):not([type="radio"]), textarea, select {
 .content-card:nth-child(2) { animation-delay: .06s; }
 .content-card:nth-child(3) { animation-delay: .12s; }
 @keyframes pipisso-enter {
-  from { opacity: 0; transform: translateY(9px); }
-  to { opacity: 1; transform: translateY(0); }
+  from { opacity: 0; translate: 0 9px; }
+  to { opacity: 1; translate: 0 0; }
 }
 @keyframes pipisso-bar-rise {
   from { opacity: .4; scale: 1 .1; }
